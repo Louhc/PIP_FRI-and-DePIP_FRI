@@ -137,9 +137,12 @@ impl<P: Pairing> BivariateBatchKZG<P> {
         let challenge = <Transcript as ProofTranscript<P>>::challenge_scalar(
                 transcript, b"combined_polynomials_evaluated_at_the_same_point");
 
-        // evaluations of 
+        // compute the vector composed by (f_{1,1}(z1), f_{2,1}(z1), ..., f_{l,1}(z1))
+        //                                (f_{1,2}(z1), f_{2,2}(z1), ..., f_{l,2}(z1))
+        //                                 ..........................................
+        //                                (f_{1,k}(z1), f_{2,k}(z1), ..., f_{l,k}(z1))
         let mut evals_z1 = Vec::new();
-        let mut combined_polynomial_y = UnivariatePolynomial::zero();
+        let mut combined_polynomial_q2 = UnivariatePolynomial::zero();
         let mut linear_factor = P::ScalarField::one();
         // generate q2(Y)
         // compute f_{j,i} (z1) and f_j (z1, Y)
@@ -150,65 +153,73 @@ impl<P: Pairing> BivariateBatchKZG<P> {
                 .collect();
             evals_z1.push(evals.clone());
 
-            let polynomial_z1_y = &UnivariatePolynomial::from_coefficients_vec(evals) * linear_factor;
+            let combined_polynomial_slice_q2 = &UnivariatePolynomial::from_coefficients_vec(evals.clone()) * linear_factor;
             linear_factor *= challenge;
-            combined_polynomial_y += &polynomial_z1_y;
+            combined_polynomial_q2 += &combined_polynomial_slice_q2;
         }
 
-        let quotient_polynomial_y = &combined_polynomial_y 
+        let polynomial_q2 = &combined_polynomial_q2
         / &UnivariatePolynomial::from_coefficients_vec(vec![
             -y.clone(),
             P::ScalarField::one(),
         ]);
-        let mut quotient_polynomial_z1_y_coeffs = quotient_polynomial_y.coeffs.to_vec();
-        quotient_polynomial_z1_y_coeffs.resize(y_srs.len(), <P::ScalarField>::zero());
-        P::G1::msm(&y_srs, &quotient_polynomial_z1_y_coeffs).unwrap();
+        let mut coeffs_q2 = polynomial_q2.coeffs.to_vec();
+        coeffs_q2.resize(y_srs.len(), <P::ScalarField>::zero());
+        
+        // generate q1(x,y) = \sum_j f_j (x,y)-f_j (z1,y) / (x-z1) = \sum_i gamma^{i-1} \sum_j [(f_{j,i}(x)-f_{j,i}(z1))/(x-z1)] \cdot y^{i-1}
 
-        // generate q1(X, Y) = 
-        linear_factor = P::ScalarField::one();
-        let mut combined_polynomial_x = UnivariatePolynomial::zero();
-        for j in 0..bivariate_polynomials.len() {
-            let mut combined_polynomial_x_slice = UnivariatePolynomial::zero();
-            for i in 0..y_srs.len() {
-                let x_polynomial = bivariate_polynomials[j].x_polynomials[i].clone() +
-                    UnivariatePolynomial::from_coefficients_vec(vec![-evals_z1[j][i]]);
-                combined_polynomial_x_slice += &x_polynomial;
-            }
-            combined_polynomial_x_slice = &combined_polynomial_x_slice * linear_factor;
-            combined_polynomial_x += &combined_polynomial_x_slice;
-            linear_factor *= challenge;
-        }
-        let quotient_polynomial_x = &combined_polynomial_x
-            / &UnivariatePolynomial::from_coefficients_vec(vec![
-                -x.clone(),
-                P::ScalarField::one()
-            ]);
-        let mut quotient_coeffs_x = quotient_polynomial_x.coeffs.to_vec();
-        quotient_coeffs_x.resize(powers[0].len(), <P::ScalarField>::zero());
+        let mut coeffs_q1: Vec<<P as Pairing>::ScalarField> = Vec::new();
+        let mut xy_srs: Vec<<P as Pairing>::G1Affine> = Vec::new();
 
-        let mut extended_coeff: Vec<<P as Pairing>::ScalarField> = Vec::new();
-        let mut extended_powers: Vec<<P as Pairing>::G1Affine> = Vec::new();
         for i in 0..y_srs.len() {
-            extended_coeff.extend(&quotient_coeffs_x);
-            extended_powers.extend(&powers[i]);
+            let mut combined_polynomial_slice_for_q1 = UnivariatePolynomial::zero();
+            linear_factor = P::ScalarField::one();
+            for j in 0..bivariate_polynomials.len() {
+                combined_polynomial_slice_for_q1 += &(&bivariate_polynomials[j].x_polynomials[i] * linear_factor);
+                linear_factor *= challenge;
+            }
+            let polynomial_slice_q1 = &combined_polynomial_slice_for_q1
+                / &UnivariatePolynomial::from_coefficients_vec(vec![
+                    -x.clone(),
+                    P::ScalarField::one()
+                ]);
+            let mut coeffs_slice_q1 = polynomial_slice_q1.coeffs.to_vec();
+            coeffs_slice_q1.resize(powers[0].len(), <P::ScalarField>::zero());
+
+            coeffs_q1.extend(&coeffs_slice_q1);
+            xy_srs.extend(&powers[i]);
         }
 
         let proof = (
-            P::G1::msm(&extended_powers, &extended_coeff).unwrap(), 
-            P::G1::msm(&y_srs, &quotient_polynomial_z1_y_coeffs).unwrap());
+            P::G1::msm(&xy_srs, &coeffs_q1).unwrap(), 
+            P::G1::msm(&y_srs, &coeffs_q2).unwrap());
         
         Ok(proof)
     }
 
     pub fn verify(
         v_srs: &VerifierSRS<P>,
-        com: &P::G1,
+        coms: &Vec<P::G1>,
         point: &(P::ScalarField, P::ScalarField),
-        eval: &P::ScalarField,
+        evals: &Vec<P::ScalarField>,
         proof: &(P::G1, P::G1),
+        transcript: &mut Transcript
     ) -> Result<bool, Error> {
+        assert!(coms.len() >= 1);
+        assert!(coms.len() == evals.len());
+
+        let challenge = <Transcript as ProofTranscript<P>>::challenge_scalar(
+            transcript, b"combined_polynomials_evaluated_at_the_same_point");
+
+        let mut linear_factor = P::ScalarField::one();
+        let mut linear_combination = coms[0].clone() - v_srs.g * evals[0];
+        for i in 1..coms.len() {
+            linear_factor *= challenge;
+            linear_combination += (coms[i].clone() - v_srs.g * evals[i]) * linear_factor;
+        }
+
         let (x, y) = point;
-        let left = P::pairing(com.clone() - v_srs.g * eval, v_srs.h.clone());
+        let left = P::pairing(linear_combination.clone(), v_srs.h.clone());
         let right1 = P::pairing(proof.0.clone(), v_srs.h_alpha.clone() - v_srs.h * x);
         let right2 = P::pairing(proof.1.clone(), v_srs.h_beta.clone() - v_srs.h * y);
 
@@ -227,6 +238,7 @@ mod tests {
 
     const BIVARIATE_X_DEGREE: usize = 8;
     const BIVARIATE_Y_DEGREE: usize = 6;
+    const POLYNOMIAL_NUMBER: usize = 3;
     //const UNIVARIATE_DEGREE: usize = 56;
     //const UNIVARIATE_DEGREE: usize = 65535;
     //const UNIVARIATE_DEGREE: usize = 1048575;
@@ -242,39 +254,50 @@ mod tests {
                 .unwrap();
         // let v_srs = srs.0.get_verifier_key();
 
-        let mut x_polynomials = Vec::new();
-        for _ in 0..BIVARIATE_Y_DEGREE + 1 {
-            let mut x_polynomial_coeffs = vec![];
-            for _ in 0..BIVARIATE_X_DEGREE + 1 {
-                x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+        let mut bivariate_polynomials = Vec::new();
+        for _ in 0..POLYNOMIAL_NUMBER {
+            let mut x_polynomials = Vec::new();
+            for _ in 0..BIVARIATE_Y_DEGREE + 1 {
+                let mut x_polynomial_coeffs = vec![];
+                for _ in 0..BIVARIATE_X_DEGREE + 1 {
+                    x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+                }
+                x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
+                    &x_polynomial_coeffs,
+                ));
             }
-            x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
-                &x_polynomial_coeffs,
-            ));
+            bivariate_polynomials.push (BivariatePolynomial { x_polynomials });
         }
-        let bivariate_polynomial = BivariatePolynomial { x_polynomials };
 
-        // Commit to polynomial
-        let com =
-            TestBivariatePolyCommitment::commit(&srs.0, &vec![bivariate_polynomial]).unwrap();
-        println!("{}", size_of_val(&com));
+        // Commit to the polynomials
+        let coms =
+            TestBivariatePolyCommitment::commit(&srs.0, &bivariate_polynomials).unwrap();
+        let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same point");
+
         // Evaluate at challenge point
-        // let point = (UniformRand::rand(&mut rng), UniformRand::rand(&mut rng));
-        // let eval_proof = TestBivariatePolyCommitment::open(
-        //     &srs.0,
-        //     &bivariate_polynomial,
-        //     &point
-        // )
-        // .unwrap();
-        // let eval = bivariate_polynomial.evaluate(&point);
+        let point = (UniformRand::rand(&mut rng), UniformRand::rand(&mut rng));
+        let eval_proof = TestBivariatePolyCommitment::open(
+            &srs.0,
+            &bivariate_polynomials,
+            &point,
+            &mut prover_transcript
+        )
+        .unwrap();
 
-        // // proof size
-        // println!("Proof size is {} bytes", size_of_val(&eval_proof));
+        let mut evals = Vec::new();
+        for i in 0..bivariate_polynomials.len() {
+            let eval = bivariate_polynomials[i].evaluate(&point);
+            evals.push(eval);
+        }
 
-        // // Verify proof
-        // assert!(
-        //     TestBivariatePolyCommitment::verify(&srs.1, &com, &point, &eval, &eval_proof).unwrap()
-        // );
+        // proof size
+        println!("Proof size is {} bytes", size_of_val(&eval_proof));
+
+        // Verify proof
+        let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same point");
+        assert!(
+            TestBivariatePolyCommitment::verify(&srs.1, &coms, &point, &evals, &eval_proof, &mut verifier_transcript).unwrap()
+        );
 
     }
 

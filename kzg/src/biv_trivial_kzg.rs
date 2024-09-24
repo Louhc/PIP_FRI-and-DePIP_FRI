@@ -135,7 +135,7 @@ impl<P: Pairing> BivariateKZG<P> {
             // f_i(x) / (x-z1), trick: no need to divide f_i(z1)
             let polynomial_slice_q1 = &bivariate_polynomial.x_polynomials[i]
                 / &UnivariatePolynomial::from_coefficients_vec(vec![
-                    -point.0.clone(),
+                    -x.clone(),
                     P::ScalarField::one()
                 ]);
             let mut coeffs_slice_q1 = polynomial_slice_q1.coeffs.to_vec();
@@ -172,6 +172,10 @@ impl<P: Pairing> BivariateKZG<P> {
         let left = P::pairing(com.clone() - v_srs.g * eval, v_srs.h.clone());
         let right1 = P::pairing(proof.0.clone(), v_srs.h_alpha.clone() - v_srs.h * x);
         let right2 = P::pairing(proof.1.clone(), v_srs.h_beta.clone() - v_srs.h * y);
+
+        // println!("{}", left);
+        println!("right 1 is {}", right1);
+        println!("right 2 is {}", right2);
 
         Ok(left == right1 + right2)
     }
