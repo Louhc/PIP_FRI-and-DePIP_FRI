@@ -110,58 +110,53 @@ impl<P: Pairing> BivariateKZG<P> {
         bivariate_polynomial: &BivariatePolynomial<P::ScalarField>,
         point: &(P::ScalarField, P::ScalarField),
     ) -> Result<(P::G1, P::G1), Error> {
-        // let (x_srs, y_srs) = (&powers.0[0], &powers.1);
-        // assert_eq!(x_srs.len(), bivariate_polynomial.x_polynomials[0].len());
-        // assert_eq!(y_srs.len(), bivariate_polynomial.x_polynomials.len());
+        // generate q1(x,y) and q2(y)
+        // see f(x,y) - f(z1,z2) = f(x,y) - f(z1,y) + f(z1,y) - f(z1,z2)
+        // q1(x,y) = f(x,y)-f(z1,y)/(x-z1) = \sum_i [(f_{i}(x)-f_{i}(z1))/(x-z1)] \cdot y^{i-1}
+        // q2(y) = f(z1,y) - f(z1,z2) / (y - z2)
 
+        let (x, y) = point;
         let y_srs: Vec<<P as Pairing>::G1Affine> = powers.iter()
             .filter_map(|row| row.get(0))
             .cloned()
             .collect();
 
-        // assert_eq!(y_srs, &y_srs_test);
-
-        // let f(x,y) = \sum_i f_i(x) y^{i-1}
-        // let p1(x, y) = f(x, y) - f(z1, y) / (x - z1)
-        // p2(x, y) = f(z1, y) - f(z1, z2) / (y - z2)
-
-        // compute f_i(z1)
-        let evals: Vec<P::ScalarField> = bivariate_polynomial.x_polynomials
+        // compute the vector composed by (f_1(z1), f_2(z1), ..., f_l(z1))
+        let evals_z1: Vec<P::ScalarField> = bivariate_polynomial.x_polynomials
             .iter()
-            .map(|poly| poly.evaluate(&point.0))
+            .map(|poly| poly.evaluate(&x))
             .collect();
 
-        let mut extended_coeff: Vec<<P as Pairing>::ScalarField> = Vec::new();
-        let mut extended_powers: Vec<<P as Pairing>::G1Affine> = Vec::new();
+        // the concatenation of the q1(x,y)
+        let mut coeffs_q1: Vec<<P as Pairing>::ScalarField> = Vec::new();
+        let mut xy_srs: Vec<<P as Pairing>::G1Affine> = Vec::new();
 
         for i in 0..y_srs.len() {
-            let x_polynomial = bivariate_polynomial.x_polynomials[i].clone() +
-                UnivariatePolynomial::from_coefficients_vec(vec![-evals[i]]);
-            let quotient_polynomial_x = &x_polynomial
+            // f_i(x) / (x-z1), trick: no need to divide f_i(z1)
+            let polynomial_slice_q1 = &bivariate_polynomial.x_polynomials[i]
                 / &UnivariatePolynomial::from_coefficients_vec(vec![
                     -point.0.clone(),
                     P::ScalarField::one()
                 ]);
-            let mut quotient_coeffs_x = quotient_polynomial_x.coeffs.to_vec();
-            quotient_coeffs_x.resize(powers[0].len(), <P::ScalarField>::zero());
+            let mut coeffs_slice_q1 = polynomial_slice_q1.coeffs.to_vec();
+            coeffs_slice_q1.resize(powers[0].len(), <P::ScalarField>::zero());
             
-            extended_coeff.extend(&quotient_coeffs_x);
-            extended_powers.extend(&powers[i]);
+            coeffs_q1.extend(&coeffs_slice_q1);
+            xy_srs.extend(&powers[i]);
         }
         // let quotient_polynomial_y = BivariatePolynomial { x_polynomials };
 
-        let polynomial_z1_y = UnivariatePolynomial::from_coefficients_vec(evals);
-        let quotient_polynomial_y = &polynomial_z1_y 
+        let polynomial_q2 = &UnivariatePolynomial::from_coefficients_vec(evals_z1) 
             / &UnivariatePolynomial::from_coefficients_vec(vec![
-                -point.1.clone(),
+                -y.clone(),
                 P::ScalarField::one(),
             ]);
-        let mut quotient_polynomial_z1_y_coeffs = quotient_polynomial_y.coeffs.to_vec();
-        quotient_polynomial_z1_y_coeffs.resize(y_srs.len(), <P::ScalarField>::zero());
+        let mut coeffs_q2 = polynomial_q2.coeffs.to_vec();
+        coeffs_q2.resize(y_srs.len(), <P::ScalarField>::zero());
 
         let proof = (
-            P::G1::msm(&extended_powers, &extended_coeff).unwrap(), 
-            P::G1::msm(&y_srs, &quotient_polynomial_z1_y_coeffs).unwrap());
+            P::G1::msm(&xy_srs, &coeffs_q1).unwrap(), 
+            P::G1::msm(&y_srs, &coeffs_q2).unwrap());
         
         Ok(proof)
     }
