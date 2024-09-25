@@ -7,4 +7,5 @@ members = [
   "inner_products",
   "benches",
   "kzg",
+  "ipa",
 ]

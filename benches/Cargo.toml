@@ -6,6 +6,9 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[dependencies]
+merlin = "3.0.0"
+
 [dev-dependencies]
 ark-ec = { version = "0.4", features = [ "parallel" ] }
 ark-ff = { version = "0.4", features = [ "parallel" ] }
@@ -51,8 +54,8 @@ path = "benches/poly_commit.rs"
 harness = false
 
 [[bench]]
-name = "trivial_kzg"
-path = "benches/trivial_kzg_test.rs"
+name = "uni_trivial_kzg"
+path = "benches/uni_trivial_kzg.rs"
 harness = false
 
 [[bench]]
@@ -63,6 +66,11 @@ harness = false
 [[bench]]
 name = "biv_trivial_kzg"
 path = "benches/biv_trivial_kzg.rs"
+harness = false
+
+[[bench]]
+name = "biv_batch_kzg"
+path = "benches/biv_batch_kzg.rs"
 harness = false
 
 [[bench]]

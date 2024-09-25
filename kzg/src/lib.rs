@@ -6,6 +6,7 @@ pub mod batch_kzg;
 pub mod biv_trivial_kzg;
 pub mod biv_batch_kzg;
 pub mod transcript;
+pub mod helper;
 
 pub type Error = Box<dyn ErrorTrait>;
 

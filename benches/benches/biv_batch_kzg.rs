@@ -1,0 +1,158 @@
+use ark_bls12_381::Bls12_381;
+use ark_ec::pairing::Pairing;
+use ark_ff::{UniformRand, One};
+use my_kzg::biv_trivial_kzg::{BivariateKZG, BivariatePolynomial};
+use my_kzg::biv_batch_kzg::BivariateBatchKZG;
+use ark_poly::polynomial::{
+    univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial
+};
+
+use ark_std::rand::{rngs::StdRng, SeedableRng};
+
+use std::time::{Duration, Instant};
+use merlin::Transcript;
+
+fn main() {
+
+    const BIVARIATE_X_LOG_DEGREE: usize = 20;
+    const BIVARIATE_Y_LOG_DEGREE: usize = 7;
+    const POLYNOMIAL_NUMBER: usize = 4;
+    const X_POINT_NUMBER: usize = 2;
+    let log_x_degree = 1 << BIVARIATE_X_LOG_DEGREE - 1;
+    let log_y_degree = 1 << BIVARIATE_Y_LOG_DEGREE - 1;
+    let total_point_number = POLYNOMIAL_NUMBER * X_POINT_NUMBER;
+    
+    println!("Bivariate KZG, log_x_degree: {}, log_y_degree: {}, polynomial_number: {}, total_points: {}",
+        log_x_degree, log_y_degree, POLYNOMIAL_NUMBER, total_point_number);
+
+    let mut rng = StdRng::seed_from_u64(0u64);
+
+    // Setup
+    let setup_start = Instant::now();
+    let (g_alpha_powers, v_srs) =
+        BivariateKZG::<Bls12_381>::setup(&mut rng, log_x_degree, log_y_degree).unwrap();
+    let time = setup_start.elapsed().as_millis();
+    println!("Bivariate KZG setup time: {:} ms", time);
+
+    // Setup for batch
+    let setup_start = Instant::now();
+    let srs =
+        BivariateBatchKZG::<Bls12_381>::setup(&mut rng, log_x_degree, log_y_degree).unwrap();
+    let time = setup_start.elapsed().as_millis();
+    println!("Bivariate batch KZG setup time: {:} ms", time);
+
+    // Commit
+    let mut x_polynomials = Vec::new();
+    for _ in 0..log_y_degree + 1 {
+        let mut x_polynomial_coeffs = vec![];
+        for _ in 0..log_x_degree + 1 {
+            x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+        }
+        x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
+            &x_polynomial_coeffs,
+        ));
+    }
+    let bivariate_polynomial = BivariatePolynomial { x_polynomials };
+    let com_start = Instant::now();
+    let com = BivariateKZG::<Bls12_381>::commit(&g_alpha_powers, &bivariate_polynomial).unwrap();
+    let time = com_start.elapsed().as_millis();
+    println!("Bivariate KZG commi time, {:?} ms", time * POLYNOMIAL_NUMBER as u128);
+
+    // Commit for batch
+    let mut bivariate_polynomials = Vec::new();
+    for _ in 0..POLYNOMIAL_NUMBER {
+        let mut x_polynomials = Vec::new();
+        for _ in 0..log_y_degree + 1 {
+            let mut x_polynomial_coeffs = vec![];
+            for _ in 0..log_x_degree + 1 {
+                x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+            }
+            x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
+                &x_polynomial_coeffs,
+            ));
+        }
+        bivariate_polynomials.push (BivariatePolynomial { x_polynomials });
+    }
+
+    let com_start = Instant::now();
+    let coms = BivariateBatchKZG::<Bls12_381>::commit(&srs.0, &bivariate_polynomials).unwrap();
+    let time = com_start.elapsed().as_millis();
+    println!("Bivariate batch KZG commi time, {:?} ms", time);
+
+    // Open
+    let point = (UniformRand::rand(&mut rng), UniformRand::rand(&mut rng));
+    let eval = bivariate_polynomial.evaluate(&point);
+
+    let open_start = Instant::now();
+    let proof = BivariateKZG::<Bls12_381>::open(&g_alpha_powers, &bivariate_polynomial, &point).unwrap();
+    let time = open_start.elapsed().as_millis();
+    println!("Bivariate KZG open  time: {:?} ms", time * total_point_number as u128);
+
+    // Open for batch
+    let y_point = UniformRand::rand(&mut rng);
+    let mut x_points = Vec::new();
+    for i in 0..bivariate_polynomials.len() {
+        if i%2 == 1 {
+            // x_points.push(vec![UniformRand::rand(&mut rng)]);
+            x_points.push(vec![UniformRand::rand(&mut rng), UniformRand::rand(&mut rng)]);
+        }
+        else {
+            x_points.push(vec![UniformRand::rand(&mut rng), UniformRand::rand(&mut rng), UniformRand::rand(&mut rng)]);
+        }
+    }
+    let mut evals: Vec<Vec<<Bls12_381 as Pairing>::ScalarField>> = Vec::new();
+    for i in 0..POLYNOMIAL_NUMBER {
+        let mut eval_i = Vec::new();
+        for j in 0..x_points[i].len() {
+            let point = (x_points[i][j], y_point);
+            let eval = bivariate_polynomials[i].evaluate(&point);
+            eval_i.push(eval);
+        }
+        evals.push(eval_i);
+    }
+
+    let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
+    let open_start = Instant::now();
+    let proof_batch = BivariateBatchKZG::<Bls12_381>::open_at_same_y(
+        &srs.0,
+        &bivariate_polynomials,
+        &x_points,
+        &y_point,
+        &mut prover_transcript
+    )
+    .unwrap();
+    let time = open_start.elapsed().as_millis();
+    println!("Bivariate batch KZG open  time: {:?} ms", time);
+
+    // Proof size
+    let proof_size = size_of_val(&proof);
+    println!("Bivariate KZG proof size: {:?} bytes", proof_size * total_point_number);
+
+    // Proof size for batch
+    let proof_size_batch = (proof_batch.1.len() + 1) * size_of_val(&<Bls12_381 as Pairing>::ScalarField::one()) + 4 * size_of_val(&proof_batch.0);
+    println!("Bivariate batch KZG proof size: {:?} bytes", proof_size_batch);
+
+    // Verify
+    std::thread::sleep(Duration::from_millis(5000));
+    let verify_start = Instant::now();
+    for _ in 0..50 {
+        let is_valid =
+            BivariateKZG::<Bls12_381>::verify(&v_srs, &com, &point, &eval, &proof).unwrap();
+        assert!(is_valid);
+    }
+    let verify_time = verify_start.elapsed().as_millis() / 50;
+    println!("Bivariate KZG verif time: {:?} ms", verify_time * total_point_number as u128);
+
+    // Verify for batch
+    std::thread::sleep(Duration::from_millis(5000));
+    let verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
+    let verify_start = Instant::now();
+    for _ in 0..50 {
+        let is_valid =
+            BivariateBatchKZG::<Bls12_381>::verify_at_same_y(&srs.1, &coms, &x_points, &y_point, &evals, &proof_batch, &mut verifier_transcript.clone()).unwrap();
+        assert!(is_valid);
+    }
+    let verify_time = verify_start.elapsed().as_millis() / 50;
+    println!("Bivariate batch KZG verif time: {:?} ms", verify_time);
+}
+

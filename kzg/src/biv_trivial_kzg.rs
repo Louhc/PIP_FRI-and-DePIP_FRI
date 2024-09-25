@@ -173,10 +173,6 @@ impl<P: Pairing> BivariateKZG<P> {
         let right1 = P::pairing(proof.0.clone(), v_srs.h_alpha.clone() - v_srs.h * x);
         let right2 = P::pairing(proof.1.clone(), v_srs.h_beta.clone() - v_srs.h * y);
 
-        // println!("{}", left);
-        println!("right 1 is {}", right1);
-        println!("right 2 is {}", right2);
-
         Ok(left == right1 + right2)
     }
 }
