@@ -21,7 +21,6 @@ use crate::{transcript::ProofTranscript, Error};
 pub struct SRS<P: Pairing> {
     pub g_alpha_powers: Vec<P::G1>,
     pub h_beta_powers: Vec<P::G2>,
-    pub g_beta: P::G1,
     pub h_alpha: P::G2,
 }
 
@@ -29,7 +28,6 @@ pub struct SRS<P: Pairing> {
 pub struct VerifierSRS<P: Pairing> {
     pub g: P::G1,
     pub h: P::G2,
-    pub g_beta: P::G1,
     pub h_alpha: P::G2,
 }
 
@@ -40,7 +38,6 @@ impl<P: Pairing> SRS<P> {
         VerifierSRS {
             g: self.g_alpha_powers[0].clone(),
             h: self.h_beta_powers[0].clone(),
-            g_beta: self.g_beta.clone(),
             h_alpha: self.h_alpha.clone(),
         }
     }
@@ -78,7 +75,6 @@ impl<P: Pairing> BatchKZG<P> {
         degree: usize,
     ) -> Result<(Vec<P::G1Affine>, VerifierSRS<P>), Error> {
         let alpha = <P::ScalarField>::rand(rng);
-        let beta = <P::ScalarField>::rand(rng);
         let g = <P::G1>::generator();
         let h = <P::G2>::generator();
         let g_alpha_powers = structured_generators_scalar_power(degree + 1, &g, &alpha);
@@ -87,7 +83,6 @@ impl<P: Pairing> BatchKZG<P> {
             VerifierSRS {
                 g: g.clone(),
                 h: h.clone(),
-                g_beta: g * beta,
                 h_alpha: h * alpha,
             },
         ))

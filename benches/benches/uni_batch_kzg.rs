@@ -14,8 +14,8 @@ use merlin::Transcript;
 // This is the benchmark for univariate batch KZG on opening one point on multiple polynomials
 fn main() {
 
-    let log_degree = 10;
-    let poly_num = 10;
+    let log_degree = 12;
+    let poly_num = 4;
     let degree = (1 << log_degree) - 1;
     // let repeat: usize = 1;
     let mut rng = StdRng::seed_from_u64(0u64);
