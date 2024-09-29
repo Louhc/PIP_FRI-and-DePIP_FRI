@@ -9,6 +9,7 @@ use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
 use merlin::Transcript;
+use crate::trivial_kzg::VerifierSRS;
 
 use std::marker::PhantomData;
 
@@ -24,12 +25,12 @@ pub struct SRS<P: Pairing> {
     pub h_alpha: P::G2,
 }
 
-#[derive(Clone)]
-pub struct VerifierSRS<P: Pairing> {
-    pub g: P::G1,
-    pub h: P::G2,
-    pub h_alpha: P::G2,
-}
+// #[derive(Clone)]
+// pub struct VerifierSRS<P: Pairing> {
+//     pub g: P::G1,
+//     pub h: P::G2,
+//     pub h_alpha: P::G2,
+// }
 
 //TODO: Change SRS to return reference iterator - requires changes to TIPA and GIPA signatures
 impl<P: Pairing> SRS<P> {

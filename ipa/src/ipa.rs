@@ -1,11 +1,10 @@
-// use ark_ff::{Zero, One};
 use ark_poly::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, EvaluationDomain,
-    GeneralEvaluationDomain, Polynomial,
+    GeneralEvaluationDomain, Polynomial, Evaluations
 };
-use std::{marker::PhantomData, time::Instant};
+use std::marker::PhantomData;
 use ark_ec::pairing::Pairing;
-use my_kzg::{batch_kzg::{BatchKZG, VerifierSRS}, transcript::ProofTranscript, trivial_kzg::KZG};
+use my_kzg::{batch_kzg::BatchKZG, transcript::ProofTranscript, trivial_kzg::{KZG, VerifierSRS}};
 use crate::Error;
 use crate::sumcheck::SUMCHECK;
 use merlin::Transcript;
@@ -141,17 +140,16 @@ impl<P: Pairing> IPA<P> {
         let left =  evals[0] * evals[1];
         let right = *point * evals[2] / constant_term + *sum / domain.size_as_field_element() + z_h_eval * evals[3];
         let check1 = left == right;
+        assert!(check1);
 
-        // let check2_start = Instant::now();
         let mut coms = vec![*com_left, *com_right];
         for i in 0..helper_coms.len() {
             coms.push(helper_coms[i]);
         }
         let check2 = BatchKZG::<P>::verify(&v_srs, &coms, &point, &evals, &kzg_proof, transcript).unwrap();
         assert!(check2);
-
         assert_eq!(proof.0.len(), 4);
-
+        
         Ok(check1 && check2)
     }
 
@@ -213,22 +211,20 @@ impl<P: Pairing> IPA<P> {
             transcript, b"generate challenge u to eliminate ldt");
         
         let (g_u, h) = SUMCHECK::<P>::get_g_mul_u_and_h(&polynomial_target, &u, &sum, &domain);
+        // assert_eq!(g_u.degree(), domain.size() - 1);
         let helper_polynomials = vec![g_u, h];
         let helper_coms = BatchKZG::<P>::commit(&powers, &helper_polynomials).unwrap();
 
         // generate alpha using fiat-shamir
-        slice_vector = vec![com_left.clone(), com_right.clone()];
         for i in 0..helper_coms.len() {
-            slice_vector.push(helper_coms[i].clone());
+            slice_vector.push(helper_coms[i]);
         }
         let slice: &[P::G1] = &slice_vector;
         <Transcript as ProofTranscript<P>>::append_points(transcript, b"add commitments", slice);
         let alpha = <Transcript as ProofTranscript<P>>::challenge_scalar(
             transcript, b"generate challenge alpha for evaluation");
 
-        let slice_time = Instant::now();
         let proof = IPA::<P>::prove(&powers, &polynomial_left, &polynomial_right, &helper_polynomials, &alpha, transcript).unwrap();
-        println!("slice time: {:?} ms", slice_time.elapsed().as_millis());
         Ok(proof)
     }
 
@@ -267,9 +263,8 @@ impl<P: Pairing> IPA<P> {
         let u = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"generate challenge u to eliminate ldt");
 
         let helper_coms = proof.1.clone();
-        slice_vector = vec![com_left.clone(), com_right.clone()];
         for i in 0..helper_coms.len() {
-            slice_vector.push(helper_coms[i].clone());
+            slice_vector.push(helper_coms[i]);
         }
         let slice: &[P::G1] = &slice_vector;
         <Transcript as ProofTranscript<P>>::append_points(transcript, b"add commitments", slice);
@@ -291,36 +286,27 @@ impl<P: Pairing> IPA<P> {
         assert_eq!(domain.size(), vector_left.len());
 
         // generate the polynomials f1(x) and f2(x)
-        let time = Instant::now();
-        let mut coeffs_left = vector_left.clone();
-        
-        domain.ifft_in_place::<P::ScalarField>(&mut coeffs_left);
-        let polynomial_left = UnivariatePolynomial::from_coefficients_vec(coeffs_left);
-        let mut coeffs_right = vector_right.clone();
-        domain.ifft_in_place::<P::ScalarField>(&mut coeffs_right);
-        let polynomial_right = UnivariatePolynomial::from_coefficients_vec(coeffs_right);
-        println!("time1: {:?} ms", time.elapsed().as_millis());
+        let coeffs_left = vector_left.clone();
+        let evals_left = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(coeffs_left, *domain);
+        let polynomial_left = evals_left.interpolate_by_ref();
+        let coeffs_right = vector_right.clone();
+        // domain.ifft_in_place::<P::ScalarField>(&mut coeffs_right);
+        let evals_right = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(coeffs_right, *domain);
+        let polynomial_right = evals_right.interpolate();
+        // let polynomial_right = UnivariatePolynomial::from_coefficients_vec(coeffs_right.clone());
 
         // generate the commitment of f1 and f2
-        println!("polynomial size is {}, {}", polynomial_left.degree(), polynomial_right.degree());
-        let time = Instant::now();
         let (com_left, com_right) = IPA::<P>::ipa_commit(&powers, &polynomial_left, &polynomial_right).unwrap();
-        println!("time2: {:?} ms", time.elapsed().as_millis());
 
         // compute the target polynomial
-        let time = Instant::now();
         let ifft_domain = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(domain.size() * 2).unwrap();
         let evals_left = polynomial_left.clone().evaluate_over_domain(ifft_domain);
         let evals_right = polynomial_right.clone().evaluate_over_domain(ifft_domain);
         let evals_target = &evals_left * &evals_right;
         let polynomial_target = evals_target.interpolate();
-        println!("time3: {:?} ms", time.elapsed().as_millis());
 
         // generate the proof
-        let time = Instant::now();
         let proof = IPA::<P>::sumcheck_prove(&powers, &polynomial_left, &polynomial_right, &polynomial_target, &com_left, &com_right, &inner_product, &domain, transcript).unwrap();
-        println!("time4: {:?} ms", time.elapsed().as_millis());
-
         Ok(((com_left, com_right), proof))
     }
 
@@ -336,41 +322,27 @@ impl<P: Pairing> IPA<P> {
         assert_eq!(domain.size(), vector_left.len());
 
         // generate the polynomials f1(x) and f2(x)
-        let time = Instant::now();
         let coeffs_left = vector_left.clone();
         let polynomial_left = UnivariatePolynomial::from_coefficients_vec(coeffs_left);
-        let mut coeffs_right = Vec::new();
-        for i in 0..vector_right.len() {
-            if i == 0 {
-                coeffs_right.push(vector_right[0]);
-            }
-            else {
-                coeffs_right.push(vector_right[vector_right.len()-i]);
-            }
-        }
+        let mut coeffs_right = vec![vector_right[0].clone()];
+        let mut rest = vector_right.clone().split_off(1);
+        rest.reverse();
+        coeffs_right.extend(rest);
         let polynomial_right = UnivariatePolynomial::from_coefficients_vec(coeffs_right);
-        println!("time1: {:?} ms", time.elapsed().as_millis());
 
         // generate the commitment of f1 and f2
-        println!("polynomial size is {}, {}", polynomial_left.degree(), polynomial_right.degree());
-        let time = Instant::now();
         let (com_left, com_right) = IPA::<P>::ipa_commit(&powers, &polynomial_left, &polynomial_right).unwrap();
-        println!("time2: {:?} ms", time.elapsed().as_millis());
 
         // compute the target polynomial
-        let time = Instant::now();
         let ifft_domain = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(domain.size() * 2).unwrap();
         let evals_left = polynomial_left.clone().evaluate_over_domain(ifft_domain);
         let evals_right = polynomial_right.clone().evaluate_over_domain(ifft_domain);
         let evals_target = &evals_left * &evals_right;
         let polynomial_target = evals_target.interpolate();
-        println!("time3: {:?} ms", time.elapsed().as_millis());
 
         // generate the proof
-        let time = Instant::now();
         let sum = *inner_product * domain.size_as_field_element();
         let proof = IPA::<P>::sumcheck_no_ldt_prove(&powers, &polynomial_left, &polynomial_right, &polynomial_target, &com_left, &com_right, &sum, &domain, transcript).unwrap();
-        println!("time4: {:?} ms", time.elapsed().as_millis());
 
         Ok(((com_left, com_right), proof))
     }
@@ -410,28 +382,6 @@ impl<P: Pairing> IPA<P> {
         Ok(IPA::<P>::sumcheck_verify(&v_srs, &com_left, &com_right, &domain, &inner_product, &proof.1, transcript).unwrap())
     }
 
-
-    // pub fn ipa_commit (
-    //     powers: &[P::G1Affine],
-    //     vector_left: &Vec<P::ScalarField>,
-    //     vector_right: &Vec<P::ScalarField>,
-    //     domain: &GeneralEvaluationDomain<P::ScalarField>,
-    // ) -> Result<(P::G1, P::G1), Error> {
-    //     assert_eq!(vector_left.len(), vector_right.len());
-    //     assert_eq!(domain.size(), vector_left.len());
-
-    //     let coeffs_left = vector_left.clone();
-    //     let polynomial_left = UnivariatePolynomial::from_coefficients_vec(coeffs_left);
-
-    //     let coeffs_right = vector_right.clone();
-    //     let polynomial_right = UnivariatePolynomial::from_coefficients_vec(coeffs_right);
-
-    //     let com_left = KZG::<P>::commit(&powers, &polynomial_left).unwrap();
-    //     let com_right = KZG::<P>::commit(&powers, &polynomial_right).unwrap();
-
-    //     Ok((com_left, com_right))
-    // }
-
 }
 
 
@@ -451,17 +401,24 @@ mod tests{
     // use crate::sumcheck::SUMCHECK;
     use my_kzg::batch_kzg::BatchKZG;
     use merlin::Transcript;
-    use ark_ff::UniformRand;
+    use ark_ff::{
+        UniformRand,
+        // One
+        };
 
     #[test]
     fn ipa_test() {
-        let degree: usize = (1 << 12) - 1;
+        let degree: usize = (1 << 2) - 1;
         let size = degree + 1;
         let mut rng = StdRng::seed_from_u64(0u64);
         let domain = 
             <GeneralEvaluationDomain<MyField> as EvaluationDomain<MyField>>::new(size).unwrap();
-        let vector_left = vec![MyField::rand(&mut rng); size];
-        let vector_right = vec![MyField::rand(&mut rng); size];
+        let mut vector_left = Vec::new();
+        let mut vector_right = Vec::new();
+        for _ in 0..size {
+            vector_left.push(MyField::rand(&mut rng));
+            vector_right.push(MyField::rand(&mut rng));
+        }
         let inner_product = vector_left.iter().zip(vector_right.iter()).map(|(left, right)| left * right).sum();
         let (g_alpha_powers, v_srs) = BatchKZG::<Bls12_381>::setup(&mut rng, degree).unwrap();
 
@@ -517,8 +474,12 @@ mod tests{
         let mut rng = StdRng::seed_from_u64(0u64);
         let domain = 
             <GeneralEvaluationDomain<MyField> as EvaluationDomain<MyField>>::new(size).unwrap();
-        let vector_left = vec![MyField::rand(&mut rng); size];
-        let vector_right = vec![MyField::rand(&mut rng); size];
+        let mut vector_left = Vec::new();
+        let mut vector_right = Vec::new();
+        for _ in 0..size {
+            vector_left.push(MyField::rand(&mut rng));
+            vector_right.push(MyField::rand(&mut rng));
+        }
         let inner_product = vector_left.iter().zip(vector_right.iter()).map(|(left, right)| left * right).sum();
         let (g_alpha_powers, v_srs) = BatchKZG::<Bls12_381>::setup(&mut rng, degree).unwrap();
 

@@ -5,7 +5,7 @@ use ark_poly::{
 };
 use std::marker::PhantomData;
 use ark_ec::pairing::Pairing;
-use my_kzg::{batch_kzg::{BatchKZG, VerifierSRS}, transcript::ProofTranscript, trivial_kzg::KZG};
+use my_kzg::{batch_kzg::BatchKZG, transcript::ProofTranscript, trivial_kzg::{KZG, VerifierSRS}};
 use crate::Error;
 use merlin::Transcript;
 
@@ -38,7 +38,11 @@ impl<P: Pairing> SUMCHECK<P> {
         let (h, reminder_polynomial) = polynomial.clone().divide_by_vanishing_poly(*domain).unwrap();
         let constant_term = *sum / domain.size_as_field_element();
         let g_prime = reminder_polynomial + UnivariatePolynomial::from_coefficients_vec(vec![-constant_term]);
-        let g = &g_prime / &UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero(), P::ScalarField::one()]);
+        assert_eq!(g_prime.coeffs[0], P::ScalarField::zero());
+        let mut coeffs_g = g_prime.coeffs.clone();
+        coeffs_g.remove(0);
+        // let g = &g_prime / &UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero(), P::ScalarField::one()]);
+        let g = UnivariatePolynomial::from_coefficients_vec(coeffs_g);
 
         (g, h, g_prime)
     }
@@ -53,7 +57,12 @@ impl<P: Pairing> SUMCHECK<P> {
         let (h, reminder_polynomial) = polynomial.clone().divide_by_vanishing_poly(*domain).unwrap();
         let constant_term = *sum / domain.size_as_field_element();
         let g_prime = reminder_polynomial + UnivariatePolynomial::from_coefficients_vec(vec![-constant_term]);
-        let g = &g_prime / &UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero(), P::ScalarField::one()]);
+        // Check the correctness of sum, the constant coefficient of g_prime should be zero
+        assert_eq!(g_prime.coeffs[0], P::ScalarField::zero());
+        let mut coeffs_g = g_prime.coeffs.clone();
+        coeffs_g.remove(0);
+        // let g = &g_prime / &UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero(), P::ScalarField::one()]);
+        let g = UnivariatePolynomial::from_coefficients_vec(coeffs_g);
         let g_u = &g * &UnivariatePolynomial::from_coefficients_vec(vec![-u, P::ScalarField::one()]);
 
         (g_u, h)

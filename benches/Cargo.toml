@@ -20,6 +20,7 @@ ark-bls12-381 = { version = "0.4", features = [ "curve" ] }
 ark-ed-on-bls12-381 = "0.4"
 ark-bls12-377 = { version = "0.4", features = [ "curve", "r1cs" ] }
 ark-bw6-761 = "0.4"
+criterion = "0.5.0"
 
 ark-relations = "0.4"
 ark-r1cs-std = "0.4"
