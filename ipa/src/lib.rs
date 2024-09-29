@@ -1,6 +1,5 @@
 #![deny(warnings, unused, future_incompatible, nonstandard_style)]
 
-pub mod sumcheck;
 pub mod ipa;
 pub mod ipa_from_laurent;
 

@@ -8,6 +8,7 @@ use ark_ff::{One, UniformRand, Zero, PrimeField};
 use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
+use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 
 use std::marker::PhantomData;
 
@@ -74,6 +75,30 @@ pub struct KZG<P: Pairing> {
 
 // Simple implementation of KZG polynomial commitment scheme
 impl<P: Pairing> KZG<P> {
+    pub fn structured_generators_lagrange(
+        num: usize,
+        g: &P::G1,
+        s: &P::ScalarField,
+    ) -> Vec<P::G1> {
+        assert!(num > 0);
+        assert!(num.is_power_of_two());
+        let domain = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(num).unwrap();
+        let evals_of_lagrange = EvaluationDomain::evaluate_all_lagrange_coefficients(&domain, *s);
+        // let mut pow_s = G::ScalarField::one();
+        // for _ in 0..num {
+        //     powers_of_scalar.push(pow_s);
+        //     pow_s *= s;
+        // }
+    
+        let window_size = FixedBase::get_mul_window_size(num);
+    
+        let scalar_bits = P::ScalarField::MODULUS_BIT_SIZE as usize;
+        let g_table = FixedBase::get_window_table(scalar_bits, window_size, g.clone());
+        let powers_of_g = FixedBase::msm::<P::G1>(scalar_bits, window_size, &g_table, &evals_of_lagrange);
+        powers_of_g
+    }
+
+
     pub fn setup<R: Rng>(
         rng: &mut R,
         degree: usize,

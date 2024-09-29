@@ -6,8 +6,8 @@ use std::marker::PhantomData;
 use ark_ec::pairing::Pairing;
 use my_kzg::{batch_kzg::BatchKZG, transcript::ProofTranscript, trivial_kzg::{KZG, VerifierSRS}};
 use crate::Error;
-use crate::sumcheck::SUMCHECK;
 use merlin::Transcript;
+use ark_ff::{Zero, One};
 
 
 pub struct IPA<P: Pairing> {
@@ -18,46 +18,55 @@ pub struct IPA<P: Pairing> {
 // The idea is postpone opening commitments until the last
 impl<P: Pairing> IPA<P> {
 
-    // pub fn get_sum_on_domain (
-    //     polynomial: &UnivariatePolynomial<P::ScalarField>,
-    //     domain: &GeneralEvaluationDomain<P::ScalarField>,
-    // ) -> P::ScalarField {
-    //     let evals = polynomial.clone().evaluate_over_domain(*domain);
-    //     let mut sum = P::ScalarField::zero();
-    //     for i in 0..evals.evals.len() {
-    //         sum += evals.evals[i];
-    //     }
-    //     sum
-    // }
+    pub fn get_sum_on_domain (
+        polynomial: &UnivariatePolynomial<P::ScalarField>,
+        domain: &GeneralEvaluationDomain<P::ScalarField>,
+    ) -> P::ScalarField {
+        let evals = polynomial.clone().evaluate_over_domain(*domain);
+        let mut sum = P::ScalarField::zero();
+        for i in 0..evals.evals.len() {
+            sum += evals.evals[i];
+        }
+        sum
+    }
 
-    // pub fn get_g_h_g_prime (
-    //     polynomial: &UnivariatePolynomial<P::ScalarField>,
-    //     sum: &P::ScalarField,
-    //     domain: &GeneralEvaluationDomain<P::ScalarField>,
-    // ) -> (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
-    //     let (h, reminder_polynomial) = polynomial.clone().divide_by_vanishing_poly(*domain).unwrap();
-    //     let constant_term = *sum / domain.size_as_field_element();
-    //     let g_prime = reminder_polynomial + UnivariatePolynomial::from_coefficients_vec(vec![-constant_term]);
-    //     let g = &g_prime / &UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero(), P::ScalarField::one()]);
+    pub fn get_g_h_g_prime (
+        polynomial: &UnivariatePolynomial<P::ScalarField>,
+        sum: &P::ScalarField,
+        domain: &GeneralEvaluationDomain<P::ScalarField>,
+    ) -> (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
+        let (h, reminder_polynomial) = polynomial.clone().divide_by_vanishing_poly(*domain).unwrap();
+        let constant_term = *sum / domain.size_as_field_element();
+        let g_prime = reminder_polynomial + UnivariatePolynomial::from_coefficients_vec(vec![-constant_term]);
+        assert_eq!(g_prime.coeffs[0], P::ScalarField::zero());
+        let mut coeffs_g = g_prime.coeffs.clone();
+        coeffs_g.remove(0);
+        // let g = &g_prime / &UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero(), P::ScalarField::one()]);
+        let g = UnivariatePolynomial::from_coefficients_vec(coeffs_g);
 
-    //     (g, h, g_prime)
-    // }
+        (g, h, g_prime)
+    }
 
-    // pub fn get_g_mul_u_and_h (
-    //     polynomial: &UnivariatePolynomial<P::ScalarField>,
-    //     challenge: &P::ScalarField,
-    //     sum: &P::ScalarField,
-    //     domain: &GeneralEvaluationDomain<P::ScalarField>,
-    // ) -> (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
-    //     let u = *challenge;
-    //     let (h, reminder_polynomial) = polynomial.clone().divide_by_vanishing_poly(*domain).unwrap();
-    //     let constant_term = *sum / domain.size_as_field_element();
-    //     let g_prime = reminder_polynomial + UnivariatePolynomial::from_coefficients_vec(vec![-constant_term]);
-    //     let g = &g_prime / &UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero(), P::ScalarField::one()]);
-    //     let g_u = &g * &UnivariatePolynomial::from_coefficients_vec(vec![-u, P::ScalarField::one()]);
+    pub fn get_g_mul_u_and_h (
+        polynomial: &UnivariatePolynomial<P::ScalarField>,
+        challenge: &P::ScalarField,
+        sum: &P::ScalarField,
+        domain: &GeneralEvaluationDomain<P::ScalarField>,
+    ) -> (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
+        let u = *challenge;
+        let (h, reminder_polynomial) = polynomial.clone().divide_by_vanishing_poly(*domain).unwrap();
+        let constant_term = *sum / domain.size_as_field_element();
+        let g_prime = reminder_polynomial + UnivariatePolynomial::from_coefficients_vec(vec![-constant_term]);
+        // Check the correctness of sum, the constant coefficient of g_prime should be zero
+        assert_eq!(g_prime.coeffs[0], P::ScalarField::zero());
+        let mut coeffs_g = g_prime.coeffs.clone();
+        coeffs_g.remove(0);
+        // let g = &g_prime / &UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero(), P::ScalarField::one()]);
+        let g = UnivariatePolynomial::from_coefficients_vec(coeffs_g);
+        let g_u = &g * &UnivariatePolynomial::from_coefficients_vec(vec![-u, P::ScalarField::one()]);
 
-    //     (g_u, h)
-    // }
+        (g_u, h)
+    }
 
      // generate the commitments and evaluations of f1,f2,g,h,g_prime,gu, as well as KZG proofs
      pub fn prove (
@@ -175,7 +184,7 @@ impl<P: Pairing> IPA<P> {
         domain: &GeneralEvaluationDomain<P::ScalarField>,
         transcript: &mut Transcript,
     ) -> Result<(Vec<P::ScalarField>, Vec<P::G1>, P::G1), Error> {
-        let (g, h, g_prime) = SUMCHECK::<P>::get_g_h_g_prime(&polynomial_target, &sum, &domain);
+        let (g, h, g_prime) = Self::get_g_h_g_prime(&polynomial_target, &sum, &domain);
         let helper_polynomials = vec![g, h, g_prime];
         let helper_coms = BatchKZG::<P>::commit(&powers, &helper_polynomials).unwrap();
 
@@ -210,7 +219,7 @@ impl<P: Pairing> IPA<P> {
         let u = <Transcript as ProofTranscript<P>>::challenge_scalar(
             transcript, b"generate challenge u to eliminate ldt");
         
-        let (g_u, h) = SUMCHECK::<P>::get_g_mul_u_and_h(&polynomial_target, &u, &sum, &domain);
+        let (g_u, h) = Self::get_g_mul_u_and_h(&polynomial_target, &u, &sum, &domain);
         // assert_eq!(g_u.degree(), domain.size() - 1);
         let helper_polynomials = vec![g_u, h];
         let helper_coms = BatchKZG::<P>::commit(&powers, &helper_polynomials).unwrap();
