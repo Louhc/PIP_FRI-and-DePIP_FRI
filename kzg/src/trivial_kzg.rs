@@ -4,14 +4,14 @@ use ark_ec::{
     CurveGroup, Group,
     scalar_mul::fixed_base::FixedBase,
 };
-use ark_ff::{One, UniformRand, Zero, PrimeField};
+use ark_ff::{batch_inversion, Field, One, PrimeField, UniformRand, Zero};
 use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
-use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
+use ark_poly::{EvaluationDomain, Evaluations, GeneralEvaluationDomain};
 
 use std::marker::PhantomData;
-
+use std::time::Instant;
 use ark_std::rand::Rng;
 // use digest::Digest;
 
@@ -77,13 +77,14 @@ pub struct KZG<P: Pairing> {
 impl<P: Pairing> KZG<P> {
     pub fn structured_generators_lagrange(
         num: usize,
+        domain: &GeneralEvaluationDomain<P::ScalarField>,
         g: &P::G1,
         s: &P::ScalarField,
     ) -> Vec<P::G1> {
         assert!(num > 0);
         assert!(num.is_power_of_two());
-        let domain = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(num).unwrap();
-        let evals_of_lagrange = EvaluationDomain::evaluate_all_lagrange_coefficients(&domain, *s);
+        // let domain = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(num).unwrap();
+        let evals_of_lagrange = EvaluationDomain::evaluate_all_lagrange_coefficients(&domain.clone(), *s);
         // let mut pow_s = G::ScalarField::one();
         // for _ in 0..num {
         //     powers_of_scalar.push(pow_s);
@@ -98,7 +99,6 @@ impl<P: Pairing> KZG<P> {
         powers_of_g
     }
 
-
     pub fn setup<R: Rng>(
         rng: &mut R,
         degree: usize,
@@ -107,6 +107,27 @@ impl<P: Pairing> KZG<P> {
         let g = <P::G1>::generator();
         let h = <P::G2>::generator();
         let g_alpha_powers = structured_generators_scalar_power(degree + 1, &g, &alpha);
+        Ok((
+            <P as Pairing>::G1::normalize_batch(&g_alpha_powers),
+            VerifierSRS {
+                g: g.clone(),
+                h: h.clone(),
+                h_alpha: h * alpha,
+            },
+        ))
+    }
+
+    pub fn setup_lagrange<R: Rng>(
+        rng: &mut R,
+        degree: usize,
+        domain: &GeneralEvaluationDomain<P::ScalarField>,
+    ) -> Result<(Vec<P::G1Affine>, VerifierSRS<P>), Error> {
+        // let alpha = <P::ScalarField>::rand(rng);
+        let alpha = EvaluationDomain::sample_element_outside_domain(domain, rng);
+        let g = <P::G1>::generator();
+        let h = <P::G2>::generator();
+        assert!((degree+1).is_power_of_two());
+        let g_alpha_powers = Self::structured_generators_lagrange(degree + 1, &domain,&g, &alpha);
         Ok((
             <P as Pairing>::G1::normalize_batch(&g_alpha_powers),
             VerifierSRS {
@@ -129,6 +150,18 @@ impl<P: Pairing> KZG<P> {
         Ok(P::G1::msm(powers, &coeffs).unwrap())
     }
 
+    pub fn commit_lagrange(
+        powers: &[P::G1Affine],
+        evals: &Evaluations<P::ScalarField>,
+    ) -> Result<P::G1, Error> {
+        assert!(powers.len() == evals.evals.len());
+        let mut evals = evals.evals.clone();
+        evals.resize(powers.len(), <P::ScalarField>::zero());
+
+        // Can unwrap because coeffs.len() is guaranteed to be equal to powers.len()
+        Ok(P::G1::msm(powers, &evals).unwrap())
+    }
+
     pub fn open(
         powers: &[P::G1Affine],
         polynomial: &UnivariatePolynomial<P::ScalarField>,
@@ -148,6 +181,62 @@ impl<P: Pairing> KZG<P> {
         // Can unwrap because quotient_coeffs.len() is guaranteed to be equal to powers.len()
         Ok(P::G1::msm(powers, &quotient_coeffs).unwrap())
     }
+
+    pub fn open_lagrange(
+        powers: &[P::G1Affine],
+        evals: &Evaluations<P::ScalarField>,
+        point: &P::ScalarField,
+        domain: &GeneralEvaluationDomain<P::ScalarField>,
+    ) -> Result<P::G1, Error> {
+        assert!(powers.len() == evals.evals.len());
+        let power = evals.evals.len();
+        assert!(power.is_power_of_two());
+
+        let time = Instant::now();
+        let power_log = power.trailing_zeros();
+        let field_two = <P::ScalarField>::one() + <P::ScalarField>::one();
+        let power_as_field = field_two.pow([power_log as u64]);
+        println!("compute power as field: {:?}", time.elapsed());
+
+        // Make use of the batch inversion function
+        let g = domain.group_gen();
+        let mut divider_vec = Vec::new();
+        let mut g_power = <P::ScalarField>::one();
+        for _ in 0..evals.evals.len() {
+            let cur_term = *point - g_power;
+            divider_vec.push(cur_term);
+            g_power *= g;
+        }
+        batch_inversion(divider_vec.as_mut_slice());
+        assert_eq!(divider_vec[0], (*point - P::ScalarField::one()).inverse().unwrap());
+        assert_eq!(divider_vec[1], (*point - g).inverse().unwrap());
+
+        // Compute P(z) = (z^power - 1) / power \cdot \sum P(g^i) * g^i / (z - g^i)
+        let mut constant_term = point.pow([power as u64]) - P::ScalarField::one();
+        constant_term *= power_as_field.inverse().unwrap();
+
+        let mut g_power = <P::ScalarField>::one();
+        let mut sum = P::ScalarField::zero();
+        for i in 0..evals.evals.len() {
+            let current = evals.evals[i] * g_power * divider_vec[i];
+            sum += current;
+            g_power *= g;
+        }
+        let p_z = constant_term * sum;
+
+        // pi = (P(g^i) - P(z)) / (g^i - z) \cdot G
+        let mut quotient_evals = Vec::new();
+        for i in 0..evals.evals.len() {
+            // compute quotient_evals
+            let quotient_eval = (p_z - evals.evals[i]) * divider_vec[i];
+            quotient_evals.push(quotient_eval);
+        }
+        assert_eq!(quotient_evals.len(), powers.len());
+
+        // Can unwrap because quotient_coeffs.len() is guaranteed to be equal to powers.len()
+        Ok(P::G1::msm(powers, &quotient_evals).unwrap())
+    }
+
 
     pub fn verify(
         v_srs: &VerifierSRS<P>,
@@ -170,9 +259,9 @@ mod tests {
     use ark_ff::UniformRand;
     use crate::trivial_kzg::KZG;
 
-    use ark_poly::polynomial::{
-        univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
-    };
+    use ark_poly::{polynomial::{
+        univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial
+    }, GeneralEvaluationDomain, EvaluationDomain};
     use ark_ec::pairing::Pairing;
 
     use std::{io::stdout, time::{Duration, Instant}};
@@ -199,7 +288,7 @@ mod tests {
             .unwrap();
         csv_writer.flush().unwrap();
 
-        let log_degree = 10;
+        let log_degree = 20;
         let degree = (1 << log_degree) - 1;
         // let repeat: usize = 1;
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -207,7 +296,7 @@ mod tests {
         let setup_start = Instant::now();
         let (g_alpha_powers, v_srs) = KZG::<Bls12_381>::setup(&mut rng, degree).unwrap();
         let time = setup_start.elapsed().as_millis();
-        println!("KZG setup time, {:} log_degree: {:} ", degree, time);
+        println!("KZG setup time, {:} log_degree: {:} ms", degree, time);
         csv_writer
                 .write_record(&[
                     1.to_string(),
@@ -243,16 +332,54 @@ mod tests {
             assert!(is_valid);
         }
         let verify_time = verify_start.elapsed().as_millis() / 50;
-        println!("KZG verif time, {:} log_degree: {:?}", log_degree, verify_time);
+        println!("KZG verif time, {:} log_degree: {:?} ms", log_degree, verify_time);
+    }
+
+    #[test]
+    fn kzg_lagrange_test() {
+
+        let mut csv_writer = Writer::from_writer(stdout());
         csv_writer
-        .write_record(&[
-            1.to_string(),
-            "kzg".to_string(),
-            "verify".to_string(),
-            degree.to_string(),
-            verify_time.to_string(),
-        ])
-        .unwrap();
+            .write_record(&["trial", "scheme", "function", "degree", "time"])
+            .unwrap();
         csv_writer.flush().unwrap();
+
+        let log_degree = 10;
+        let degree = (1 << log_degree) - 1;
+        let domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(1 << log_degree).unwrap();
+        // let repeat: usize = 1;
+        let mut rng = StdRng::seed_from_u64(0u64);
+
+        let setup_start = Instant::now();
+        let (g_alpha_powers, v_srs) = KZG::<Bls12_381>::setup_lagrange(&mut rng, degree, &domain).unwrap();
+        println!("KZG setup time, {:} log_degree: {:?} ", degree, setup_start.elapsed());
+
+        // for _ in 0..repeat {
+        let polynomial = UnivariatePolynomial::rand(degree, &mut rng);
+        let evals = polynomial.clone().evaluate_over_domain(domain);
+        let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+        let eval = polynomial.evaluate(&point);
+
+        // Commit
+        let com_start = Instant::now();
+        let com = KZG::<Bls12_381>::commit_lagrange(&g_alpha_powers, &evals).unwrap();
+        println!("KZG commi time, {:} log_degree: {:?} ", log_degree, com_start.elapsed());
+
+        // Open
+        let open_start = Instant::now();
+        let proof = KZG::<Bls12_381>::open_lagrange(&g_alpha_powers, &evals, &point, &domain).unwrap();
+        println!("KZG open  time, {:} log_degree: {:?} ", log_degree, open_start.elapsed());
+
+        // Verify
+        std::thread::sleep(Duration::from_millis(5000));
+        let verify_start = Instant::now();
+        for _ in 0..50 {
+            let is_valid =
+                KZG::<Bls12_381>::verify(&v_srs, &com, &point, &eval, &proof).unwrap();
+            assert!(is_valid);
+        }
+        let verify_time = verify_start.elapsed().as_millis() / 50;
+        println!("KZG verif time, {:} log_degree: {:?}ms", log_degree, verify_time);
     }
 }
+
