@@ -11,10 +11,11 @@ use ark_std::rand::{rngs::StdRng, SeedableRng};
 
 use std::time::{Duration, Instant};
 use merlin::Transcript;
+use my_kzg::transcript::ProofTranscript;
 
 fn main() {
 
-    const BIVARIATE_X_LOG_DEGREE: usize = 17;
+    const BIVARIATE_X_LOG_DEGREE: usize = 10;
     const BIVARIATE_Y_LOG_DEGREE: usize = 7;
     const POLYNOMIAL_NUMBER: usize = 4;
     const X_POINT_NUMBER: usize = 2;
@@ -129,14 +130,16 @@ fn main() {
 
     let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
     let open_start = Instant::now();
+    let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+            &mut prover_transcript, b"combined_polynomial_x_beta");
     let proof_batch = BivariateBatchKZG::<Bls12_381>::open_at_same_y(
         &srs.0,
         &bivariate_polynomials,
         &x_points,
         &y_point,
-        &mut prover_transcript
-    )
-    .unwrap();
+        &mut prover_transcript,
+        &gamma
+    ).unwrap();
     let time = open_start.elapsed().as_millis();
     println!("Bivariate batch KZG open  time: {:?} ms", time);
 
@@ -146,11 +149,13 @@ fn main() {
 
     // Verify for batch
     std::thread::sleep(Duration::from_millis(5000));
-    let verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
     let verify_start = Instant::now();
     for _ in 0..50 {
+        let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
+        let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+            &mut verifier_transcript, b"combined_polynomial_x_beta");
         let is_valid =
-            BivariateBatchKZG::<Bls12_381>::verify_at_same_y(&srs.1, &coms, &x_points, &y_point, &evals, &proof_batch, &mut verifier_transcript.clone()).unwrap();
+            BivariateBatchKZG::<Bls12_381>::verify_at_same_y(&srs.1, &coms, &x_points, &y_point, &evals, &proof_batch, &mut verifier_transcript, &gamma).unwrap();
         assert!(is_valid);
     }
     let verify_time = verify_start.elapsed().as_millis() / 50;
@@ -166,6 +171,8 @@ fn main() {
     // Com for batch lagrange
     let coms = BivariateBatchKZG::<Bls12_381>::commit(&srs.0, &bivariate_polynomials).unwrap();
     let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
+    let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+        &mut prover_transcript, b"combined_polynomial_x_beta");
 
     // Open for batch lagrange
     let y_point = UniformRand::rand(&mut rng);
@@ -187,7 +194,8 @@ fn main() {
         &x_points,
         &y_point,
         &domain,
-        &mut prover_transcript
+        &mut prover_transcript,
+        &gamma
     )
     .unwrap();
     let time = open_start.elapsed().as_millis();
@@ -210,11 +218,13 @@ fn main() {
 
     // Verify for batch lagrange
     std::thread::sleep(Duration::from_millis(5000));
-    let verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
+    let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
+    let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+        &mut verifier_transcript, b"combined_polynomial_x_beta");
     let verify_start = Instant::now();
     for _ in 0..50 {
         let is_valid =
-            BivariateBatchKZG::<Bls12_381>::verify_at_same_y(&srs.1, &coms, &x_points, &y_point, &evals, &proof_batch, &mut verifier_transcript.clone()).unwrap();
+            BivariateBatchKZG::<Bls12_381>::verify_at_same_y(&srs.1, &coms, &x_points, &y_point, &evals, &proof_batch, &mut verifier_transcript.clone(), &gamma).unwrap();
         assert!(is_valid);
     }
     let verify_time = verify_start.elapsed().as_millis() / 50;

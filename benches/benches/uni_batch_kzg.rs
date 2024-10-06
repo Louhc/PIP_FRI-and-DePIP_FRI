@@ -7,9 +7,9 @@ use ark_poly::polynomial::{
 };
 
 use ark_std::rand::{rngs::StdRng, SeedableRng};
-
 use std::time::{Duration, Instant};
 use merlin::Transcript;
+use my_kzg::transcript::ProofTranscript;
 
 // This is the benchmark for univariate batch KZG on opening one point on multiple polynomials
 fn main() {
@@ -47,7 +47,9 @@ fn main() {
     // Open
     let mut prover_transcript: Transcript = Transcript::new(b"batch univariate KZG");
     let open_start = Instant::now();
-    let proofs = BatchKZG::<Bls12_381>::open(&g_alpha_powers, &polynomials, &point, &mut prover_transcript).unwrap();
+    let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+        &mut prover_transcript, b"batch_kzg_rlc_challenge");
+    let proofs = BatchKZG::<Bls12_381>::open(&g_alpha_powers, &polynomials, &point, &gamma).unwrap();
     // let proof = KZG::<Bls12_381>::open(&g_alpha_powers, &polynomial, &point,).unwrap();
     println!("BatchKZG open  time, {:} log_degree: {:?} ms", log_degree, open_start.elapsed().as_millis());
 
@@ -57,11 +59,14 @@ fn main() {
 
     // Verify
     std::thread::sleep(Duration::from_millis(5000));
-    let verifier_transcript: Transcript = Transcript::new(b"batch univariate KZG");
+    let mut verifier_transcript: Transcript = Transcript::new(b"batch univariate KZG");
+
     let verify_start = Instant::now();
+    let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+        &mut verifier_transcript, b"batch_kzg_rlc_challenge");
     for _ in 0..50 {
         let is_valid =
-            BatchKZG::<Bls12_381>::verify(&v_srs, &coms, &point, &evals, &proofs, &mut verifier_transcript.clone()).unwrap();
+            BatchKZG::<Bls12_381>::verify(&v_srs, &coms, &point, &evals, &proofs, &gamma).unwrap();
         assert!(is_valid);
     }
     let verify_time = verify_start.elapsed().as_millis() / 50;

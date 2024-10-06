@@ -196,17 +196,17 @@ impl<P: Pairing> BivariateBatchKZG<P> {
         point: &(P::ScalarField, P::ScalarField),
         domain: &GeneralEvaluationDomain<P::ScalarField>,
         // transcript: &mut Transcript,
+        // for batch multiple f_j(x,y)
         challenge: &P::ScalarField,
     ) -> Option<(P::G1, P::G1)> {
         // generate q1(x,y) and q2(y)
         // see f(x,y) - f(z1,z2) = f(x,y) - f(z1,y) + f(z1,y) - f(z1,z2)
         // q1(x,y) = f(x,y)-f(z1,y)/(x-z1) = \sum_i [(f_{i}(x)-f_{i}(z1))/(x-z1)] \cdot L_i(Y)
         // q2(y) = f(z1,y) - f(z1,z2) / (y - z2)
-        // As q2 is lagrange-based, we only need f(z1,y)'s evaluations, so these evaluations can be combined via rlc
+        // As q2 is lagrange-based, we only need f(z1,y)'s evaluations, which are exactly f1(z1), ..., f_l(z1)
+        // and these evaluations can be combined via rlc
         let sub_powers = powers[sub_prover_id].clone();
         let (x, y) = point;
-        // let challenge = <Transcript as ProofTranscript<P>>::challenge_scalar(
-        //     transcript, b"combined_polynomials_evaluated_at_the_same_point");
 
         // generate slice_q1 and partial evaluations
         let mut eval_combined_slice = P::ScalarField::zero();
@@ -228,13 +228,14 @@ impl<P: Pairing> BivariateBatchKZG<P> {
         let mut coeffs_q1 = polynomial_combined_slice_q1.coeffs.to_vec();
         coeffs_q1.resize(sub_powers.len(), <P::ScalarField>::zero());
         let sub_proof = P::G1::msm(&sub_powers, &coeffs_q1).unwrap();
-        let sub_proofs = Net::send_to_master(&sub_proof);
-        let sub_evals = Net::send_to_master(&eval_combined_slice);
+        let sub_proofs_and_evals = Net::send_to_master(&(sub_proof, eval_combined_slice));
+        // let sub_proofs = Net::send_to_master(&sub_proof);
+        // let sub_evals = Net::send_to_master(&eval_combined_slice);
 
         // generate f(z1,z2)
         if Net::am_master() {
             // generate the first part proof 
-            let proof_1 = sub_proofs.unwrap().iter().sum();
+            let proof_1 = sub_proofs_and_evals.clone().unwrap().iter().map(|&(first, _)| first).sum();
 
             // generate the second part proof
             let y_srs: Vec<<P as Pairing>::G1Affine> = powers.iter()
@@ -242,7 +243,7 @@ impl<P: Pairing> BivariateBatchKZG<P> {
                 .cloned()
                 .collect();
             // receive the sub_evals
-            let sub_evals = sub_evals.unwrap();
+            let sub_evals: Vec<<P as Pairing>::ScalarField> = sub_proofs_and_evals.unwrap().iter().map(|&(_, second)| second).collect();
             assert_eq!(sub_evals.len(), y_srs.len());
             let evals_q2 = Evaluations::<P::ScalarField>::from_vec_and_domain(sub_evals, *domain);
             let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_q2, &y, &domain);
@@ -403,7 +404,7 @@ impl<P: Pairing> BivariateBatchKZG<P> {
         let slice: &[P::ScalarField] = &slice_vector;
         <Transcript as ProofTranscript<P>>::append_scalars(transcript, b"combined_polynomial_x_beta", slice);
         let theta = <Transcript as ProofTranscript<P>>::challenge_scalar(
-            transcript, b"random_evaluate_point");
+            transcript, b"batch_kzg_rlc_challenge");
         let proof_q1_q2 = Self::open(&powers, &bivariate_polynomials, &point_eta_beta, &theta).unwrap();
         let proof_q3 = KZG::<P>::open(&powers[0], &polynomial_q, &eta).unwrap();
 
@@ -422,7 +423,7 @@ impl<P: Pairing> BivariateBatchKZG<P> {
         transcript: &mut Transcript,
         // prescribly generated challenge for polynomial rlc
         challenge: &P::ScalarField,
-    ) -> Result<(P::G1, Vec<P::ScalarField>, P::ScalarField, (P::G1, P::G1), P::G1), Error> {
+    ) -> Option<(P::G1, Vec<P::ScalarField>, P::ScalarField, (P::G1, P::G1), P::G1)> {
         // P_i holds {f_j,i(X)}_j, each corresponds to several x_points
         // The original r_i(X) is defined by (alpha, f_i(alpha, beta))
         // Here we redefine it by r_j,i(X) as (alpha, f_j,i(alpha)L_i(beta)), and 
@@ -476,16 +477,16 @@ impl<P: Pairing> BivariateBatchKZG<P> {
         let proof_q_slice = P::G1::msm(&x_srs, &coeffs_q_slice).unwrap();
         let proof_q = Net::send_to_master(&proof_q_slice);
 
-        // generate eta using fiat-shamir
+        // first-part proof, commitments to q
         let proof_q = if Net::am_master() {
             Some(proof_q.unwrap().iter().sum())
         } else {
             None
         };
-        let proof_q: <P as Pairing>::G1 = proof_q.unwrap();
 
+        // given proof_q, generate challenge eta using fiat-shamir
         let eta = if Net::am_master() {
-            <Transcript as ProofTranscript<P>>::append_point(transcript, b"combined_polynomial_x_beta", &proof_q);
+            <Transcript as ProofTranscript<P>>::append_point(transcript, b"combined_polynomial_x_beta", &proof_q.unwrap());
             let eta = <Transcript as ProofTranscript<P>>::challenge_scalar(
                 transcript, b"random_evaluate_point");
             Net::recv_from_master(Some(vec![eta.clone(); Net::n_parties()]));
@@ -520,7 +521,7 @@ impl<P: Pairing> BivariateBatchKZG<P> {
             (vec![P::ScalarField::zero(); sub_polynomials.len()], P::ScalarField::zero())
         };
 
-        // generate challenge using fiat-shamir
+        // generate challenge theta using fiat-shamir, used for batch kzg open
         let theta = if Net::am_master() {
             let mut slice_vector: Vec<P::ScalarField> = evals_eta_beta.clone();
             slice_vector.push(eval_q.clone());
@@ -537,9 +538,14 @@ impl<P: Pairing> BivariateBatchKZG<P> {
         let proof_q1_q2 = Self::de_open_lagrange(sub_prover_id, &powers, &sub_polynomials, &point_eta_beta, &domain, &theta).unwrap();
         let proof_q3 = DeKZG::<P>::de_open(&x_srs, &polynomial_q_slice, &eta).unwrap();
 
-        let proof = (proof_q, evals_eta_beta, eval_q, proof_q1_q2, proof_q3);
+        let proof = if Net::am_master() {
+            let proof_q: <P as Pairing>::G1 = proof_q.unwrap();
+            Some((proof_q, evals_eta_beta, eval_q, proof_q1_q2, proof_q3))
+        } else {
+            None
+        };
 
-        Ok(proof)
+        proof
      }
 
      pub fn open_lagrange_at_same_y(
