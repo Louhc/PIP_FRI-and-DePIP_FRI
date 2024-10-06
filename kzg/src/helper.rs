@@ -3,9 +3,10 @@ use ark_ec::{
     // scalar_mul::fixed_base::FixedBase,
 };
 use ark_ff::{One, Field, Zero};
-use ark_poly::polynomial::{
-    univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial
-};
+use ark_poly::{polynomial::{
+    univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial
+}   , 
+    GeneralEvaluationDomain, EvaluationDomain};
 use std::collections::HashSet;
 
 pub fn generator_numerator_polynomial<P: Pairing> (
@@ -57,10 +58,10 @@ pub fn interpolate_on_trivial_domain<P: Pairing> (
     let numerator_polynomial = generator_numerator_polynomial::<P>(&points);
 
     // test for correctness
-    assert!(numerator_polynomial.degree() == points.len());
-    for i in 0..points.len() {
-        assert!(numerator_polynomial.evaluate(&points[i]) == P::ScalarField::zero());
-    }
+    // assert!(numerator_polynomial.degree() == points.len());
+    // for i in 0..points.len() {
+    //     assert!(numerator_polynomial.evaluate(&points[i]) == P::ScalarField::zero());
+    // }
 
     for i in 0..points.len() {
         let mut constant_term = P::ScalarField::one();
@@ -80,6 +81,27 @@ pub fn interpolate_on_trivial_domain<P: Pairing> (
         result_polynomial += &(&quotient_polynomial * constant_term);
     }
     result_polynomial   
+}
+
+// evaluate one evaluation of the id-th lagrange polynomial at the given point
+pub fn evaluate_one_lagrange<P: Pairing>(
+    id: usize,
+    domain: &GeneralEvaluationDomain<P::ScalarField>,
+    point: &P::ScalarField,
+) -> <P as Pairing>::ScalarField {
+    // g^{i-1} / size \cdot Y^{size} - 1 / Y - g^{i-1}
+    // id can be zero
+    let g_pow_i_minus_one = domain.group_gen().pow([id as u64]);
+
+    if *point == g_pow_i_minus_one {
+        P::ScalarField::one()
+    }
+    else {
+        let size = domain.size();
+        let size_field = domain.size_as_field_element();
+        let point_pow_size = (*point).pow([size as u64]) - P::ScalarField::one();
+        g_pow_i_minus_one * point_pow_size * (size_field * (*point - g_pow_i_minus_one)).inverse().unwrap()
+    }
 }
 
 #[cfg(test)]

@@ -119,7 +119,9 @@ impl<P: Pairing> IPA<P> {
 
         // generate the proof for f2 and eval_f2
         let proof_f_2 = KZG::<P>::open(&powers, &polynomial_right, &alpha_inverse).unwrap();
-        let proof_others = BatchKZG::<P>::open(&powers, &polynomial_vec, &alpha, transcript).unwrap();
+        let challenge = <Transcript as ProofTranscript<P>>::challenge_scalar(
+            transcript, b"batch_kzg_rlc_challenge");
+        let proof_others = BatchKZG::<P>::open(&powers, &polynomial_vec, &alpha, &challenge).unwrap();
         
         // generate the final proof
         let final_proof = (com_f_2, com_vec, eval_f_2, eval_vec, proof_f_2, proof_others);
@@ -157,7 +159,9 @@ impl<P: Pairing> IPA<P> {
         assert!(check1);
 
         // verify others proof
-        let check2 = BatchKZG::<P>::verify(&v_srs, &com_vec, &alpha, &eval_vec, &proof_others, transcript).unwrap();
+        let challenge = <Transcript as ProofTranscript<P>>::challenge_scalar(
+            transcript, b"batch_kzg_rlc_challenge");
+        let check2 = BatchKZG::<P>::verify(&v_srs, &com_vec, &alpha, &eval_vec, &proof_others, &challenge).unwrap();
         assert!(check2);
 
         // verify evaluation relation

@@ -93,7 +93,9 @@ impl<P: Pairing> IPA<P> {
         // commitments of g_u,h or g,h,g_prime
         let proof_2 = BatchKZG::<P>::commit(&powers, &helper_polynomials).unwrap();
         // proof of openings of f1,f2,g_u,h or f1,f2,g,h,g_prime
-        let proof_3 = BatchKZG::<P>::open(&powers, &polynomials, &point, transcript).unwrap();
+        let challenge = <Transcript as ProofTranscript<P>>::challenge_scalar(
+            transcript, b"batch_kzg_rlc_challenge");
+        let proof_3 = BatchKZG::<P>::open(&powers, &polynomials, &point, &challenge).unwrap();
         Ok((proof_1, proof_2, proof_3))
     }
     
@@ -120,7 +122,10 @@ impl<P: Pairing> IPA<P> {
         for i in 0..helper_coms.len() {
             coms.push(helper_coms[i]);
         }
-        let check2 = BatchKZG::<P>::verify(&v_srs, &coms, &point, &evals, &kzg_proof, transcript).unwrap();
+
+        let challenge = <Transcript as ProofTranscript<P>>::challenge_scalar(
+            transcript, b"batch_kzg_rlc_challenge");
+        let check2 = BatchKZG::<P>::verify(&v_srs, &coms, &point, &evals, &kzg_proof, &challenge).unwrap();
         assert!(check2);
 
         assert_eq!(proof.0.len(), 5);
@@ -155,7 +160,10 @@ impl<P: Pairing> IPA<P> {
         for i in 0..helper_coms.len() {
             coms.push(helper_coms[i]);
         }
-        let check2 = BatchKZG::<P>::verify(&v_srs, &coms, &point, &evals, &kzg_proof, transcript).unwrap();
+
+        let challenge = <Transcript as ProofTranscript<P>>::challenge_scalar(
+            transcript, b"batch_kzg_rlc_challenge");
+        let check2 = BatchKZG::<P>::verify(&v_srs, &coms, &point, &evals, &kzg_proof, &challenge).unwrap();
         assert!(check2);
         assert_eq!(proof.0.len(), 4);
         

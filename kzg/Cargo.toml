@@ -15,6 +15,7 @@ num-traits = "0.2"
 itertools = "0.13.0"
 rayon = { version = "1", optional = true }
 merlin = "3.0.0"
+deNetwork = { version = "0.1.0", path = "../de_network"}
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.4", features = [ "curve" ] }

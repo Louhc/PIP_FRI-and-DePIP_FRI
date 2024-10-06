@@ -1,9 +1,10 @@
 
-use ark_ec::{CurveGroup, pairing::Pairing};
+use ark_ec::pairing::Pairing;
 use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
 use merlin::Transcript;
 
+// An implementation of Fiat-Shamir from merlin
 pub trait ProofTranscript<P: Pairing> {
   fn append_protocol_name(&mut self, protocol_name: &'static [u8]);
   fn append_scalar(&mut self, label: &'static [u8], scalar: &P::ScalarField);
@@ -59,29 +60,3 @@ impl<P: Pairing> ProofTranscript<P> for Transcript {
       .collect::<Vec<P::ScalarField>>()
   }
 }
-
-pub trait AppendToTranscript<G: CurveGroup> {
-  fn append_to_transcript(&self, label: &'static [u8], transcript: &mut Transcript);
-}
-
-// // impl<G:CurveGroup> AppendToTranscript<G> for P::ScalarField {
-// //   fn append_to_transcript(&self, label: &'static [u8], transcript: &mut Transcript) {
-// //     transcript.append_scalar(label, self);
-// //   }
-// // }
-
-// impl<G:CurveGroup> AppendToTranscript<G> for [P::ScalarField] {
-//   fn append_to_transcript(&self, label: &'static [u8], transcript: &mut Transcript) {
-//     transcript.append_message(label, b"begin_append_vector");
-//     for item in self {
-//       transcript.append_scalar(label, item);
-//     }
-//     transcript.append_message(label, b"end_append_vector");
-//   }
-// }
-
-// impl<G:CurveGroup> AppendToTranscript<G> for G {
-//   fn append_to_transcript(&self, label: &'static [u8], transcript: &mut Transcript) {
-//     transcript.append_point(label, self);
-//   }
-// }

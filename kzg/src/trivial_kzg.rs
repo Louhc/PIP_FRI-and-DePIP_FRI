@@ -9,12 +9,11 @@ use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
 use ark_poly::{EvaluationDomain, Evaluations, GeneralEvaluationDomain};
-
 use std::marker::PhantomData;
 use ark_std::rand::Rng;
-// use digest::Digest;
-
 use crate::Error;
+use deNetwork::{DeMultiNet as Net, DeNet, DeSerNet};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 #[derive(Clone)]
 pub struct SRS<P: Pairing> {
@@ -30,7 +29,6 @@ pub struct VerifierSRS<P: Pairing> {
     pub h_alpha: P::G2,
 }
 
-//TODO: Change SRS to return reference iterator - requires changes to TIPA and GIPA signatures
 impl<P: Pairing> SRS<P> {
     pub fn get_commitment_keys(&self) -> (Vec<P::G2>, Vec<P::G1>) {
         let ck_1 = self.h_beta_powers.iter().step_by(2).cloned().collect();
@@ -80,18 +78,10 @@ impl<P: Pairing> KZG<P> {
         g: &P::G1,
         s: &P::ScalarField,
     ) -> Vec<P::G1> {
-        assert!(num > 0);
         assert!(num.is_power_of_two());
-        // let domain = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(num).unwrap();
         let evals_of_lagrange = EvaluationDomain::evaluate_all_lagrange_coefficients(&domain.clone(), *s);
-        // let mut pow_s = G::ScalarField::one();
-        // for _ in 0..num {
-        //     powers_of_scalar.push(pow_s);
-        //     pow_s *= s;
-        // }
     
         let window_size = FixedBase::get_mul_window_size(num);
-    
         let scalar_bits = P::ScalarField::MODULUS_BIT_SIZE as usize;
         let g_table = FixedBase::get_window_table(scalar_bits, window_size, g.clone());
         let powers_of_g = FixedBase::msm::<P::G1>(scalar_bits, window_size, &g_table, &evals_of_lagrange);
@@ -181,6 +171,8 @@ impl<P: Pairing> KZG<P> {
         Ok(P::G1::msm(powers, &quotient_coeffs).unwrap())
     }
 
+    // Given the evaluations, compute the quotient polynomial evaluations
+    // Find more details from [XHY24]
     pub fn get_quotient_eval_lagrange (
         evals: &Evaluations<P::ScalarField>,
         point: &P::ScalarField,
@@ -190,9 +182,9 @@ impl<P: Pairing> KZG<P> {
         let power = 1 << power_log;
         let field_two = <P::ScalarField>::one() + <P::ScalarField>::one();
         let power_as_field = field_two.pow([power_log as u64]);
-        // println!("compute power as field: {:?}", time.elapsed());
 
         // Make use of the batch inversion function
+        // Compute (z - g^i)^-1
         let g = domain.group_gen();
         let mut divider_vec = Vec::new();
         let mut g_power = <P::ScalarField>::one();
@@ -236,49 +228,6 @@ impl<P: Pairing> KZG<P> {
         point: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> Result<P::G1, Error> {
-        // assert!(powers.len() == evals.evals.len());
-        // let power = evals.evals.len();
-        // assert!(power.is_power_of_two());
-
-        // let power_log = power.trailing_zeros();
-        // let field_two = <P::ScalarField>::one() + <P::ScalarField>::one();
-        // let power_as_field = field_two.pow([power_log as u64]);
-        // // println!("compute power as field: {:?}", time.elapsed());
-
-        // // Make use of the batch inversion function
-        // let g = domain.group_gen();
-        // let mut divider_vec = Vec::new();
-        // let mut g_power = <P::ScalarField>::one();
-        // for _ in 0..evals.evals.len() {
-        //     let cur_term = *point - g_power;
-        //     divider_vec.push(cur_term);
-        //     g_power *= g;
-        // }
-        // batch_inversion(divider_vec.as_mut_slice());
-        // assert_eq!(divider_vec[0], (*point - P::ScalarField::one()).inverse().unwrap());
-        // assert_eq!(divider_vec[1], (*point - g).inverse().unwrap());
-
-        // // Compute P(z) = (z^power - 1) / power \cdot \sum P(g^i) * g^i / (z - g^i)
-        // let mut constant_term = point.pow([power as u64]) - P::ScalarField::one();
-        // constant_term *= power_as_field.inverse().unwrap();
-
-        // let mut g_power = <P::ScalarField>::one();
-        // let mut sum = P::ScalarField::zero();
-        // for i in 0..evals.evals.len() {
-        //     let current = evals.evals[i] * g_power * divider_vec[i];
-        //     sum += current;
-        //     g_power *= g;
-        // }
-        // let p_z = constant_term * sum;
-
-        // // pi = (P(g^i) - P(z)) / (g^i - z) \cdot G
-        // let mut quotient_evals = Vec::new();
-        // for i in 0..evals.evals.len() {
-        //     // compute quotient_evals
-        //     let quotient_eval = (p_z - evals.evals[i]) * divider_vec[i];
-        //     quotient_evals.push(quotient_eval);
-        // }
-        // assert_eq!(quotient_evals.len(), powers.len());
 
         let quotient_evals = Self::get_quotient_eval_lagrange(&evals, &point, &domain);
 
@@ -299,34 +248,106 @@ impl<P: Pairing> KZG<P> {
     }
 }
 
+#[derive(Default, Clone, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq, Debug)]
+pub struct DeKZG<P: Pairing> {
+    _pairing: PhantomData<P>,
+}
+
+// For ell provers, each sub-prover holds f_i(x), and a size-m srs
+// P_i generates commitments cm_i to f_i(x) and sends to P_0
+// P_0 computes \sum_i cm_i = cm
+// When opening, P_i computes q_i(x) = f_i(x) / (x-z)
+// pi_i = \sum_i q_i
+impl<P: Pairing> DeKZG<P> {
+
+    pub fn de_commit(
+        // sub_prover_id: usize,
+        powers: &[P::G1Affine],
+        sub_polynomial: &UnivariatePolynomial<P::ScalarField>,
+    ) -> Option<P::G1> {
+        assert!(powers.len() >= sub_polynomial.degree() + 1);
+        let mut coeffs = sub_polynomial.coeffs.to_vec();
+        coeffs.resize(powers.len(), <P::ScalarField>::zero());
+
+        let sub_com = P::G1::msm(powers, &coeffs).unwrap();
+        let final_com_slice = Net::send_to_master(&sub_com);
+
+        // guaranteed by the Net if delayed
+        // the output vec lengh equals to sub prover number
+        if Net::am_master() {
+            Some(final_com_slice.unwrap().iter().sum())
+        } else {
+            None
+        }
+    }
+
+    pub fn de_evaluate(
+        sub_polynomial: &UnivariatePolynomial<P::ScalarField>,
+        point: &P::ScalarField,
+    ) -> Option<P::ScalarField> {
+        let sub_eval = sub_polynomial.evaluate(&point);
+        let final_eval_slice = Net::send_to_master(&sub_eval);
+
+        if Net::am_master() {
+            Some(final_eval_slice.unwrap().iter().sum())
+        } else {
+            None
+        }
+    }
+
+    pub fn de_open(
+        powers: &[P::G1Affine],
+        sub_polynomial: &UnivariatePolynomial<P::ScalarField>,
+        point: &P::ScalarField,
+    ) -> Option<P::G1> {
+        assert!(powers.len() >= sub_polynomial.degree() + 1);
+
+        // Trick to calculate (p(x) - p(z)) / (x - z) as p(x) / (x - z) ignoring remainder p(z)
+        let quotient_polynomial = sub_polynomial
+            / &UnivariatePolynomial::from_coefficients_vec(vec![
+                -point.clone(),
+                P::ScalarField::one(),
+            ]);
+        let mut quotient_coeffs = quotient_polynomial.coeffs.to_vec();
+        quotient_coeffs.resize(powers.len(), <P::ScalarField>::zero());
+
+        let sub_proof = P::G1::msm(powers, &quotient_coeffs).unwrap();
+        let final_proof_slice = Net::send_to_master(&sub_proof);
+
+        if Net::am_master() {
+            Some(final_proof_slice.unwrap().iter().sum())
+        } else {
+            None
+        }
+    }
+
+    pub fn verify(
+        v_srs: &VerifierSRS<P>,
+        com: &P::G1,
+        point: &P::ScalarField,
+        eval: &P::ScalarField,
+        proof: &P::G1,
+    ) -> Result<bool, Error> {
+        Ok(P::pairing(com.clone() - v_srs.g * eval, v_srs.h.clone())
+            == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point))
+    }
+
+}
+
+
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
     use ark_bls12_381::Bls12_381;
     use ark_std::rand::{rngs::StdRng, SeedableRng};
     use ark_ff::UniformRand;
     use crate::trivial_kzg::KZG;
-
     use ark_poly::{polynomial::{
         univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial
     }, GeneralEvaluationDomain, EvaluationDomain, Evaluations};
     use ark_ec::pairing::Pairing;
-
     use std::{io::stdout, time::{Duration, Instant}};
-
     use csv::Writer;
-
-    // use blake2::Blake2b;
-
-    // const BIVARIATE_X_DEGREE: usize = 7;
-    // const BIVARIATE_Y_DEGREE: usize = 7;
-    // //const UNIVARIATE_DEGREE: usize = 56;
-    // const UNIVARIATE_DEGREE: usize = 65535;
-    // //const UNIVARIATE_DEGREE: usize = 1048575;
-
-    // type TestBivariatePolyCommitment = BivariatePolynomialCommitment<Bls12_381, Blake2b>;
-    // type TestUnivariatePolyCommitment = UnivariatePolynomialCommitment<Bls12_381, Blake2b>;
 
     #[test]
     fn trivial_kzg_test() {
@@ -387,11 +408,11 @@ mod tests {
     #[test]
     fn kzg_lagrange_test() {
 
-        let mut csv_writer = Writer::from_writer(stdout());
-        csv_writer
-            .write_record(&["trial", "scheme", "function", "degree", "time"])
-            .unwrap();
-        csv_writer.flush().unwrap();
+        // let mut csv_writer = Writer::from_writer(stdout());
+        // csv_writer
+        //     .write_record(&["trial", "scheme", "function", "degree", "time"])
+        //     .unwrap();
+        // csv_writer.flush().unwrap();
 
         let log_degree = 10;
         let degree = (1 << log_degree) - 1;
@@ -401,7 +422,7 @@ mod tests {
 
         let setup_start = Instant::now();
         let (g_alpha_powers, v_srs) = KZG::<Bls12_381>::setup_lagrange(&mut rng, degree, &domain).unwrap();
-        println!("KZG setup time, {:} log_degree: {:?} ", degree, setup_start.elapsed());
+        println!("KZG setup time, {:} log_degree: {:?} ", log_degree, setup_start.elapsed());
 
         // for _ in 0..repeat {
         let mut evals = Vec::new();
@@ -410,8 +431,6 @@ mod tests {
         }
         let evals_in_eval = Evaluations::<<Bls12_381 as Pairing>::ScalarField, GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::from_vec_and_domain(evals.clone(), domain.clone());
         let polynomial = evals_in_eval.clone().interpolate();
-        // let polynomial = UnivariatePolynomial::rand(degree, &mut rng);
-        // let evals = polynomial.clone().evaluate_over_domain(domain);
         let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
         let eval = polynomial.evaluate(&point);
 
