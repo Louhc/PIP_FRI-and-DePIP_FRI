@@ -21,13 +21,17 @@ use crate::{
     // transcript::ProofTranscript, 
     Error};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
+use std::time::{
+    Instant,
+    // Duration
+};
 
-pub struct BivariateBatchKZG<P: Pairing> {
+pub struct BivBatchKZG<P: Pairing> {
     _pairing: PhantomData<P>,
 }
 
 // Batch polynomial commitment for the same X and Y points, which will be used for the final batch PCS
-impl<P: Pairing> BivariateBatchKZG<P> {
+impl<P: Pairing> BivBatchKZG<P> {
     pub fn setup<R: Rng>(
         rng: &mut R,
         x_degree: usize,
@@ -57,6 +61,7 @@ impl<P: Pairing> BivariateBatchKZG<P> {
         for i in 0..powers.len() {
             extended_powers.extend(&powers[i]);
         }
+        println!("srs length is: {:?}", extended_powers.len());
 
         let mut coms = Vec::new();
         for j in 0..bivariate_polynomials.len() {
@@ -76,32 +81,41 @@ impl<P: Pairing> BivariateBatchKZG<P> {
         sub_prover_id: usize,
         powers: &Vec<Vec<P::G1Affine>>,
         // P_i only holds univariate polynomials f_i(x)
-        sub_polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>,
+        polys_x_polynomials: &Vec<Vec<UnivariatePolynomial<P::ScalarField>>>,
     ) -> Option<Vec<P::G1>> {
         // the sub_bivariate_polynomial is f_i(X)L_i(Y), so only need srs related to L_i(Y)
         let sub_powers = powers[sub_prover_id].clone();
 
+        let sub_polynomials: Vec<UnivariatePolynomial<P::ScalarField>> = polys_x_polynomials.iter().map(|x_polynomials| x_polynomials[sub_prover_id].clone()).collect();
+        assert_eq!(sub_polynomials.len(), polys_x_polynomials.len());
+
+        let time = Instant::now();
         let mut sub_coms = Vec::new();
+
         for sub_polynomial in sub_polynomials {
             assert!(sub_powers.len() >= sub_polynomial.degree() + 1);
+            println!("degree is: {:?}", sub_powers.len());
 
             let mut coeffs = sub_polynomial.coeffs.to_vec();
             coeffs.resize(sub_powers.len(), <P::ScalarField>::zero());
             sub_coms.push(P::G1::msm(&sub_powers, &coeffs).unwrap());
         }
+        println!("Prover {:?} committing time: {:?}", sub_prover_id, time.elapsed());
         let final_coms_slice = Net::send_to_master(&sub_coms);
 
         if Net::am_master() {
             assert!(powers.len().is_power_of_two());
 
-            let mut final_coms = vec![P::G1::zero(); sub_polynomials.len()];
+            let mut final_coms = vec![P::G1::zero(); polys_x_polynomials.len()];
             let final_coms_slice = final_coms_slice.unwrap();
+
             for row in final_coms_slice {
-                assert_eq!(row.len(), sub_polynomials.len());
+                assert_eq!(row.len(), polys_x_polynomials.len());
                 for i in 0..row.len() {
                     final_coms[i] += row[i];
                 }
             }
+            println!("Prover {:?} committing time: {:?}", sub_prover_id, time.elapsed());
             Some(final_coms)
         } else {
             None
@@ -687,7 +701,7 @@ impl<P: Pairing> BivariateBatchKZG<P> {
         let theta = <Transcript as ProofTranscript<P>>::challenge_scalar(
             transcript, b"batch_kzg_rlc_challenge");
         let eta_beta = (eta, y_point.clone());
-        let check3 = BivariateBatchKZG::verify(&v_srs, &coms, &eta_beta, &proof.1, &proof.3, &theta).unwrap();
+        let check3 = BivBatchKZG::verify(&v_srs, &coms, &eta_beta, &proof.1, &proof.3, &theta).unwrap();
         assert!(check3);
 
         Ok(check1 && check2 && check3)
@@ -735,7 +749,7 @@ mod tests {
     const BIVARIATE_X_DEGREE: usize = 10;
     const BIVARIATE_Y_DEGREE: usize = 15;
     const POLYNOMIAL_NUMBER: usize = 10;
-    type TestBivariatePolyCommitment = BivariateBatchKZG<Bls12_381>;
+    type TestBivariatePolyCommitment = BivBatchKZG<Bls12_381>;
     // type TestUnivariatePolyCommitment = UnivariatePolynomialCommitment<Bls12_381, Blake2b>;
 
     #[test]
