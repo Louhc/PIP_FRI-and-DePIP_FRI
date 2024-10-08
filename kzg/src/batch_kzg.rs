@@ -12,7 +12,7 @@ use crate::trivial_kzg::VerifierSRS;
 use std::marker::PhantomData;
 use ark_std::rand::Rng;
 use crate::Error;
-use deNetwork::{DeMultiNet as Net, DeNet, DeSerNet};
+use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 #[derive(Clone)]

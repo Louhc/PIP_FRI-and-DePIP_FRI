@@ -62,6 +62,17 @@ impl<F: FftField> BivariatePolynomial<F> {
             .map(|(y_eval, x_polynomial)| y_eval.clone() * x_polynomial.evaluate(&x))
             .sum()
     }
+
+    pub fn evaluate_at_y_lagrange(&self, point: &F, domain: &GeneralEvaluationDomain<F>) -> UnivariatePolynomial<F> {
+        let y = point;
+        let y_evals = EvaluationDomain::evaluate_all_lagrange_coefficients(domain, *y);
+        let mut result_polynomial = UnivariatePolynomial::from_coefficients_vec(vec![F::zero()]);
+
+        for i in 0..self.x_polynomials.len() {
+            result_polynomial += (y_evals[i], &self.x_polynomials[i]);
+        }
+        result_polynomial
+    }
 }
 
 pub struct BivariateKZG<P: Pairing> {

@@ -20,7 +20,7 @@ use crate::biv_trivial_kzg::{BivariatePolynomial, VerifierSRS};
 use crate::{
     // transcript::ProofTranscript, 
     Error};
-use deNetwork::{DeMultiNet as Net, DeNet, DeSerNet};
+use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 
 pub struct BivariateBatchKZG<P: Pairing> {
     _pairing: PhantomData<P>,

@@ -32,11 +32,12 @@ impl<P: Pairing> IPA<P> {
 
     pub fn get_g_h_g_prime (
         polynomial: &UnivariatePolynomial<P::ScalarField>,
-        sum: &P::ScalarField,
+        // sum: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
         let (h, reminder_polynomial) = polynomial.clone().divide_by_vanishing_poly(*domain).unwrap();
-        let constant_term = *sum / domain.size_as_field_element();
+        // let constant_term = *sum / domain.size_as_field_element();
+        let constant_term = reminder_polynomial.coeffs.to_vec()[0];
         let g_prime = reminder_polynomial + UnivariatePolynomial::from_coefficients_vec(vec![-constant_term]);
         assert_eq!(g_prime.coeffs[0], P::ScalarField::zero());
         let mut coeffs_g = g_prime.coeffs.clone();
@@ -50,12 +51,14 @@ impl<P: Pairing> IPA<P> {
     pub fn get_g_mul_u_and_h (
         polynomial: &UnivariatePolynomial<P::ScalarField>,
         challenge: &P::ScalarField,
-        sum: &P::ScalarField,
+        // sum: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
         let u = *challenge;
         let (h, reminder_polynomial) = polynomial.clone().divide_by_vanishing_poly(*domain).unwrap();
-        let constant_term = *sum / domain.size_as_field_element();
+        // let constant_term = *sum / domain.size_as_field_element();
+        let constant_term = reminder_polynomial.coeffs.to_vec()[0];
+        // test over
         let g_prime = reminder_polynomial + UnivariatePolynomial::from_coefficients_vec(vec![-constant_term]);
         // Check the correctness of sum, the constant coefficient of g_prime should be zero
         assert_eq!(g_prime.coeffs[0], P::ScalarField::zero());
@@ -188,11 +191,11 @@ impl<P: Pairing> IPA<P> {
         polynomial_target: &UnivariatePolynomial<P::ScalarField>,
         com_left: &P::G1,
         com_right: &P::G1,
-        sum: &P::ScalarField,
+        // sum: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
         transcript: &mut Transcript,
     ) -> Result<(Vec<P::ScalarField>, Vec<P::G1>, P::G1), Error> {
-        let (g, h, g_prime) = Self::get_g_h_g_prime(&polynomial_target, &sum, &domain);
+        let (g, h, g_prime) = Self::get_g_h_g_prime(&polynomial_target, &domain);
         let helper_polynomials = vec![g, h, g_prime];
         let helper_coms = BatchKZG::<P>::commit(&powers, &helper_polynomials).unwrap();
 
@@ -216,7 +219,7 @@ impl<P: Pairing> IPA<P> {
         polynomial_target: &UnivariatePolynomial<P::ScalarField>,
         com_left: &P::G1,
         com_right: &P::G1,
-        sum: &P::ScalarField,
+        // sum: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
         transcript: &mut Transcript,
     ) -> Result<(Vec<P::ScalarField>, Vec<P::G1>, P::G1), Error> {
@@ -227,7 +230,7 @@ impl<P: Pairing> IPA<P> {
         let u = <Transcript as ProofTranscript<P>>::challenge_scalar(
             transcript, b"generate challenge u to eliminate ldt");
         
-        let (g_u, h) = Self::get_g_mul_u_and_h(&polynomial_target, &u, &sum, &domain);
+        let (g_u, h) = Self::get_g_mul_u_and_h(&polynomial_target, &u, &domain);
         // assert_eq!(g_u.degree(), domain.size() - 1);
         let helper_polynomials = vec![g_u, h];
         let helper_coms = BatchKZG::<P>::commit(&powers, &helper_polynomials).unwrap();
@@ -295,7 +298,7 @@ impl<P: Pairing> IPA<P> {
         powers: &[P::G1Affine],
         vector_left: &Vec<P::ScalarField>,
         vector_right: &Vec<P::ScalarField>,
-        inner_product: &P::ScalarField,
+        // inner_product: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
         transcript: &mut Transcript,
     ) -> Result<((P::G1, P::G1), (Vec<P::ScalarField>, Vec<P::G1>, P::G1)), Error> {
@@ -323,7 +326,7 @@ impl<P: Pairing> IPA<P> {
         let polynomial_target = evals_target.interpolate();
 
         // generate the proof
-        let proof = IPA::<P>::sumcheck_prove(&powers, &polynomial_left, &polynomial_right, &polynomial_target, &com_left, &com_right, &inner_product, &domain, transcript).unwrap();
+        let proof = IPA::<P>::sumcheck_prove(&powers, &polynomial_left, &polynomial_right, &polynomial_target, &com_left, &com_right, &domain, transcript).unwrap();
         Ok(((com_left, com_right), proof))
     }
 
@@ -331,7 +334,7 @@ impl<P: Pairing> IPA<P> {
         powers: &[P::G1Affine],
         vector_left: &Vec<P::ScalarField>,
         vector_right: &Vec<P::ScalarField>,
-        inner_product: &P::ScalarField,
+        // inner_product: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
         transcript: &mut Transcript,
     ) -> Result<((P::G1, P::G1), (Vec<P::ScalarField>, Vec<P::G1>, P::G1)), Error> {
@@ -358,8 +361,8 @@ impl<P: Pairing> IPA<P> {
         let polynomial_target = evals_target.interpolate();
 
         // generate the proof
-        let sum = *inner_product * domain.size_as_field_element();
-        let proof = IPA::<P>::sumcheck_no_ldt_prove(&powers, &polynomial_left, &polynomial_right, &polynomial_target, &com_left, &com_right, &sum, &domain, transcript).unwrap();
+        // let sum = *inner_product * domain.size_as_field_element();
+        let proof = IPA::<P>::sumcheck_no_ldt_prove(&powers, &polynomial_left, &polynomial_right, &polynomial_target, &com_left, &com_right, &domain, transcript).unwrap();
 
         Ok(((com_left, com_right), proof))
     }
@@ -442,7 +445,7 @@ mod tests{
         // Trivial IPA_from_sumcheck prover
         let prover_start = Instant::now();
         let mut transcript : Transcript = Transcript::new(b"Trivial IPA from sumcheck");
-        let proof = IPA::<Bls12_381>::trivial_ipa_commit_and_prove(&g_alpha_powers, &vector_left, &vector_right, &inner_product, &domain, &mut transcript).unwrap();
+        let proof = IPA::<Bls12_381>::trivial_ipa_commit_and_prove(&g_alpha_powers, &vector_left, &vector_right, &domain, &mut transcript).unwrap();
         println!("Trivial IPA prover time: {:?} ms", prover_start.elapsed().as_millis());
 
         // Trivial IPA_from_sumcheck proof size
@@ -464,7 +467,7 @@ mod tests{
         // Improved IPA_from_sumcheck prover
         let prover_start = Instant::now();
         let mut transcript : Transcript = Transcript::new(b"Trivial IPA from sumcheck");
-        let proof = IPA::<Bls12_381>::ipa_improved_commit_and_prove(&g_alpha_powers, &vector_left, &vector_right, &inner_product, &domain, &mut transcript).unwrap();
+        let proof = IPA::<Bls12_381>::ipa_improved_commit_and_prove(&g_alpha_powers, &vector_left, &vector_right, &domain, &mut transcript).unwrap();
         println!("Improved IPA prover time: {:?} ms", prover_start.elapsed().as_millis());
 
         // Improved IPA_from_sumcheck proof size
@@ -503,7 +506,7 @@ mod tests{
         // Improved IPA_from_sumcheck prover
         let prover_start = Instant::now();
         let mut transcript : Transcript = Transcript::new(b"Trivial IPA from sumcheck");
-        let proof = IPA::<Bls12_381>::ipa_improved_commit_and_prove(&g_alpha_powers, &vector_left, &vector_right, &inner_product, &domain, &mut transcript).unwrap();
+        let proof = IPA::<Bls12_381>::ipa_improved_commit_and_prove(&g_alpha_powers, &vector_left, &vector_right, &domain, &mut transcript).unwrap();
         println!("Improved IPA prover time: {:?} ms", prover_start.elapsed().as_millis());
 
         // Improved IPA_from_sumcheck proof size

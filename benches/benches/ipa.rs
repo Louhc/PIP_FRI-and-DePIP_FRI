@@ -45,7 +45,6 @@ fn ipa_commit_and_prove_benchmark(c: &mut Criterion) {
                     &g_alpha_powers,
                     &vector_left,
                     &vector_right,
-                    &inner_product,
                     &domain,
                     &mut transcript,
                 );
@@ -56,7 +55,6 @@ fn ipa_commit_and_prove_benchmark(c: &mut Criterion) {
             &g_alpha_powers,
             &vector_left,
             &vector_right,
-            &inner_product,
             &domain,
             &mut transcript,
         ).unwrap();
@@ -93,7 +91,6 @@ fn ipa_commit_and_prove_benchmark(c: &mut Criterion) {
                     &g_alpha_powers,
                     &vector_left,
                     &vector_right,
-                    &inner_product,
                     &domain,
                     &mut transcript,
                 );
@@ -106,7 +103,6 @@ fn ipa_commit_and_prove_benchmark(c: &mut Criterion) {
             &g_alpha_powers,
             &vector_left,
             &vector_right,
-            &inner_product,
             &domain,
             &mut transcript,
         ).unwrap();
@@ -140,7 +136,6 @@ fn ipa_verifier_benchmark(c: &mut Criterion) {
             &g_alpha_powers,
             &vector_left,
             &vector_right,
-            &inner_product,
             &domain,
             &mut transcript,
         ).unwrap();
@@ -189,7 +184,6 @@ fn ipa_verifier_benchmark(c: &mut Criterion) {
             &g_alpha_powers,
             &vector_left,
             &vector_right,
-            &inner_product,
             &domain,
             &mut transcript
         ).unwrap();

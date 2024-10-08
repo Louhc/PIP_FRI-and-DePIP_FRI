@@ -1,5 +1,5 @@
 [package]
-name = "deNetwork"
+name = "de_network"
 version = "0.1.0"
 authors = ["Alex Ozdemir <aozdemir@hmc.edu>"]
 edition = "2018"

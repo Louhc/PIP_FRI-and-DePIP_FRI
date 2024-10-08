@@ -22,6 +22,7 @@ macro_rules! get_ch {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct Peer {
     id: usize,
     addr: SocketAddr,
