@@ -16,6 +16,7 @@ itertools = "0.13.0"
 rayon = { version = "1", optional = true }
 merlin = "3.0.0"
 de_network = { version = "0.1.0", path = "../de_network"}
+structopt = "0.3"
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.4", features = [ "curve" ] }

@@ -16,6 +16,7 @@ itertools = "0.13.0"
 rayon = { version = "1", optional = true }
 merlin = "3.0.0"
 my_kzg = { path = "../kzg" }
+de_network = { version = "0.1.0", path = "../de_network"}
 
 
 [dev-dependencies]

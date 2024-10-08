@@ -4,11 +4,15 @@ use ark_poly::{
 };
 use std::marker::PhantomData;
 use ark_ec::pairing::Pairing;
-use my_kzg::{batch_kzg::BatchKZG, transcript::ProofTranscript, trivial_kzg::VerifierSRS};
+use my_kzg::{batch_kzg::BatchKZG, transcript::ProofTranscript, trivial_kzg::{
+    VerifierSRS
+    // , KZG
+}};
 use crate::Error;
 use merlin::Transcript;
 use crate::ipa::IPA;
 // use ark_ff::{Zero, One, Field};
+// use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 
 pub struct DeIPA<P: Pairing> {
     _pairing: PhantomData<P>,
@@ -41,10 +45,10 @@ impl<P: Pairing> DeIPA<P> {
     //     transcript: &mut Transcript,
     //     challenge_v: &P::ScalarField,
     //     challenge_u1: &P::ScalarField,
-    // ) -> Option<> {
+    // ) -> Option<P::G1> {
 
     //     // sub_power and m
-    //     let sub_power = powers[sub_prover_id];
+    //     let sub_power = powers[sub_prover_id].clone();
     //     let m = sub_power.len();
 
     //     // R_i(X) = X^{i-1} and evals R_i(r^{m})
@@ -74,7 +78,41 @@ impl<P: Pairing> DeIPA<P> {
     //     polynomial_target += (challenge_v.pow([3 as u64]), &polynomial_f4);
 
     //     // get g_u and h
-    //     let (poly_g1, poly_h1) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target, &challenge_u1, &sum, &domain);
+    //     let (poly_g1, poly_h1) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target, &challenge_u1, &domain);
+    //     let com_g1 = KZG::<P>::commit(&sub_power, &poly_g1).unwrap();
+    //     let com_h1 = KZG::<P>::commit(&sub_power, &poly_h1).unwrap();
+
+    //     // send com of g1 and h1 to P0
+    //     let com_g1_h1_slice = Net::send_to_master(&(com_g1, com_h1));
+    //     let com_g1_h1 = if Net::am_master() {
+    //         com_g1_h1_slice.unwrap().iter().fold((P::G1::zero(), P::G1::zero()), |(acc1, acc2), &(a, b)| {
+    //             (acc1 + a, acc2 + b)
+    //         })
+    //     } else {
+    //         (P::G1::zero(), P::G1::zero())
+    //     };
+    //     let (com_g1, com_h1) = com_g1_h1;
+
+    //     // generate new challenges alpha and u2
+    //     let (alpha, u2) = if Net::am_master() {
+    //         let slice: &[P::G1] = &vec![com_g1, com_h1];
+    //         <Transcript as ProofTranscript<P>>::append_points(transcript, b"alpha_and_u2", slice);
+    //         let alpha = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluation_for_x");
+    //         let u2 = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_ldt_padding");
+    //         Net::recv_from_master(Some(vec![(alpha, u2); Net::n_parties()]));
+    //         (alpha, u2)
+    //     } else {
+    //         Net::recv_from_master(None)
+    //     };
+
+    //     // evaluate and send polynomial evaluations on alpha
+    //     let eval_pa_alpha = public_polynomials.poly_pa.evaluate(&alpha);
+    //     let eval_pb_alpha = public_polynomials.poly_pb.evaluate(&alpha);
+    //     let eval_pc_alpha = public_polynomials.poly_pc.evaluate(&alpha);
+    //     let eval_w_alpha = witness_polynomials.poly_w.evaluate(&alpha);
+    //     let eval_a_alph = witness_polynomials.poly_w.evaluate(&alpha);
+
+    //     Some(P::G1::zero())
     // }
 
     pub fn sumcheck_prove (
