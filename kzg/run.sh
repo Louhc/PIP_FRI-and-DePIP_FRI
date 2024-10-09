@@ -8,9 +8,9 @@ cargo build --example $1 --release
 BIN=../target/release/examples/$1
 
 PROCS=()
-for i in 0 1 2 3
+for i in 0 1
 do
-  $BIN $i ./data/4 &
+  $BIN $i ./data/2 &
   #RUST_LOG=debug $BIN $i ./data/4 &
   pid=$!
   PROCS+=("$pid")

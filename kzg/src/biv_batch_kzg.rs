@@ -81,20 +81,16 @@ impl<P: Pairing> BivBatchKZG<P> {
         sub_prover_id: usize,
         powers: &Vec<Vec<P::G1Affine>>,
         // P_i only holds univariate polynomials f_i(x)
-        polys_x_polynomials: &Vec<Vec<UnivariatePolynomial<P::ScalarField>>>,
+        sub_polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>,
     ) -> Option<Vec<P::G1>> {
         // the sub_bivariate_polynomial is f_i(X)L_i(Y), so only need srs related to L_i(Y)
         let sub_powers = powers[sub_prover_id].clone();
-
-        let sub_polynomials: Vec<UnivariatePolynomial<P::ScalarField>> = polys_x_polynomials.iter().map(|x_polynomials| x_polynomials[sub_prover_id].clone()).collect();
-        assert_eq!(sub_polynomials.len(), polys_x_polynomials.len());
 
         let time = Instant::now();
         let mut sub_coms = Vec::new();
 
         for sub_polynomial in sub_polynomials {
             assert!(sub_powers.len() >= sub_polynomial.degree() + 1);
-            println!("degree is: {:?}", sub_powers.len());
 
             let mut coeffs = sub_polynomial.coeffs.to_vec();
             coeffs.resize(sub_powers.len(), <P::ScalarField>::zero());
@@ -106,11 +102,11 @@ impl<P: Pairing> BivBatchKZG<P> {
         if Net::am_master() {
             assert!(powers.len().is_power_of_two());
 
-            let mut final_coms = vec![P::G1::zero(); polys_x_polynomials.len()];
+            let mut final_coms = vec![P::G1::zero(); sub_polynomials.len()];
             let final_coms_slice = final_coms_slice.unwrap();
 
             for row in final_coms_slice {
-                assert_eq!(row.len(), polys_x_polynomials.len());
+                assert_eq!(row.len(), sub_polynomials.len());
                 for i in 0..row.len() {
                     final_coms[i] += row[i];
                 }
@@ -427,7 +423,138 @@ impl<P: Pairing> BivBatchKZG<P> {
         Ok(proof)
      }
 
-     pub fn de_open_lagrange_at_same_y(
+    //  pub fn de_open_lagrange_at_same_y(
+    //     sub_prover_id: usize,
+    //     powers: &Vec<Vec<P::G1Affine>>,
+    //     sub_polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>,
+    //     x_points: &Vec<Vec<P::ScalarField>>,
+    //     y_point: &P::ScalarField,
+    //     domain: &GeneralEvaluationDomain<P::ScalarField>,
+    //     transcript: &mut Transcript,
+    //     // prescribly generated challenge for polynomial rlc
+    //     challenge: &P::ScalarField,
+    // ) -> Option<(P::G1, Vec<P::ScalarField>, P::ScalarField, (P::G1, P::G1), P::G1)> {
+    //     // P_i holds {f_j,i(X)}_j, each corresponds to several x_points
+    //     // The original r_i(X) is defined by (alpha, f_i(alpha, beta))
+    //     // Here we redefine it by r_j,i(X) as (alpha, f_j,i(alpha)L_i(beta)), and 
+
+    //     assert_eq!(x_points.len(), sub_polynomials.len());
+    //     let gamma = *challenge;
+    //     // let gamma = <Transcript as ProofTranscript<P>>::challenge_scalar(
+    //     //    transcript, b"combined_polynomial_x_beta");
+    //     // delete the repetition and generate Z_{T1}(X)
+    //     let x_point_vec = x_points.iter().flatten().cloned().collect();
+    //     let numerator_polynomial = generator_numerator_polynomial::<P>(&x_point_vec);
+
+    //     // generate x_srs
+    //     let mut result = vec![P::G1::zero(); powers[0].len()];
+    //     for i in 0..powers[0].len() {
+    //         for j in 0..powers.len() {
+    //             result[i] += powers[j][i].into_group();
+    //         }
+    //     }
+    //     assert!(result[0] == P::G1::generator());
+    //     let x_srs = <P as Pairing>::G1::normalize_batch(&result);
+        
+    //     // generate r_i,j(x) from (alpha, f_j,i(alpha)L_i(beta))
+    //     let mut combined_polynomial = UnivariatePolynomial::zero();
+    //     let mut challenge_gamma = P::ScalarField::one();
+    //     let eval_lagrange: <P as Pairing>::ScalarField = evaluate_one_lagrange::<P>(sub_prover_id, domain, y_point);
+    //     for j in 0..x_points.len() {
+    //         // generate r_i,j(x) from x_points[j]
+    //         let mut evals = Vec::new();
+    //         for k in 0..x_points[j].len() {
+    //             let point = x_points[j][k];
+    //             let eval: <P as Pairing>::ScalarField = sub_polynomials[j].evaluate(&point) * eval_lagrange;
+    //             evals.push(eval);
+    //         }
+    //         let polynomial_r_slice = interpolate_on_trivial_domain::<P>(&x_points[j], &evals);
+    //         assert_eq!(polynomial_r_slice.degree()+1, x_points[j].len());
+
+    //         // generate f_i,j(x) L_i,j(beta)
+    //         let polynomial_f_x_beta = &sub_polynomials[j] * eval_lagrange;
+
+    //         // generate final poynomial with linear combination
+    //         let helper_polynomial = &numerator_polynomial / &(generator_numerator_polynomial::<P>(&x_points[j]));
+    //         let combined_polynomial_slice = &(&polynomial_f_x_beta - &polynomial_r_slice) * &helper_polynomial;
+    //         combined_polynomial += (challenge_gamma, &combined_polynomial_slice);
+    //         challenge_gamma *= gamma;
+    //     }
+
+    //     let polynomial_q_slice = &combined_polynomial / &numerator_polynomial;
+    //     let mut coeffs_q_slice = polynomial_q_slice.coeffs.to_vec();
+    //     coeffs_q_slice.resize(powers[0].len(), <P::ScalarField>::zero());
+    //     let proof_q_slice = P::G1::msm(&x_srs, &coeffs_q_slice).unwrap();
+    //     let proof_q = Net::send_to_master(&proof_q_slice);
+
+    //     // first-part proof, commitments to q
+    //     let proof_q = if Net::am_master() {
+    //         Some(proof_q.unwrap().iter().sum())
+    //     } else {
+    //         None
+    //     };
+
+    //     // given proof_q, generate challenge eta using fiat-shamir
+    //     let eta = if Net::am_master() {
+    //         <Transcript as ProofTranscript<P>>::append_point(transcript, b"combined_polynomial_x_beta", &proof_q.unwrap());
+    //         let eta = <Transcript as ProofTranscript<P>>::challenge_scalar(
+    //             transcript, b"random_evaluate_point");
+    //         Net::recv_from_master(Some(vec![eta.clone(); Net::n_parties()]));
+    //         eta
+    //     } else {
+    //         Net::recv_from_master(None)
+    //     };
+        
+    //     // generate evaluations of f_j,i(eta, beta)
+    //     let point_eta_beta = (eta, *y_point);
+    //     let evals_eta_beta: Vec<P::ScalarField> = sub_polynomials.iter().map(|poly| poly.evaluate(&eta) * eval_lagrange).collect();
+    //     let eval_q_slice = polynomial_q_slice.evaluate(&eta);
+    //     let evals_eta_beta_and_q = Net::send_to_master(&(evals_eta_beta, eval_q_slice));
+
+    //     // P_0 computes evaluations of f_j(eta, beta)
+    //     let (evals_eta_beta, eval_q) = if Net::am_master() {
+    //         let evals_eta_beta_and_q = evals_eta_beta_and_q.unwrap();
+    //         let mut evals_eta_beta = vec![P::ScalarField::zero(); sub_polynomials.len()];
+    //         let eval_q: <P as Pairing>::ScalarField = evals_eta_beta_and_q.iter().map(|&(_, second)| second).sum();
+    //         for eval_eta_beta_and_q in evals_eta_beta_and_q {
+    //             for i in 0..eval_eta_beta_and_q.0.len() {
+    //                 evals_eta_beta[i] += eval_eta_beta_and_q.0[i];
+    //             }
+    //         }
+    //         (evals_eta_beta, eval_q)
+    //     } else {
+    //         (vec![P::ScalarField::zero(); sub_polynomials.len()], P::ScalarField::zero())
+    //     };
+
+    //     // generate challenge theta using fiat-shamir, used for batch kzg open
+    //     let theta = if Net::am_master() {
+    //         let mut slice_vector: Vec<P::ScalarField> = evals_eta_beta.clone();
+    //         slice_vector.push(eval_q.clone());
+    //         let slice: &[P::ScalarField] = &slice_vector;
+    //         <Transcript as ProofTranscript<P>>::append_scalars(transcript, b"combined_polynomial_x_beta", slice);
+    //         let theta = <Transcript as ProofTranscript<P>>::challenge_scalar(
+    //             transcript, b"batch_kzg_rlc_challenge");
+    //         Net::recv_from_master(Some(vec![theta.clone(); Net::n_parties()]));
+    //         theta
+    //     } else {
+    //         Net::recv_from_master(None)
+    //     };
+
+    //     let proof_q1_q2 = Self::de_open_lagrange(sub_prover_id, &powers, &sub_polynomials, &point_eta_beta, &domain, &theta);
+    //     let proof_q3 = DeKZG::<P>::de_open(&x_srs, &polynomial_q_slice, &eta);
+
+    //     let proof = if Net::am_master() {
+    //         let proof_q: <P as Pairing>::G1 = proof_q.unwrap();
+    //         Some((proof_q, evals_eta_beta, eval_q, proof_q1_q2.unwrap(), proof_q3.unwrap()))
+    //     } else {
+    //         None
+    //     };
+
+    //     proof
+    //  }
+
+    // try to put de into one procedure
+    pub fn de_open_lagrange_at_same_y(
         sub_prover_id: usize,
         powers: &Vec<Vec<P::G1Affine>>,
         sub_polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>,
@@ -514,11 +641,6 @@ impl<P: Pairing> BivBatchKZG<P> {
         let evals_eta_beta: Vec<P::ScalarField> = sub_polynomials.iter().map(|poly| poly.evaluate(&eta) * eval_lagrange).collect();
         let eval_q_slice = polynomial_q_slice.evaluate(&eta);
         let evals_eta_beta_and_q = Net::send_to_master(&(evals_eta_beta, eval_q_slice));
-        let evals_eta_beta_and_q = if Net::am_master() {
-            Some(evals_eta_beta_and_q.unwrap())
-        } else {
-            None
-        };
 
         // P_0 computes evaluations of f_j(eta, beta)
         let (evals_eta_beta, eval_q) = if Net::am_master() {
@@ -549,12 +671,12 @@ impl<P: Pairing> BivBatchKZG<P> {
             Net::recv_from_master(None)
         };
 
-        let proof_q1_q2 = Self::de_open_lagrange(sub_prover_id, &powers, &sub_polynomials, &point_eta_beta, &domain, &theta).unwrap();
-        let proof_q3 = DeKZG::<P>::de_open(&x_srs, &polynomial_q_slice, &eta).unwrap();
+        let proof_q1_q2 = Self::de_open_lagrange(sub_prover_id, &powers, &sub_polynomials, &point_eta_beta, &domain, &theta);
+        let proof_q3 = DeKZG::<P>::de_open(&x_srs, &polynomial_q_slice, &eta);
 
         let proof = if Net::am_master() {
             let proof_q: <P as Pairing>::G1 = proof_q.unwrap();
-            Some((proof_q, evals_eta_beta, eval_q, proof_q1_q2, proof_q3))
+            Some((proof_q, evals_eta_beta, eval_q, proof_q1_q2.unwrap(), proof_q3.unwrap()))
         } else {
             None
         };
