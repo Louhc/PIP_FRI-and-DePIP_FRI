@@ -254,6 +254,10 @@ impl<P: Pairing> DeIPA<P> {
     //     // TODO: self-test of evaluation validity
     //     let z_h_eval_x = domain_x.evaluate_vanishing_polynomial(alpha);
     //     let t2 = alpha * eval_g1 + (alpha - challenge_u1) * z_h_eval_x * eval_h1;
+    //     let f1 = evals_alpha_beta[0] * evals_alpha_beta[3] - evals_alpha_beta[9] * evals_alpha_beta[5];
+    //     let f2 = evals_alpha_beta[1] * evals_alpha_beta[3] - evals_alpha_beta[9] * evals_alpha_beta[7];
+    //     let f3 = evals_alpha_beta[2] * evals_alpha_beta[3] - evals_alpha_beta[9] * evals_alpha_beta[8];
+    //     let f3 = evals_alpha_beta[4] * evals_alpha_beta[6] *  - evals_alpha_beta[9] * evals_alpha_beta[8];
 
     //     // TODO: invoke the de-batch-bivarate-kzg, de-univariate-kzg over x, de-uni-kzg over y with lagrange
 

@@ -1,5 +1,5 @@
-use ark_bls12_381::Bls12_381;
 use ark_ec::pairing::Pairing;
+use ark_bls12_381::Bls12_381;
 use ark_ff::{UniformRand, One};
 use my_kzg::biv_trivial_kzg::{BivariateKZG, BivariatePolynomial};
 use my_kzg::biv_batch_kzg::BivBatchKZG;
@@ -8,7 +8,7 @@ use ark_poly::polynomial::{
 };
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_std::rand::{rngs::StdRng, SeedableRng};
-
+use my_kzg::helper::get_x_srs;
 use std::time::{Duration, Instant};
 use merlin::Transcript;
 use my_kzg::transcript::ProofTranscript;
@@ -33,6 +33,8 @@ fn main() {
     let setup_start = Instant::now();
     let (g_alpha_powers, v_srs) =
         BivariateKZG::<Bls12_381>::setup(&mut rng, log_x_degree, log_y_degree).unwrap();
+    let powers = &g_alpha_powers;
+    let x_srs = get_x_srs::<Bls12_381>(&powers);
     let time = setup_start.elapsed().as_millis();
     println!("Bivariate KZG setup time: {:} ms", time);
 
@@ -190,6 +192,7 @@ fn main() {
     let open_start = Instant::now();
     let proof_batch = BivBatchKZG::<Bls12_381>::open_lagrange_at_same_y(
         &srs.0,
+        &x_srs,
         &bivariate_polynomials,
         &x_points,
         &y_point,

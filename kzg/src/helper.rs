@@ -1,6 +1,7 @@
 use ark_ec::{
     pairing::Pairing,
     // scalar_mul::fixed_base::FixedBase,
+    Group, CurveGroup, AffineRepr
 };
 use ark_ff::{One, Field, Zero};
 use ark_poly::{polynomial::{
@@ -44,24 +45,7 @@ pub fn interpolate_on_trivial_domain<P: Pairing> (
     assert_eq!(points.len(), evals.len());
     let mut result_polynomial = UnivariatePolynomial::zero();
 
-    // let mut numerator_polynomial = UnivariatePolynomial::from_coefficients_vec(vec![
-    //     -points[0].clone(),
-    //     P::ScalarField::one()
-    // ]);
-    // for i in 1..points.len() {
-    //     let current_polynomial = UnivariatePolynomial::from_coefficients_vec(vec![
-    //         -points[i].clone(),
-    //         P::ScalarField::one()
-    //     ]); 
-    //     numerator_polynomial = &numerator_polynomial * &current_polynomial;
-    // }
     let numerator_polynomial = generator_numerator_polynomial::<P>(&points);
-
-    // test for correctness
-    // assert!(numerator_polynomial.degree() == points.len());
-    // for i in 0..points.len() {
-    //     assert!(numerator_polynomial.evaluate(&points[i]) == P::ScalarField::zero());
-    // }
 
     for i in 0..points.len() {
         let mut constant_term = P::ScalarField::one();
@@ -102,6 +86,20 @@ pub fn evaluate_one_lagrange<P: Pairing>(
         let point_pow_size = (*point).pow([size as u64]) - P::ScalarField::one();
         g_pow_i_minus_one * point_pow_size * (size_field * (*point - g_pow_i_minus_one)).inverse().unwrap()
     }
+}
+
+pub fn get_x_srs<P: Pairing> (
+    powers: &Vec<Vec<P::G1Affine>>,
+) -> Vec<P::G1Affine> {
+    let mut x_srs: Vec<P::G1> = vec![P::G1::zero(); powers[0].len()];
+    for i in 0..powers[0].len() {
+        for j in 0..powers.len() {
+            x_srs[i] += powers[j][i].into_group();
+        }
+    }
+    assert!(x_srs[0] == P::G1::generator());
+    let x_srs = P::G1::normalize_batch(&x_srs);
+    x_srs
 }
 
 #[cfg(test)]
