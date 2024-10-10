@@ -95,8 +95,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         let final_coms_slice = Net::send_to_master(&sub_coms);
 
         if Net::am_master() {
-            assert!(powers.len().is_power_of_two());
-
+            let time = Instant::now();
             let mut final_coms = vec![P::G1::zero(); sub_polynomials.len()];
             let final_coms_slice = final_coms_slice.unwrap();
 
@@ -106,6 +105,7 @@ impl<P: Pairing> BivBatchKZG<P> {
                     final_coms[i] += row[i];
                 }
             }
+            println!("Prover 0 additional committing time: {:?}", time.elapsed());
             Some(final_coms)
         } else {
             None
@@ -193,10 +193,12 @@ impl<P: Pairing> BivBatchKZG<P> {
         Ok(proof)
     }
 
+    // add evals to proof as de-evals cost communication time
     pub fn de_open_lagrange(
         sub_prover_id: usize,
         powers: &Vec<Vec<P::G1Affine>>,
         sub_polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>,
+        evals_slice: &Vec<P::ScalarField>,
         point: &(P::ScalarField, P::ScalarField),
         domain: &GeneralEvaluationDomain<P::ScalarField>,
         // transcript: &mut Transcript,
@@ -213,33 +215,31 @@ impl<P: Pairing> BivBatchKZG<P> {
         let (x, y) = point;
 
         // generate slice_q1 and partial evaluations
-        let mut eval_combined_slice = P::ScalarField::zero();
+        // let mut evals_slice = Vec::new();
+        // let evals_slice = sub_evals;
         let mut linear_factor = P::ScalarField::one();
         let mut polynomial_combined_slice_q1 = UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero()]);
 
         for polynomial in sub_polynomials {
             // let eval = polynomial.evaluate(&x);
-            let polynomial_slice_q1 = &(polynomial * linear_factor) / 
-                &UnivariatePolynomial::from_coefficients_vec(vec![
-                -x.clone(),
-                P::ScalarField::one()
-            ]);
-            polynomial_combined_slice_q1 += &polynomial_slice_q1;
-            eval_combined_slice += polynomial.evaluate(&x) * linear_factor;
+            polynomial_combined_slice_q1 += (linear_factor, polynomial);
+            // evals_slice.push(polynomial.evaluate(&x));
             linear_factor *= challenge;
         }
 
-        let mut coeffs_q1 = polynomial_combined_slice_q1.coeffs.to_vec();
+        let polynomial_q1 = &polynomial_combined_slice_q1 / &UnivariatePolynomial::from_coefficients_vec(vec![
+            -x.clone(),
+            P::ScalarField::one()
+        ]);
+        let mut coeffs_q1 = polynomial_q1.coeffs.to_vec();
         coeffs_q1.resize(sub_powers.len(), <P::ScalarField>::zero());
         let sub_proof = P::G1::msm(&sub_powers, &coeffs_q1).unwrap();
-        let sub_proofs_and_evals = Net::send_to_master(&(sub_proof, eval_combined_slice));
-        // let sub_proofs = Net::send_to_master(&sub_proof);
-        // let sub_evals = Net::send_to_master(&eval_combined_slice);
+        let sub_proofs_and_evals = Net::send_to_master(&(sub_proof, evals_slice.clone()));
 
         // generate f(z1,z2)
         if Net::am_master() {
             // generate the first part proof 
-            let proof_1 = sub_proofs_and_evals.clone().unwrap().iter().map(|&(first, _)| first).sum();
+            // let proof_1_test = sub_proofs_and_evals.clone().unwrap().iter().map(|&(first, _)| first).sum();
 
             // generate the second part proof
             let y_srs: Vec<<P as Pairing>::G1Affine> = powers.iter()
@@ -247,9 +247,28 @@ impl<P: Pairing> BivBatchKZG<P> {
                 .cloned()
                 .collect();
             // receive the sub_evals
-            let sub_evals: Vec<<P as Pairing>::ScalarField> = sub_proofs_and_evals.unwrap().iter().map(|&(_, second)| second).collect();
-            assert_eq!(sub_evals.len(), y_srs.len());
-            let evals_q2 = Evaluations::<P::ScalarField>::from_vec_and_domain(sub_evals, *domain);
+            let sub_proofs_and_evals = sub_proofs_and_evals.unwrap();
+            let mut proof_1 = P::G1::zero();
+            let evals_lagrange = EvaluationDomain::evaluate_all_lagrange_coefficients(domain, *y);
+            let mut sub_poly_evals_sum = Vec::new();
+            let mut poly_evals = vec![P::ScalarField::zero(); sub_polynomials.len()];
+
+            for j in 0..sub_proofs_and_evals.len() {
+                // generate the first part proof 
+                proof_1 += sub_proofs_and_evals[j].0;
+
+                let mut linear_factor = P::ScalarField::one();
+                let mut current_sum = P::ScalarField::zero();
+                for i in 0..sub_polynomials.len() {
+                    poly_evals[i] += sub_proofs_and_evals[j].1[i] * evals_lagrange[j];
+                    current_sum += sub_proofs_and_evals[j].1[i] * linear_factor;
+                    linear_factor *= challenge;
+                }
+                sub_poly_evals_sum.push(current_sum);
+            }
+            
+            // let evals_q2 = Evaluations::<P::ScalarField>::from_vec_and_domain(sub_evals, *domain);
+            let evals_q2 = Evaluations::<P::ScalarField>::from_vec_and_domain(sub_poly_evals_sum, *domain);
             let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_q2, &y, &domain);
             let proof_2 = P::G1::msm(&y_srs, &coeffs_q2).unwrap();
 
@@ -481,7 +500,8 @@ impl<P: Pairing> BivBatchKZG<P> {
         
         // generate evaluations of f_j,i(eta, beta)
         let point_eta_beta = (eta, *y_point);
-        let evals_eta_beta: Vec<P::ScalarField> = sub_polynomials.iter().map(|poly| poly.evaluate(&eta) * eval_lagrange).collect();
+        let sub_evals_eta: Vec<P::ScalarField> = sub_polynomials.iter().map(|poly| poly.evaluate(&eta)).collect();
+        let evals_eta_beta: Vec<P::ScalarField> = sub_evals_eta.iter().map(|eval| eval.clone() * eval_lagrange).collect();
         let eval_q_slice = polynomial_q_slice.evaluate(&eta);
         let evals_eta_beta_and_q = Net::send_to_master(&(evals_eta_beta, eval_q_slice));
 
@@ -515,7 +535,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         };
 
         let time = Instant::now();
-        let proof_q1_q2 = Self::de_open_lagrange(sub_prover_id, &powers, &sub_polynomials, &point_eta_beta, &domain, &theta);
+        let proof_q1_q2 = Self::de_open_lagrange(sub_prover_id, &powers, &sub_polynomials, &sub_evals_eta, &point_eta_beta, &domain, &theta);
         println!("Prover {:?} proof2 time: {:?}", sub_prover_id, time.elapsed());
 
         let time = Instant::now();

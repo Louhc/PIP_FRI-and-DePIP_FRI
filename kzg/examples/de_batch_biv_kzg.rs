@@ -5,7 +5,6 @@ use ark_ec::{
     pairing::Pairing};
 use ark_ff::Zero;
 use my_kzg::{biv_trivial_kzg::BivariatePolynomial, biv_batch_kzg::BivBatchKZG};
-use my_kzg::trivial_kzg::{KZG, DeKZG};
 use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial
 };
@@ -40,7 +39,7 @@ fn init() -> (usize, usize, usize) {
     Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
     let l = Net::n_parties();
     let sub_prover_id = Net::party_id();
-    let m = 10;
+    let m = 15;
     (m, l, sub_prover_id)
 }
 
