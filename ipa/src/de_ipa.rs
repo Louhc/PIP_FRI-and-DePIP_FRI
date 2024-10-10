@@ -212,7 +212,7 @@ impl<P: Pairing> DeIPA<P> {
 
     //         (eval_g1, eval_h1, com_g2, com_h2_low, com_h2_high, polynomials_y, polynomials_g2_h2)
     //     } else {
-    //         (P::ScalarField::zero(), P::ScalarField::zero(), P::G1::zero(), P::G1::zero(), P::G1::zero(), vec![UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero()])], vec![UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero()])])
+    //         (P::ScalarField::zero(), P::ScalarField::zero(), P::G1::zero(), P::G1::zero(), P::G1::zero(), vec![UnivariatePolynomial::zero()], vec![UnivariatePolynomial::zero()])
     //     };
 
     //     // generate new challenge= beta
@@ -505,7 +505,7 @@ mod tests{
 
         let alpha = MyField::rand(&mut rng);
         let evals_3: Vec<MyField> = x_polynomials_3.iter().map(|polynomial| polynomial.evaluate(&alpha)).collect();
-        let mut left_polynomial = UnivariatePolynomial::from_coefficients_vec(vec![MyField::zero()]);
+        let mut left_polynomial = UnivariatePolynomial::zero();
         for i in 0..x_polynomials_1.len() {
             let mut current_polynomial = &x_polynomials_1[i] * &x_polynomials_2[i];
             current_polynomial = &current_polynomial * evals_3[i];
@@ -514,7 +514,7 @@ mod tests{
 
         let omega = domain_y.group_gen();
         let mut point = MyField::one();
-        let mut right_polynomial = UnivariatePolynomial::from_coefficients_vec(vec![MyField::zero()]);
+        let mut right_polynomial = UnivariatePolynomial::zero();
         for _ in 0..bivariate_polynomial_1.x_polynomials.len() {
             let mut current_polynomial: UnivariatePolynomial<MyField> = bivariate_polynomial_1.evaluate_at_y_lagrange(&point, &domain_y);
             current_polynomial = &current_polynomial * &bivariate_polynomial_2.evaluate_at_y_lagrange(&point, &domain_y);

@@ -1,6 +1,5 @@
 use ark_ec::{
     pairing::Pairing,
-    // scalar_mul::fixed_base::FixedBase,
     Group, CurveGroup, AffineRepr
 };
 use ark_ff::{One, Field, Zero};
@@ -24,12 +23,12 @@ pub fn generator_numerator_polynomial<P: Pairing> (
         }
     }
     let mut numerator_polynomial = UnivariatePolynomial::from_coefficients_vec(vec![
-        -points_without_repeat[0].clone(),
+        -points_without_repeat[0],
         P::ScalarField::one()
     ]);
     for i in 1..points.len() {
         let current_polynomial = UnivariatePolynomial::from_coefficients_vec(vec![
-            -points[i].clone(),
+            -points[i],
             P::ScalarField::one()
         ]); 
         numerator_polynomial = &numerator_polynomial * &current_polynomial;

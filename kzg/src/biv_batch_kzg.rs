@@ -218,7 +218,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         // let mut evals_slice = Vec::new();
         // let evals_slice = sub_evals;
         let mut linear_factor = P::ScalarField::one();
-        let mut polynomial_combined_slice_q1 = UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero()]);
+        let mut polynomial_combined_slice_q1 = UnivariatePolynomial::zero();
 
         for polynomial in sub_polynomials {
             // let eval = polynomial.evaluate(&x);
@@ -456,7 +456,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         let gamma = *challenge;
         
         // generate q_i()
-        let time = Instant::now();
+        // let time = Instant::now();
         let mut combined_polynomial = UnivariatePolynomial::zero();
         let mut challenge_gamma = P::ScalarField::one();
         let eval_lagrange: <P as Pairing>::ScalarField = evaluate_one_lagrange::<P>(sub_prover_id, domain, y_point);
@@ -465,7 +465,7 @@ impl<P: Pairing> BivBatchKZG<P> {
             let polynomial_f_x_beta = &sub_polynomials[j] * eval_lagrange;
 
             // generate final poynomial with linear combination
-            let combined_polynomial_slice = &polynomial_f_x_beta / &(generator_numerator_polynomial::<P>(&x_points[j]));
+            let combined_polynomial_slice = &polynomial_f_x_beta / &generator_numerator_polynomial::<P>(&x_points[j]);
             combined_polynomial += (challenge_gamma, &combined_polynomial_slice);
             challenge_gamma *= gamma;
         }
@@ -473,11 +473,11 @@ impl<P: Pairing> BivBatchKZG<P> {
         let polynomial_q_slice = &combined_polynomial;
         let mut coeffs_q_slice = polynomial_q_slice.coeffs.to_vec();
         coeffs_q_slice.resize(powers[0].len(), <P::ScalarField>::zero());
-        println!("Prover {:?} proof1 before_msm time: {:?}", sub_prover_id, time.elapsed());
-        let time = Instant::now();
+        // println!("Prover {:?} proof1 before_msm time: {:?}", sub_prover_id, time.elapsed());
+        // let time = Instant::now();
         let proof_q_slice = P::G1::msm(&x_srs, &coeffs_q_slice).unwrap();
-        println!("Prover {:?} proof1 msm time: {:?}", sub_prover_id, time.elapsed());
-        let time = Instant::now();
+        // println!("Prover {:?} proof1 msm time: {:?}", sub_prover_id, time.elapsed());
+        // let time = Instant::now();
         let proof_q = Net::send_to_master(&proof_q_slice);
         // first-part proof, commitments to q
         let proof_q = if Net::am_master() {
@@ -485,7 +485,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         } else {
             None
         };
-        println!("Prover {:?} proof1 after_msm time: {:?}", sub_prover_id, time.elapsed());
+        // println!("Prover {:?} proof1 after_msm time: {:?}", sub_prover_id, time.elapsed());
 
         // given proof_q, generate challenge eta using fiat-shamir
         let eta = if Net::am_master() {
@@ -505,7 +505,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         let eval_q_slice = polynomial_q_slice.evaluate(&eta);
         let evals_eta_beta_and_q = Net::send_to_master(&(evals_eta_beta, eval_q_slice));
 
-        // P_0 computes evaluations of f_j(eta, beta)
+        // P_0 computes evaluations of f_j(eta, beta) and q(eta)
         let (evals_eta_beta, eval_q) = if Net::am_master() {
             let evals_eta_beta_and_q = evals_eta_beta_and_q.unwrap();
             let mut evals_eta_beta = vec![P::ScalarField::zero(); sub_polynomials.len()];
