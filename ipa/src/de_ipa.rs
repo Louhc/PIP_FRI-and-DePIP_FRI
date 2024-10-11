@@ -54,8 +54,8 @@ impl<P: Pairing> DeIPA<P> {
         // f1 - f4
         let eval_a_r = wit_polys.poly_a.evaluate(r);
         let eval_b_0 = wit_polys.poly_b.evaluate(&P::ScalarField::zero());
-        let eval_b_r_inverse = wit_polys.poly_b.evaluate(&r.clone().inverse().unwrap());
-        let eval_b_virtual = eval_b_r_inverse * r_pow_m + eval_b_0 * (P::ScalarField::one() - r_pow_m);
+        let eval_b_inverse = wit_polys.poly_b.evaluate(&r.clone().inverse().unwrap());
+        let eval_b_virtual = eval_b_inverse * r_pow_m + eval_b_0 * (P::ScalarField::one() - r_pow_m);
         let eval_c_r = wit_polys.poly_c.evaluate(r);
         let eval_r_pow_m_mul_c_r = UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * eval_c_r]);
 
@@ -105,9 +105,12 @@ impl<P: Pairing> DeIPA<P> {
         // assert_eq!(eval_ar_alpha, poly_ar.evaluate(&alpha));
         let eval_a_r = eval_a_r;
         let eval_b_alpha = wit_polys.poly_b.evaluate(&alpha);
-        let eval_b_r_inverse = eval_b_r_inverse;
+        let eval_b_r_inverse = eval_b_inverse;
         let eval_b_0 = eval_b_0;
-        // let eval_b_r_virtual = eval_b_virtual;
+        // test
+        let eval_b_r_virtual = eval_b_virtual;
+        assert_eq!(eval_b_r_inverse * r_pow_m + eval_b_0 * (P::ScalarField::one() - r_pow_m), eval_b_r_virtual);
+        // test over
         let eval_c_r = eval_c_r;
         let eval_r = eval_r;
 
@@ -125,10 +128,11 @@ impl<P: Pairing> DeIPA<P> {
             vec![vec![P::ScalarField::zero()]]
         };
 
-        let (eval_g1, eval_h1, com_g2, com_h2_low, com_h2_high, polynomials_y, polynomials_g2_h2) = if Net::am_master() {
+        let (eval_g1_h1, com_g2_h2, polynomials_y, polynomials_g2_h2) = if Net::am_master() {
             // g1(alpha) and h1(alpha)
-            let eval_g1 = evals.iter().map(|eval| eval[11]).sum();
-            let eval_h1 = evals.iter().map(|eval| eval[12]).sum();
+            let eval_g1: P::ScalarField = evals.iter().map(|eval| eval[11]).sum();
+            let eval_h1: P::ScalarField = evals.iter().map(|eval| eval[12]).sum();
+            let eval_g1_h1 = vec![eval_g1, eval_h1];
 
             // compute univariate polynomials over Y with X = alpha
             // using ifft, from evaluations to polynomials
@@ -140,11 +144,12 @@ impl<P: Pairing> DeIPA<P> {
             let evals_a_r_alpha = evals.iter().map(|eval| eval[4]).collect();
             let evals_a_r = evals.iter().map(|eval| eval[5]).collect();
             let evals_b_alpha = evals.iter().map(|eval| eval[6]).collect();
-            let evals_b_r_inverse = evals.iter().map(|eval| eval[7]).collect();
-            let evals_b_0 = evals.iter().map(|eval| eval[8]).collect();
-            // let evals_b_r_virtual = evals.iter().map(|eval| eval[7]).collect();
+            let evals_b_r_inverse: Vec<P::ScalarField> = evals.iter().map(|eval| eval[7]).collect();
+            let evals_b_0: Vec<P::ScalarField> = evals.iter().map(|eval| eval[8]).collect();
             let evals_c_r = evals.iter().map(|eval| eval[9]).collect();
             let evals_r = evals.iter().map(|eval| eval[10]).collect();
+
+            let evals_b_r_virtual = evals_b_r_inverse.iter().zip(evals_b_0.iter()).map(|(left, right)| left.clone() * r_pow_m + right.clone() * (P::ScalarField::one() - r_pow_m)).collect();
 
             let poly_pa_alpha = Self::interpolate_from_eval_domain(&evals_pa_alpha, y_domain);
             let poly_pb_alpha = Self::interpolate_from_eval_domain(&evals_pb_alpha, y_domain);
@@ -155,10 +160,10 @@ impl<P: Pairing> DeIPA<P> {
             let poly_b_alpha = Self::interpolate_from_eval_domain(&evals_b_alpha, y_domain);
             let poly_b_r_inverse = Self::interpolate_from_eval_domain(&evals_b_r_inverse, y_domain);
             let poly_b_0 = Self::interpolate_from_eval_domain(&evals_b_0, y_domain);
+            let poly_b_r_virtual = Self::interpolate_from_eval_domain(&evals_b_r_virtual, y_domain);
             let poly_c_r = Self::interpolate_from_eval_domain(&evals_c_r, y_domain);
             let poly_r = Self::interpolate_from_eval_domain(&evals_r, y_domain);
 
-            let poly_b_r_virtual = &poly_b_r_inverse * r_pow_m + &poly_b_0 * (P::ScalarField::one() - r_pow_m);
             let poly_f1_alpha = &(&poly_pa_alpha * &poly_w_alpha) - &(&poly_r * &poly_a_r);
             let poly_f2_alpha = &(&poly_pb_alpha * &poly_w_alpha) - &(&poly_r * &poly_b_r_virtual);
             let poly_f3_alpha = &(&poly_pc_alpha * &poly_w_alpha) - &(&poly_r * &poly_c_r);
@@ -166,7 +171,6 @@ impl<P: Pairing> DeIPA<P> {
 
             let polynomials_y = vec![poly_pa_alpha, poly_pb_alpha, poly_pc_alpha, poly_w_alpha,
                                                                                 poly_a_r_alpha, poly_a_r, poly_b_alpha, poly_b_r_inverse, poly_b_0, poly_c_r, poly_r];
-
             // get the target polynomial over Y via rlc
             let mut alpha_minus_u1 = alpha - challenge_u1;
             let mut polynomial_target_y = &poly_f1_alpha * alpha_minus_u1;
@@ -200,18 +204,19 @@ impl<P: Pairing> DeIPA<P> {
             let com_g2 = KZG::<P>::commit_lagrange(&y_srs, &evals_g2).unwrap();
             let com_h2_low = KZG::<P>::commit_lagrange(&y_srs, &evals_h2_low).unwrap();
             let com_h2_high = KZG::<P>::commit_lagrange(&y_srs, &evals_h2_high).unwrap();
+            let com_g2_h2 = vec![com_g2, com_h2_low, com_h2_high];
 
             // get polynomials_g2_h2
             let polynomials_g2_h2 = vec![poly_g2, poly_h2_low, poly_h2_high];
 
-            (eval_g1, eval_h1, com_g2, com_h2_low, com_h2_high, polynomials_y, polynomials_g2_h2)
+            (eval_g1_h1, com_g2_h2, polynomials_y, polynomials_g2_h2)
         } else {
-            (P::ScalarField::zero(), P::ScalarField::zero(), P::G1::zero(), P::G1::zero(), P::G1::zero(), vec![UnivariatePolynomial::zero()], vec![UnivariatePolynomial::zero()])
+            (Vec::new(), Vec::new(), vec![UnivariatePolynomial::zero()], vec![UnivariatePolynomial::zero()])
         };
 
         // generate new challenge= beta
         let beta = if Net::am_master() {
-            let slice: &[P::G1] = &vec![com_g2, com_h2_low, com_h2_high];
+            let slice: &[P::G1] = &com_g2_h2;
             <Transcript as ProofTranscript<P>>::append_points(transcript, b"beta", slice);
             let beta = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluation_for_y");
             Net::recv_from_master(Some(vec![beta; Net::n_parties()]));
@@ -249,9 +254,9 @@ impl<P: Pairing> DeIPA<P> {
         // Self-test of evaluation validity
         if Net::am_master() {
             let z_h_eval_x = x_domain.evaluate_vanishing_polynomial(alpha);
-            let t2 = (alpha * eval_g1 + (alpha - challenge_u1) * z_h_eval_x * eval_h1)/y_domain.size_as_field_element();
+            let t2 = (alpha * eval_g1_h1[0] + (alpha - challenge_u1) * z_h_eval_x * eval_g1_h1[1])/y_domain.size_as_field_element();
             let f1 = evals_alpha_beta[0] * evals_alpha_beta[3] - evals_alpha_beta[10] * evals_alpha_beta[5];
-            let f2 = evals_alpha_beta[1] * evals_alpha_beta[3] - evals_alpha_beta[10] * (evals_alpha_beta[7] * r_pow_m - evals_alpha_beta[8] * (P::ScalarField::one() - r_pow_m));
+            let f2 = evals_alpha_beta[1] * evals_alpha_beta[3] - evals_alpha_beta[10] * (evals_alpha_beta[7] * r_pow_m + evals_alpha_beta[8] * (P::ScalarField::one() - r_pow_m));
             let f3 = evals_alpha_beta[2] * evals_alpha_beta[3] - evals_alpha_beta[10] * evals_alpha_beta[9];
             let f4 = (evals_alpha_beta[4] * evals_alpha_beta[6] - evals_alpha_beta[9]) * evals_alpha_beta[10];
 
@@ -259,9 +264,9 @@ impl<P: Pairing> DeIPA<P> {
             let left_hand = (beta - u2) * (alpha - challenge_u1) * eval_rlc;
             let right_hand = beta * evals_g2_h2[0] + (beta - u2) * t2 + (beta - u2) * y_domain.evaluate_vanishing_polynomial(beta) * (evals_g2_h2[1] + beta.pow([l as u64]) * evals_g2_h2[2]);
             assert_eq!(left_hand, right_hand);
-        }
 
-        println!("111");
+            println!("111111111111");
+        }
 
         // TODO: invoke the de-batch-bivarate-kzg, de-univariate-kzg over x, de-uni-kzg over y with lagrange
 
