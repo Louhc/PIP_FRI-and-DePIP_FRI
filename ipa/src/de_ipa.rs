@@ -155,17 +155,17 @@ impl<P: Pairing> DeIPA<P> {
             let poly_b_alpha = Self::interpolate_from_eval_domain(&evals_b_alpha, y_domain);
             let poly_b_r_inverse = Self::interpolate_from_eval_domain(&evals_b_r_inverse, y_domain);
             let poly_b_0 = Self::interpolate_from_eval_domain(&evals_b_0, y_domain);
-            let poly_b_r_virtual = &poly_b_r_inverse * r_pow_m + &poly_b_0 * (P::ScalarField::one() - r_pow_m);
             let poly_c_r = Self::interpolate_from_eval_domain(&evals_c_r, y_domain);
             let poly_r = Self::interpolate_from_eval_domain(&evals_r, y_domain);
 
+            let poly_b_r_virtual = &poly_b_r_inverse * r_pow_m + &poly_b_0 * (P::ScalarField::one() - r_pow_m);
             let poly_f1_alpha = &(&poly_pa_alpha * &poly_w_alpha) - &(&poly_r * &poly_a_r);
             let poly_f2_alpha = &(&poly_pb_alpha * &poly_w_alpha) - &(&poly_r * &poly_b_r_virtual);
             let poly_f3_alpha = &(&poly_pc_alpha * &poly_w_alpha) - &(&poly_r * &poly_c_r);
             let poly_f4_alpha = &(&(&poly_r * &poly_a_r_alpha) * &poly_b_alpha) - &(&poly_r * &poly_c_r);
 
             let polynomials_y = vec![poly_pa_alpha, poly_pb_alpha, poly_pc_alpha, poly_w_alpha,
-                                                                                poly_a_r_alpha, poly_a_r, poly_b_alpha, poly_b_r_virtual, poly_c_r, poly_r];
+                                                                                poly_a_r_alpha, poly_a_r, poly_b_alpha, poly_b_r_inverse, poly_b_0, poly_c_r, poly_r];
 
             // get the target polynomial over Y via rlc
             let mut alpha_minus_u1 = alpha - challenge_u1;
@@ -229,16 +229,17 @@ impl<P: Pairing> DeIPA<P> {
             let eval_ar_alpha_beta = polynomials_y[4].evaluate(&beta);
             let eval_a_r_beta = polynomials_y[5].evaluate(&beta);
             let eval_b_alpha_beta = polynomials_y[6].evaluate(&beta);
-            let eval_b_r_virtual_beta = polynomials_y[7].evaluate(&beta);
-            let eval_c_r_beta = polynomials_y[8].evaluate(&beta);
-            let eval_r_beta = polynomials_y[9].evaluate(&beta);
+            let eval_b_r_inverse_beta = polynomials_y[7].evaluate(&beta);
+            let eval_b_0_beta = polynomials_y[8].evaluate(&beta);
+            let eval_c_r_beta = polynomials_y[9].evaluate(&beta);
+            let eval_r_beta = polynomials_y[10].evaluate(&beta);
 
             let eval_g2 = polynomials_g2_h2[0].evaluate(&beta);
             let eval_h2_low = polynomials_g2_h2[1].evaluate(&beta);
             let eval_h2_high = polynomials_g2_h2[2].evaluate(&beta);
 
             let vec1 = vec![eval_pa_alpha_beta, eval_pb_alpha_beta, eval_pc_alpha_beta, eval_w_alpha_beta,
-                                                              eval_ar_alpha_beta, eval_a_r_beta, eval_b_alpha_beta, eval_b_r_virtual_beta, eval_c_r_beta, eval_r_beta];
+                                                              eval_ar_alpha_beta, eval_a_r_beta, eval_b_alpha_beta, eval_b_r_inverse_beta, eval_b_0_beta, eval_c_r_beta, eval_r_beta];
             let vec2 = vec![eval_g2, eval_h2_low, eval_h2_high];
             (vec1, vec2)
         } else {
@@ -249,10 +250,10 @@ impl<P: Pairing> DeIPA<P> {
         if Net::am_master() {
             let z_h_eval_x = x_domain.evaluate_vanishing_polynomial(alpha);
             let t2 = (alpha * eval_g1 + (alpha - challenge_u1) * z_h_eval_x * eval_h1)/y_domain.size_as_field_element();
-            let f1 = evals_alpha_beta[0] * evals_alpha_beta[3] - evals_alpha_beta[9] * evals_alpha_beta[5];
-            let f2 = evals_alpha_beta[1] * evals_alpha_beta[3] - evals_alpha_beta[9] * evals_alpha_beta[7];
-            let f3 = evals_alpha_beta[2] * evals_alpha_beta[3] - evals_alpha_beta[9] * evals_alpha_beta[8];
-            let f4 = (evals_alpha_beta[4] * evals_alpha_beta[6] - evals_alpha_beta[8]) * evals_alpha_beta[9];
+            let f1 = evals_alpha_beta[0] * evals_alpha_beta[3] - evals_alpha_beta[10] * evals_alpha_beta[5];
+            let f2 = evals_alpha_beta[1] * evals_alpha_beta[3] - evals_alpha_beta[10] * (evals_alpha_beta[7] * r_pow_m - evals_alpha_beta[8] * (P::ScalarField::one() - r_pow_m));
+            let f3 = evals_alpha_beta[2] * evals_alpha_beta[3] - evals_alpha_beta[10] * evals_alpha_beta[9];
+            let f4 = (evals_alpha_beta[4] * evals_alpha_beta[6] - evals_alpha_beta[9]) * evals_alpha_beta[10];
 
             let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3, f4], &challenge_v);
             let left_hand = (beta - u2) * (alpha - challenge_u1) * eval_rlc;
