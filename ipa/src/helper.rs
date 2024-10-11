@@ -338,6 +338,8 @@ mod tests {
         assert_eq!(vectors.vec_x, vectors_test.vec_x);
         assert_eq!(vectors.vec_y, vectors_test.vec_y);
         assert_eq!(vectors.vec_z, vectors_test.vec_z);
+        assert_eq!(vectors.vec_w, vectors_test.vec_w);
+        assert_eq!(vectors.vec_r, vectors_test.vec_r);
     }
 
     #[test]

@@ -1,13 +1,7 @@
-use ark_poly::{
-    univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, EvaluationDomain, Evaluations, GeneralEvaluationDomain, Polynomial
-};
+use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, EvaluationDomain, Evaluations, GeneralEvaluationDomain, Polynomial};
 use std::marker::PhantomData;
 use ark_ec::pairing::Pairing;
-use my_kzg::{batch_kzg::BatchKZG, helper::linear_combination_field, transcript::ProofTranscript, trivial_kzg::{
-    // DeKZG, 
-    VerifierSRS,
-    KZG
-}};
+use my_kzg::{batch_kzg::BatchKZG, helper::linear_combination_field, transcript::ProofTranscript, trivial_kzg::{VerifierSRS, KZG}};
 use crate::Error;
 use merlin::Transcript;
 use crate::{ipa::IPA, helper::{R1CSPublicPolys, R1CSWitnessPolys}};
@@ -27,11 +21,11 @@ impl<P: Pairing> DeIPA<P> {
         powers: &Vec<Vec<P::G1Affine>>,
         // x_srs for univariate polynomials over X
         x_srs: &Vec<P::G1Affine>,
-        witness_polynomials: &R1CSWitnessPolys<P>,
-        public_polynomials: &R1CSPublicPolys<P>,
+        wit_polys: &R1CSWitnessPolys<P>,
+        pub_polys: &R1CSPublicPolys<P>,
         r: &P::ScalarField,
-        domain_x: &GeneralEvaluationDomain<P::ScalarField>,
-        domain_y: &GeneralEvaluationDomain<P::ScalarField>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         transcript: &mut Transcript,
         challenge_v: &P::ScalarField,
         challenge_u1: &P::ScalarField,
@@ -42,43 +36,47 @@ impl<P: Pairing> DeIPA<P> {
         let l = Net::n_parties();
 
         // R_i(X) = X^{i-1} and evals R_i(r^{m})
-        // let mut coeffs_r_i = vec![P::ScalarField::zero(); sub_prover_id];
-        // coeffs_r_i.insert(0, P::ScalarField::one());
-        // let polynomial_r_i = UnivariatePolynomial::from_coefficients_vec(coeffs_r_i);
-        // let eval_r_i = polynomial_r_i.evaluate(&(r.pow([m as u64])));
-        let eval_r_i  = r.pow([(m * sub_prover_id) as u64]);
+        let eval_r  = r.pow([(m * sub_prover_id) as u64]);
+        let r_pow_m = r.pow([m as u64]);
 
         // f_a(rX)
-        let mut coeffs_fa = witness_polynomials.poly_a.coeffs.to_vec();
-        let mut linear_factor = P::ScalarField::one();
-        for i in 0..coeffs_fa.len() {
-            coeffs_fa[i] *= linear_factor;
-            linear_factor *= r;
+        // get (1, r, r^{2} ..., r^{m-1})
+        let mut r_m_powers = Vec::new();
+        let mut current = P::ScalarField::one();
+        for _ in 0..m {
+            r_m_powers.push(current.clone());
+            current *= r;
         }
-        let poly_fa_rx = UnivariatePolynomial::from_coefficients_vec(coeffs_fa);
+        let coeffs_a = wit_polys.poly_a.coeffs.to_vec();
+        let coeffs_ar: Vec<P::ScalarField> = coeffs_a.iter().zip(r_m_powers.iter()).map(|(left, right)| *left * *right).collect();
+        let poly_ar = UnivariatePolynomial::from_coefficients_vec(coeffs_ar);
 
         // f1 - f4
-        let polynomial_f1 = &public_polynomials.poly_pa * &witness_polynomials.poly_w + UnivariatePolynomial::from_coefficients_vec(vec![-eval_r_i * witness_polynomials.poly_a.evaluate(r)]);
-        let polynomial_f2 = &public_polynomials.poly_pb * &witness_polynomials.poly_w + UnivariatePolynomial::from_coefficients_vec(vec![-eval_r_i * witness_polynomials.poly_b.evaluate(&r.clone().inverse().unwrap())]);
-        let polynomial_f3 = &public_polynomials.poly_pa * &witness_polynomials.poly_w + UnivariatePolynomial::from_coefficients_vec(vec![-eval_r_i * witness_polynomials.poly_c.evaluate(r)]);
-        let polynomial_f4 = &(&poly_fa_rx * &witness_polynomials.poly_b) * eval_r_i + UnivariatePolynomial::from_coefficients_vec(vec![-eval_r_i * witness_polynomials.poly_c.evaluate(r)]);
+        let eval_a_r = wit_polys.poly_a.evaluate(r);
+        let eval_b_0 = wit_polys.poly_b.evaluate(&P::ScalarField::zero());
+        let eval_b_virtual = wit_polys.poly_b.evaluate(&r.clone().inverse().unwrap()) * r_pow_m + eval_b_0 * (P::ScalarField::one() - r_pow_m);
+        let eval_c_r = wit_polys.poly_c.evaluate(r);
+        let eval_r_pow_m_mul_c_r = UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * eval_c_r]);
+
+        let polynomial_f1 = &pub_polys.poly_pa * &wit_polys.poly_w + UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * eval_a_r]);
+        let polynomial_f2 = &pub_polys.poly_pb * &wit_polys.poly_w + UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * eval_b_virtual]);
+        let polynomial_f3 = &(&pub_polys.poly_pc * &wit_polys.poly_w) + &eval_r_pow_m_mul_c_r;
+        let polynomial_f4 = &(&(&poly_ar * &wit_polys.poly_b) * eval_r) + &eval_r_pow_m_mul_c_r;
 
         // target polynomial, rlc of f1-f4
         let mut polynomial_target = &polynomial_f1 + &(&polynomial_f2 * *challenge_v);
         polynomial_target += (*challenge_v * challenge_v, &polynomial_f3);
         polynomial_target += (challenge_v.pow([3 as u64]), &polynomial_f4);
 
-        // get g_u and h
-        let (poly_g1, poly_h1) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target, &challenge_u1, &domain_x);
+        // get g1 and h1
+        let (poly_g1, poly_h1) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target, &challenge_u1, &x_domain);
         let com_g1 = KZG::<P>::commit(&x_srs, &poly_g1).unwrap();
         let com_h1 = KZG::<P>::commit(&x_srs, &poly_h1).unwrap();
 
         // send com of g1 and h1 to P0
         let com_g1_h1_slice = Net::send_to_master(&(com_g1, com_h1));
         let com_g1_h1 = if Net::am_master() {
-            com_g1_h1_slice.unwrap().iter().fold((P::G1::zero(), P::G1::zero()), |(acc1, acc2), &(a, b)| {
-                (acc1 + a, acc2 + b)
-            })
+            com_g1_h1_slice.unwrap().iter().fold((P::G1::zero(), P::G1::zero()), |(acc1, acc2), &(a, b)| {(acc1 + a, acc2 + b)})
         } else {
             (P::G1::zero(), P::G1::zero())
         };
@@ -98,24 +96,25 @@ impl<P: Pairing> DeIPA<P> {
 
         // evaluate and send polynomial evaluations on alpha
         // also send g1(alpha) and h1(alpha)
-        let eval_pa_alpha = public_polynomials.poly_pa.evaluate(&alpha);
-        let eval_pb_alpha = public_polynomials.poly_pb.evaluate(&alpha);
-        let eval_pc_alpha = public_polynomials.poly_pc.evaluate(&alpha);
-        let eval_w_alpha = witness_polynomials.poly_w.evaluate(&alpha);
-        let eval_a_r_alpha = witness_polynomials.poly_a.evaluate(&(*r * alpha));
-        assert_eq!(eval_a_r_alpha, poly_fa_rx.evaluate(&alpha));
-        let eval_a_r = witness_polynomials.poly_a.evaluate(r);
-        let eval_b_alpha = witness_polynomials.poly_b.evaluate(&alpha);
-        let eval_b_r_inverse = witness_polynomials.poly_b.evaluate(&r.clone().inverse().unwrap());
-        let eval_c_r = witness_polynomials.poly_c.evaluate(r);
-        let eval_r_power_im = eval_r_i;
+        let eval_pa_alpha = pub_polys.poly_pa.evaluate(&alpha);
+        let eval_pb_alpha = pub_polys.poly_pb.evaluate(&alpha);
+        let eval_pc_alpha = pub_polys.poly_pc.evaluate(&alpha);
+        let eval_w_alpha = wit_polys.poly_w.evaluate(&alpha);
+        let eval_ar_alpha = wit_polys.poly_a.evaluate(&(*r * alpha));
+        // assert_eq!(eval_ar_alpha, poly_ar.evaluate(&alpha));
+        let eval_a_r = eval_a_r;
+        let eval_b_alpha = wit_polys.poly_b.evaluate(&alpha);
+        let eval_b_r_virtual = eval_b_virtual;
+        let eval_c_r = eval_c_r;
+        let eval_r = eval_r;
 
         // slices of g1(alpha) and h1(alpha)
         let eval_g1 = poly_g1.evaluate(&alpha);
         let eval_h1 = poly_h1.evaluate(&alpha);
 
-        let evals = vec![eval_pa_alpha, eval_pb_alpha, eval_pc_alpha, eval_w_alpha, eval_a_r_alpha, eval_a_r, eval_b_alpha, eval_b_r_inverse, eval_c_r, eval_r_power_im,
-                                                            eval_g1, eval_h1];
+        let evals = vec![eval_pa_alpha, eval_pb_alpha, eval_pc_alpha, eval_w_alpha, eval_ar_alpha, eval_a_r, 
+                                                           eval_b_alpha, eval_b_r_virtual, eval_c_r, eval_r,
+                                                           eval_g1, eval_h1];
         let evals_slice = Net::send_to_master(&evals);
         let evals = if Net::am_master() {
             evals_slice.unwrap()
@@ -138,28 +137,28 @@ impl<P: Pairing> DeIPA<P> {
             let evals_a_r_alpha = evals.iter().map(|eval| eval[4]).collect();
             let evals_a_r = evals.iter().map(|eval| eval[5]).collect();
             let evals_b_alpha = evals.iter().map(|eval| eval[6]).collect();
-            let evals_b_r_inverse = evals.iter().map(|eval| eval[7]).collect();
+            let evals_b_r_virtual = evals.iter().map(|eval| eval[7]).collect();
             let evals_c_r = evals.iter().map(|eval| eval[8]).collect();
-            let evals_r_power_im = evals.iter().map(|eval| eval[9]).collect();
+            let evals_r = evals.iter().map(|eval| eval[9]).collect();
 
-            let poly_pa_alpha = Self::interpolate_from_eval_domain(&evals_pa_alpha, domain_y);
-            let poly_pb_alpha = Self::interpolate_from_eval_domain(&evals_pb_alpha, domain_y);
-            let poly_pc_alpha = Self::interpolate_from_eval_domain(&evals_pc_alpha, domain_y);
-            let poly_w_alpha = Self::interpolate_from_eval_domain(&evals_w_alpha, domain_y);
-            let poly_a_r_alpha = Self::interpolate_from_eval_domain(&evals_a_r_alpha, domain_y);
-            let poly_a_r = Self::interpolate_from_eval_domain(&evals_a_r, domain_y);
-            let poly_b_alpha = Self::interpolate_from_eval_domain(&evals_b_alpha, domain_y);
-            let poly_b_r_inverse = Self::interpolate_from_eval_domain(&evals_b_r_inverse, domain_y);
-            let poly_c_r = Self::interpolate_from_eval_domain(&evals_c_r, domain_y);
-            let poly_r_power_im = Self::interpolate_from_eval_domain(&evals_r_power_im, domain_y);
+            let poly_pa_alpha = Self::interpolate_from_eval_domain(&evals_pa_alpha, y_domain);
+            let poly_pb_alpha = Self::interpolate_from_eval_domain(&evals_pb_alpha, y_domain);
+            let poly_pc_alpha = Self::interpolate_from_eval_domain(&evals_pc_alpha, y_domain);
+            let poly_w_alpha = Self::interpolate_from_eval_domain(&evals_w_alpha, y_domain);
+            let poly_a_r_alpha = Self::interpolate_from_eval_domain(&evals_a_r_alpha, y_domain);
+            let poly_a_r = Self::interpolate_from_eval_domain(&evals_a_r, y_domain);
+            let poly_b_alpha = Self::interpolate_from_eval_domain(&evals_b_alpha, y_domain);
+            let poly_b_r_virtual = Self::interpolate_from_eval_domain(&evals_b_r_virtual, y_domain);
+            let poly_c_r = Self::interpolate_from_eval_domain(&evals_c_r, y_domain);
+            let poly_r = Self::interpolate_from_eval_domain(&evals_r, y_domain);
 
-            let poly_f1_alpha = &(&poly_pa_alpha * &poly_w_alpha) - &(&poly_r_power_im * &poly_a_r);
-            let poly_f2_alpha = &(&poly_pb_alpha * &poly_w_alpha) - &(&poly_r_power_im * &poly_b_r_inverse);
-            let poly_f3_alpha = &(&poly_pc_alpha * &poly_w_alpha) - &(&poly_r_power_im * &poly_c_r);
-            let poly_f4_alpha = &(&(&poly_r_power_im * &poly_a_r_alpha) * &poly_b_alpha) - &(&poly_r_power_im * &poly_c_r);
+            let poly_f1_alpha = &(&poly_pa_alpha * &poly_w_alpha) - &(&poly_r * &poly_a_r);
+            let poly_f2_alpha = &(&poly_pb_alpha * &poly_w_alpha) - &(&poly_r * &poly_b_r_virtual);
+            let poly_f3_alpha = &(&poly_pc_alpha * &poly_w_alpha) - &(&poly_r * &poly_c_r);
+            let poly_f4_alpha = &(&(&poly_r * &poly_a_r_alpha) * &poly_b_alpha) - &(&poly_r * &poly_c_r);
 
             let polynomials_y = vec![poly_pa_alpha, poly_pb_alpha, poly_pc_alpha, poly_w_alpha,
-                                                                                poly_a_r_alpha, poly_a_r, poly_b_alpha, poly_b_r_inverse, poly_c_r, poly_r_power_im];
+                                                                                poly_a_r_alpha, poly_a_r, poly_b_alpha, poly_b_r_virtual, poly_c_r, poly_r];
 
             // get the target polynomial over Y via rlc
             let mut alpha_minus_u1 = alpha - challenge_u1;
@@ -172,7 +171,7 @@ impl<P: Pairing> DeIPA<P> {
             polynomial_target_y += (alpha_minus_u1, &poly_f4_alpha);
 
             // get g2, h2low, h2high
-            let (poly_g2, poly_h2) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target_y, &u2, &domain_y);
+            let (poly_g2, poly_h2) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target_y, &u2, &y_domain);
             let coeffs_h2 = poly_h2.coeffs.to_vec();
             assert!(coeffs_h2.len() > l);
             let coeffs_h2_low: Vec<P::ScalarField> = coeffs_h2.iter().take(l).cloned().collect();
@@ -181,9 +180,9 @@ impl<P: Pairing> DeIPA<P> {
             let poly_h2_high = UnivariatePolynomial::from_coefficients_vec(coeffs_h2_high);
 
             // get lagrange evaluations of g2, h2low, h2high
-            let evals_g2 = poly_g2.evaluate_over_domain_by_ref(*domain_y);
-            let evals_h2_low = poly_h2_low.evaluate_over_domain_by_ref(*domain_y);
-            let evals_h2_high = poly_h2_high.evaluate_over_domain_by_ref(*domain_y);
+            let evals_g2 = poly_g2.evaluate_over_domain_by_ref(*y_domain);
+            let evals_h2_low = poly_h2_low.evaluate_over_domain_by_ref(*y_domain);
+            let evals_h2_high = poly_h2_high.evaluate_over_domain_by_ref(*y_domain);
 
             // compute commitments to g2, h2low, h2high
             // Note that y_srs is lagrange-based
@@ -220,36 +219,41 @@ impl<P: Pairing> DeIPA<P> {
             let eval_pb_alpha_beta = polynomials_y[1].evaluate(&beta);
             let eval_pc_alpha_beta = polynomials_y[2].evaluate(&beta);
             let eval_w_alpha_beta = polynomials_y[3].evaluate(&beta);
-            let eval_a_r_alpha_beta = polynomials_y[4].evaluate(&beta);
+            let eval_ar_alpha_beta = polynomials_y[4].evaluate(&beta);
             let eval_a_r_beta = polynomials_y[5].evaluate(&beta);
             let eval_b_alpha_beta = polynomials_y[6].evaluate(&beta);
-            let eval_b_r_inverse_beta = polynomials_y[7].evaluate(&beta);
+            let eval_b_r_virtual_beta = polynomials_y[7].evaluate(&beta);
             let eval_c_r_beta = polynomials_y[8].evaluate(&beta);
-            let eval_r_power_im_beta = polynomials_y[9].evaluate(&beta);
+            let eval_r_beta = polynomials_y[9].evaluate(&beta);
 
             let eval_g2 = polynomials_g2_h2[0].evaluate(&beta);
-            let eval_h2 = polynomials_g2_h2[1].evaluate(&beta);
+            let eval_h2_low = polynomials_g2_h2[1].evaluate(&beta);
+            let eval_h2_high = polynomials_g2_h2[2].evaluate(&beta);
 
             let vec1 = vec![eval_pa_alpha_beta, eval_pb_alpha_beta, eval_pc_alpha_beta, eval_w_alpha_beta,
-                eval_a_r_alpha_beta, eval_a_r_beta, eval_b_alpha_beta, eval_b_r_inverse_beta, eval_c_r_beta, eval_r_power_im_beta];
-            let vec2 = vec![eval_g2, eval_h2];
+                                                              eval_ar_alpha_beta, eval_a_r_beta, eval_b_alpha_beta, eval_b_r_virtual_beta, eval_c_r_beta, eval_r_beta];
+            let vec2 = vec![eval_g2, eval_h2_low, eval_h2_high];
             (vec1, vec2)
         } else {
             (vec![P::ScalarField::zero()], vec![P::ScalarField::zero()])
         };
 
         // Self-test of evaluation validity
-        let z_h_eval_x = domain_x.evaluate_vanishing_polynomial(alpha);
-        let t2 = (alpha * eval_g1 + (alpha - challenge_u1) * z_h_eval_x * eval_h1)/domain_y.size_as_field_element();
-        let f1 = evals_alpha_beta[0] * evals_alpha_beta[3] - evals_alpha_beta[9] * evals_alpha_beta[5];
-        let f2 = evals_alpha_beta[1] * evals_alpha_beta[3] - evals_alpha_beta[9] * evals_alpha_beta[7];
-        let f3 = evals_alpha_beta[2] * evals_alpha_beta[3] - evals_alpha_beta[9] * evals_alpha_beta[8];
-        let f4 = (evals_alpha_beta[4] * evals_alpha_beta[6] - evals_alpha_beta[8]) * evals_alpha_beta[9];
+        if Net::am_master() {
+            let z_h_eval_x = x_domain.evaluate_vanishing_polynomial(alpha);
+            let t2 = (alpha * eval_g1 + (alpha - challenge_u1) * z_h_eval_x * eval_h1)/y_domain.size_as_field_element();
+            let f1 = evals_alpha_beta[0] * evals_alpha_beta[3] - evals_alpha_beta[9] * evals_alpha_beta[5];
+            let f2 = evals_alpha_beta[1] * evals_alpha_beta[3] - evals_alpha_beta[9] * evals_alpha_beta[7];
+            let f3 = evals_alpha_beta[2] * evals_alpha_beta[3] - evals_alpha_beta[9] * evals_alpha_beta[8];
+            let f4 = (evals_alpha_beta[4] * evals_alpha_beta[6] - evals_alpha_beta[8]) * evals_alpha_beta[9];
 
-        let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3, f4], &challenge_v);
-        let left_hand = (beta - u2) * (alpha - challenge_u1) * eval_rlc;
-        let right_hand = beta * evals_g2_h2[0] + (beta - u2) * t2 + (beta - u2) * domain_y.evaluate_vanishing_polynomial(beta) * (evals_g2_h2[1] + beta.pow([l as u64]) * evals_g2_h2[2]);
-        assert_eq!(left_hand, right_hand);
+            let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3, f4], &challenge_v);
+            let left_hand = (beta - u2) * (alpha - challenge_u1) * eval_rlc;
+            let right_hand = beta * evals_g2_h2[0] + (beta - u2) * t2 + (beta - u2) * y_domain.evaluate_vanishing_polynomial(beta) * (evals_g2_h2[1] + beta.pow([l as u64]) * evals_g2_h2[2]);
+            assert_eq!(left_hand, right_hand);
+        }
+
+        println!("111");
 
         // TODO: invoke the de-batch-bivarate-kzg, de-univariate-kzg over x, de-uni-kzg over y with lagrange
 
@@ -454,9 +458,9 @@ mod tests{
         let size_x = BIVARIATE_X_DEGREE + 1;
         let size_y = BIVARIATE_Y_DEGREE + 1;
         let mut rng = StdRng::seed_from_u64(0u64);
-        let domain_y = 
+        let y_domain = 
             <GeneralEvaluationDomain<MyField> as EvaluationDomain<MyField>>::new(size_y).unwrap();
-        let domain_x = 
+        let x_domain = 
             <GeneralEvaluationDomain<MyField> as EvaluationDomain<MyField>>::new(size_x).unwrap();
         
         // f1
@@ -509,21 +513,21 @@ mod tests{
             left_polynomial += &current_polynomial;
         }
 
-        let omega = domain_y.group_gen();
+        let omega = y_domain.group_gen();
         let mut point = MyField::one();
         let mut right_polynomial = UnivariatePolynomial::zero();
         for _ in 0..bivariate_polynomial_1.x_polynomials.len() {
-            let mut current_polynomial: UnivariatePolynomial<MyField> = bivariate_polynomial_1.evaluate_at_y_lagrange(&point, &domain_y);
-            current_polynomial = &current_polynomial * &bivariate_polynomial_2.evaluate_at_y_lagrange(&point, &domain_y);
-            current_polynomial = &current_polynomial * bivariate_polynomial_3.evaluate_lagrange(&(alpha, point), &domain_y);
+            let mut current_polynomial: UnivariatePolynomial<MyField> = bivariate_polynomial_1.evaluate_at_y_lagrange(&point, &y_domain);
+            current_polynomial = &current_polynomial * &bivariate_polynomial_2.evaluate_at_y_lagrange(&point, &y_domain);
+            current_polynomial = &current_polynomial * bivariate_polynomial_3.evaluate_lagrange(&(alpha, point), &y_domain);
             right_polynomial += &current_polynomial;
             point *= omega;
         }
 
         assert_eq!(left_polynomial, right_polynomial);
 
-        let left_sum = IPA::<Bls12_381>::get_sum_on_domain(&left_polynomial, &domain_x);
-        let right_sum = IPA::<Bls12_381>::get_sum_on_domain(&right_polynomial, &domain_x);
+        let left_sum = IPA::<Bls12_381>::get_sum_on_domain(&left_polynomial, &x_domain);
+        let right_sum = IPA::<Bls12_381>::get_sum_on_domain(&right_polynomial, &x_domain);
         assert_eq!(left_sum, right_sum);
 
     }
