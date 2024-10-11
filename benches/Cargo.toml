@@ -29,31 +29,9 @@ digest = "0.9"
 blake2 = "0.9"
 csv = "1"
 
-ark-inner-products = { path = "../inner_products" }
-ark-ip-proofs = { path = "../ip_proofs" }
-ark-dh-commitments = { path = "../dh_commitments" }
 my_kzg = {path = "../kzg"}
 my_ipa = {path = "../ipa"}
 
-[[bench]]
-name = "inner_products"
-path = "benches/inner_products.rs"
-harness = false
-
-[[bench]]
-name = "gipa"
-path = "benches/gipa.rs"
-harness = false
-
-[[bench]]
-name = "tipa"
-path = "benches/tipa.rs"
-harness = false
-
-[[bench]]
-name = "poly_commit"
-path = "benches/poly_commit.rs"
-harness = false
 
 [[bench]]
 name = "uni_trivial_kzg"
@@ -79,12 +57,3 @@ harness = false
 name = "my_ipa"
 path = "benches/ipa.rs"
 harness = false
-
-[[bench]]
-name = "groth16_aggregation"
-path = "benches/groth16_aggregation/bench.rs"
-harness = false
-
-[[example]]
-name = "groth16_aggregation"
-path = "examples/groth16_aggregation.rs"

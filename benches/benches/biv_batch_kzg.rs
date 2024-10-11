@@ -28,13 +28,10 @@ fn main() {
 
     let mut rng = StdRng::seed_from_u64(0u64);
     let domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(log_y_degree + 1).unwrap();
-
     // Setup
     let setup_start = Instant::now();
     let (g_alpha_powers, v_srs) =
         BivariateKZG::<Bls12_381>::setup(&mut rng, log_x_degree, log_y_degree).unwrap();
-    let powers = &g_alpha_powers;
-    let x_srs = get_x_srs::<Bls12_381>(&powers);
     let time = setup_start.elapsed().as_millis();
     println!("Bivariate KZG setup time: {:} ms", time);
 
@@ -167,6 +164,7 @@ fn main() {
     let setup_start = Instant::now();
     let srs = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, log_x_degree, log_y_degree, &domain)
         .unwrap();
+    let x_srs = get_x_srs::<Bls12_381>(&srs.0);
     let time = setup_start.elapsed().as_millis();
     println!("Bivariate batch lagrange KZG setup time: {:} ms", time);
 

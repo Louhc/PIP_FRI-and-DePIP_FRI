@@ -1,10 +1,6 @@
 [workspace]
 
 members = [
-  "sipp",
-  "dh_commitments",
-  "ip_proofs",
-  "inner_products",
   "benches",
   "kzg",
   "ipa",

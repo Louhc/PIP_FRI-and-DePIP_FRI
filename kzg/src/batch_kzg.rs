@@ -22,25 +22,6 @@ pub struct SRS<P: Pairing> {
     pub h_alpha: P::G2,
 }
 
-// #[derive(Clone)]
-// pub struct VerifierSRS<P: Pairing> {
-//     pub g: P::G1,
-//     pub h: P::G2,
-//     pub h_alpha: P::G2,
-// }
-
-//TODO: Change SRS to return reference iterator - requires changes to TIPA and GIPA signatures
-impl<P: Pairing> SRS<P> {
-
-    pub fn get_verifier_key(&self) -> VerifierSRS<P> {
-        VerifierSRS {
-            g: self.g_alpha_powers[0].clone(),
-            h: self.h_beta_powers[0].clone(),
-            h_alpha: self.h_alpha.clone(),
-        }
-    }
-}
-
 pub fn structured_generators_scalar_power<G: CurveGroup>(
     num: usize,
     g: &G,
@@ -161,8 +142,9 @@ impl<P: Pairing> BatchKZG<P> {
             linear_combination = linear_combination + (coms[i].clone() - v_srs.g * evals[i]) * linear_factor;
         }
 
-        Ok(P::pairing(linear_combination.clone(), v_srs.h.clone())
-            == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point))
+        let is_valid = P::pairing(linear_combination.clone(), v_srs.h.clone())
+            == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point);
+        Ok(is_valid)
     }
 }
 

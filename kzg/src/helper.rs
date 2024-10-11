@@ -1,6 +1,7 @@
 use ark_ec::{
     pairing::Pairing,
-    Group, CurveGroup, AffineRepr
+    Group,
+    CurveGroup, AffineRepr
 };
 use ark_ff::{One, Field, Zero};
 use ark_poly::{polynomial::{

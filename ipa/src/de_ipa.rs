@@ -54,7 +54,8 @@ impl<P: Pairing> DeIPA<P> {
         // f1 - f4
         let eval_a_r = wit_polys.poly_a.evaluate(r);
         let eval_b_0 = wit_polys.poly_b.evaluate(&P::ScalarField::zero());
-        let eval_b_virtual = wit_polys.poly_b.evaluate(&r.clone().inverse().unwrap()) * r_pow_m + eval_b_0 * (P::ScalarField::one() - r_pow_m);
+        let eval_b_r_inverse = wit_polys.poly_b.evaluate(&r.clone().inverse().unwrap());
+        let eval_b_virtual = eval_b_r_inverse * r_pow_m + eval_b_0 * (P::ScalarField::one() - r_pow_m);
         let eval_c_r = wit_polys.poly_c.evaluate(r);
         let eval_r_pow_m_mul_c_r = UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * eval_c_r]);
 
@@ -104,7 +105,9 @@ impl<P: Pairing> DeIPA<P> {
         // assert_eq!(eval_ar_alpha, poly_ar.evaluate(&alpha));
         let eval_a_r = eval_a_r;
         let eval_b_alpha = wit_polys.poly_b.evaluate(&alpha);
-        let eval_b_r_virtual = eval_b_virtual;
+        let eval_b_r_inverse = eval_b_r_inverse;
+        let eval_b_0 = eval_b_0;
+        // let eval_b_r_virtual = eval_b_virtual;
         let eval_c_r = eval_c_r;
         let eval_r = eval_r;
 
@@ -113,7 +116,7 @@ impl<P: Pairing> DeIPA<P> {
         let eval_h1 = poly_h1.evaluate(&alpha);
 
         let evals = vec![eval_pa_alpha, eval_pb_alpha, eval_pc_alpha, eval_w_alpha, eval_ar_alpha, eval_a_r, 
-                                                           eval_b_alpha, eval_b_r_virtual, eval_c_r, eval_r,
+                                                           eval_b_alpha, eval_b_r_inverse, eval_b_0, eval_c_r, eval_r,
                                                            eval_g1, eval_h1];
         let evals_slice = Net::send_to_master(&evals);
         let evals = if Net::am_master() {
@@ -124,8 +127,8 @@ impl<P: Pairing> DeIPA<P> {
 
         let (eval_g1, eval_h1, com_g2, com_h2_low, com_h2_high, polynomials_y, polynomials_g2_h2) = if Net::am_master() {
             // g1(alpha) and h1(alpha)
-            let eval_g1 = evals.iter().map(|eval| eval[10]).sum();
-            let eval_h1 = evals.iter().map(|eval| eval[11]).sum();
+            let eval_g1 = evals.iter().map(|eval| eval[11]).sum();
+            let eval_h1 = evals.iter().map(|eval| eval[12]).sum();
 
             // compute univariate polynomials over Y with X = alpha
             // using ifft, from evaluations to polynomials
@@ -137,9 +140,11 @@ impl<P: Pairing> DeIPA<P> {
             let evals_a_r_alpha = evals.iter().map(|eval| eval[4]).collect();
             let evals_a_r = evals.iter().map(|eval| eval[5]).collect();
             let evals_b_alpha = evals.iter().map(|eval| eval[6]).collect();
-            let evals_b_r_virtual = evals.iter().map(|eval| eval[7]).collect();
-            let evals_c_r = evals.iter().map(|eval| eval[8]).collect();
-            let evals_r = evals.iter().map(|eval| eval[9]).collect();
+            let evals_b_r_inverse = evals.iter().map(|eval| eval[7]).collect();
+            let evals_b_0 = evals.iter().map(|eval| eval[8]).collect();
+            // let evals_b_r_virtual = evals.iter().map(|eval| eval[7]).collect();
+            let evals_c_r = evals.iter().map(|eval| eval[9]).collect();
+            let evals_r = evals.iter().map(|eval| eval[10]).collect();
 
             let poly_pa_alpha = Self::interpolate_from_eval_domain(&evals_pa_alpha, y_domain);
             let poly_pb_alpha = Self::interpolate_from_eval_domain(&evals_pb_alpha, y_domain);
@@ -148,7 +153,9 @@ impl<P: Pairing> DeIPA<P> {
             let poly_a_r_alpha = Self::interpolate_from_eval_domain(&evals_a_r_alpha, y_domain);
             let poly_a_r = Self::interpolate_from_eval_domain(&evals_a_r, y_domain);
             let poly_b_alpha = Self::interpolate_from_eval_domain(&evals_b_alpha, y_domain);
-            let poly_b_r_virtual = Self::interpolate_from_eval_domain(&evals_b_r_virtual, y_domain);
+            let poly_b_r_inverse = Self::interpolate_from_eval_domain(&evals_b_r_inverse, y_domain);
+            let poly_b_0 = Self::interpolate_from_eval_domain(&evals_b_0, y_domain);
+            let poly_b_r_virtual = &poly_b_r_inverse * r_pow_m + &poly_b_0 * (P::ScalarField::one() - r_pow_m);
             let poly_c_r = Self::interpolate_from_eval_domain(&evals_c_r, y_domain);
             let poly_r = Self::interpolate_from_eval_domain(&evals_r, y_domain);
 
