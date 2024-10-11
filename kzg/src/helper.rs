@@ -101,6 +101,36 @@ pub fn get_x_srs<P: Pairing> (
     x_srs
 }
 
+pub fn linear_combination_poly<P: Pairing> (
+    polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>,
+    challenge: &P::ScalarField,
+) -> UnivariatePolynomial<P::ScalarField> {
+
+    let mut linear_factor = P::ScalarField::one();
+    let mut result_poly = UnivariatePolynomial::zero();
+
+    for poly in polynomials {
+        result_poly += (linear_factor, poly);
+        linear_factor *= challenge;
+    }
+    result_poly
+}
+
+pub fn linear_combination_field<P: Pairing> (
+    values: &Vec<P::ScalarField>,
+    challenge: &P::ScalarField,
+) -> P::ScalarField {
+
+    let mut linear_factor = P::ScalarField::one();
+    let mut result = P::ScalarField::zero();
+
+    for value in values {
+        result += *value * linear_factor;
+        linear_factor *= challenge;
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use ark_ec::pairing::Pairing;
