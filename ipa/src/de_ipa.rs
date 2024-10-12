@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use ark_ec::pairing::Pairing;
 use my_kzg::{batch_kzg::BatchKZG, biv_batch_kzg::BivBatchKZG, biv_trivial_kzg::VerifierSRS, helper::linear_combination_field, transcript::ProofTranscript, trivial_kzg::{UniVerifierSRS, KZG}};
 use merlin::Transcript;
-use crate::{ipa::IPA, helper::{R1CSPublicPolys, R1CSWitnessPolys}};
+use crate::{ipa::IPA, helper::{R1CSPublicPolys, R1CSWitnessPolys, R1CSDePublicPolys}};
 use ark_ff::{Zero, One, Field};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use std::time::{
@@ -22,8 +22,8 @@ pub struct SNARKProofNoPre<P: Pairing> {
     evals_wit_polys: Vec<P::ScalarField>,
     evals_g1_h1: Vec<P::ScalarField>,
     evals_g2_h2: Vec<P::ScalarField>,
-    _proof_g1_h1: P::G1,
-    _proof_g2_h2: P::G1,
+    proof_g1_h1: P::G1,
+    proof_g2_h2: P::G1,
     proofs_wit_polys: (P::G1, Vec<P::ScalarField>, P::ScalarField, (P::G1, P::G1), P::G1)
 }
 
@@ -37,7 +37,6 @@ impl<P: Pairing> DeIPA<P> {
         // x_srs for univariate polynomials over X
         x_srs: &Vec<P::G1Affine>,
         y_srs: &Vec<P::G1Affine>,
-        v_srs: &VerifierSRS<P>,
         wit_polys: &R1CSWitnessPolys<P>,
         pub_polys: &R1CSPublicPolys<P>,
         r: &P::ScalarField,
@@ -46,21 +45,21 @@ impl<P: Pairing> DeIPA<P> {
         transcript: &mut Transcript,
         challenge_v: &P::ScalarField,
         challenge_u1: &P::ScalarField,
-    ) -> Option<P::G1> {
+    ) -> Option<SNARKProofNoPre<P>> {
 
         assert_eq!(powers[0].len(), x_srs.len());
         let m = x_srs.len();
         let l = Net::n_parties();
-        let uni_v_srs_for_x = UniVerifierSRS {
-                g: v_srs.g.clone(),
-                h: v_srs.h.clone(),
-                h_alpha: v_srs.h_alpha.clone()
-        };
-        let uni_v_srs_for_y = UniVerifierSRS {
-            g: v_srs.g.clone(),
-            h: v_srs.h.clone(),
-            h_alpha: v_srs.h_beta.clone()
-        };
+        // let uni_v_srs_for_x = UniVerifierSRS {
+        //         g: v_srs.g.clone(),
+        //         h: v_srs.h.clone(),
+        //         h_alpha: v_srs.h_alpha.clone()
+        // };
+        // let uni_v_srs_for_y = UniVerifierSRS {
+        //     g: v_srs.g.clone(),
+        //     h: v_srs.h.clone(),
+        //     h_alpha: v_srs.h_beta.clone()
+        // };
 
         // commit secret polynomials
         let time = Instant::now();
@@ -262,21 +261,20 @@ impl<P: Pairing> DeIPA<P> {
         // generate proof to alpha, beta
         let time = Instant::now();
         let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r]];
-        let transcript_here = transcript;
-        let proofs_alpha_beta= BivBatchKZG::<P>::de_open_lagrange_at_same_y(sub_prover_id, &powers, &x_srs, &sub_polynomials, &x_points, &beta, &y_domain, &mut transcript_here.clone(), &gamma);
+        let proofs_wit_polys= BivBatchKZG::<P>::de_open_lagrange_at_same_y(sub_prover_id, &powers, &x_srs, &sub_polynomials, &x_points, &beta, &y_domain, transcript, &gamma);
         println!("Prover {:?} computs proofs of bivariate polynomials time: {:?}", sub_prover_id, time.elapsed());
 
         let time = Instant::now();
-        let  (evals_g1_h1, proof_g1_h1, evals_alpha_beta, evals_g2_h2, proof_g2_h2) = if Net::am_master() {
+        let  (evals_g1_h1, proof_g1_h1, evals_wit_polys, evals_g2_h2, proof_g2_h2) = if Net::am_master() {
             // compute proof and evaluations to g2, h2low, h2high
             let proof_g2_h2 = BatchKZG::<P>::open_lagrange(&y_srs, &evals_domain_g2_h2, &beta, &y_domain, &gamma).unwrap();
             let eval_g2 = polys_g2_h2[0].evaluate(&beta);
             let eval_h2_low = polys_g2_h2[1].evaluate(&beta);
             let eval_h2_high = polys_g2_h2[2].evaluate(&beta);
             
-            let eval_pa_alpha_beta = polynomials_y[0].evaluate(&beta);
-            let eval_pb_alpha_beta = polynomials_y[1].evaluate(&beta);
-            let eval_pc_alpha_beta = polynomials_y[2].evaluate(&beta);
+            // let eval_pa_alpha_beta = polynomials_y[0].evaluate(&beta);
+            // let eval_pb_alpha_beta = polynomials_y[1].evaluate(&beta);
+            // let eval_pc_alpha_beta = polynomials_y[2].evaluate(&beta);
             let eval_w_alpha_beta = polynomials_y[3].evaluate(&beta);
             let eval_ar_alpha_beta = polynomials_y[4].evaluate(&beta);
             let eval_a_r_beta = polynomials_y[5].evaluate(&beta);
@@ -284,10 +282,9 @@ impl<P: Pairing> DeIPA<P> {
             let eval_b_r_inverse_beta = polynomials_y[7].evaluate(&beta);
             let eval_b_0_beta = polynomials_y[8].evaluate(&beta);
             let eval_c_r_beta = polynomials_y[9].evaluate(&beta);
-            let eval_r_beta = polynomials_y[10].evaluate(&beta);
+            // let eval_r_beta = polynomials_y[10].evaluate(&beta);
 
-            let vec1 = vec![eval_pa_alpha_beta, eval_pb_alpha_beta, eval_pc_alpha_beta, eval_w_alpha_beta,
-                                                              eval_ar_alpha_beta, eval_a_r_beta, eval_b_alpha_beta, eval_b_r_inverse_beta, eval_b_0_beta, eval_c_r_beta, eval_r_beta];
+            let vec1 = vec![eval_w_alpha_beta, eval_ar_alpha_beta, eval_a_r_beta, eval_b_alpha_beta, eval_b_r_inverse_beta, eval_b_0_beta, eval_c_r_beta];
             let evals_g2_h2 = vec![eval_g2, eval_h2_low, eval_h2_high];
             (evals_g1_h1, proof_g1_h1, vec1, evals_g2_h2, proof_g2_h2)
         } else {
@@ -295,43 +292,111 @@ impl<P: Pairing> DeIPA<P> {
         };
         println!("Prover {:?} computes g2 and h_2 evals and proofs time: {:?}", sub_prover_id, time.elapsed());
 
-        // Self-test of evaluation validity
         if Net::am_master() {
-            let z_h_eval_x = x_domain.evaluate_vanishing_polynomial(alpha);
-            let t2 = (alpha * evals_g1_h1[0] + (alpha - challenge_u1) * z_h_eval_x * evals_g1_h1[1])/y_domain.size_as_field_element();
-            let f1 = evals_alpha_beta[0] * evals_alpha_beta[3] - evals_alpha_beta[10] * evals_alpha_beta[5];
-            let f2 = evals_alpha_beta[1] * evals_alpha_beta[3] - evals_alpha_beta[10] * (evals_alpha_beta[7] * r_pow_m + evals_alpha_beta[8] * (P::ScalarField::one() - r_pow_m));
-            let f3 = evals_alpha_beta[2] * evals_alpha_beta[3] - evals_alpha_beta[10] * evals_alpha_beta[9];
-            let f4 = (evals_alpha_beta[4] * evals_alpha_beta[6] - evals_alpha_beta[9]) * evals_alpha_beta[10];
-
-            let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3, f4], &challenge_v);
-            let left_hand = (beta - u2) * (alpha - challenge_u1) * eval_rlc;
-            let right_hand = beta * evals_g2_h2[0] + (beta - u2) * t2 + (beta - u2) * y_domain.evaluate_vanishing_polynomial(beta) * (evals_g2_h2[1] + beta.pow([l as u64]) * evals_g2_h2[2]);
-            let check1 = left_hand == right_hand;
-            assert!(check1);
-
-            // check the validity of g1 and h1
-            let check2 = BatchKZG::<P>::verify(&uni_v_srs_for_x, &coms_g1_h1, &alpha, &evals_g1_h1, &proof_g1_h1, &gamma).unwrap();
-            assert!(check2);
-
-            // check the validity of g2 and h2
-            let check3 = BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g2_h2, &beta, &evals_g2_h2, &proof_g2_h2, &gamma).unwrap();
-            assert!(check3);
-
-            // check the validity of bivariate polynomials
-            let evals_bivariate = vec![vec![evals_alpha_beta[3]],
-                                                    vec![evals_alpha_beta[4], evals_alpha_beta[5]],
-                                                    vec![evals_alpha_beta[6], evals_alpha_beta[7], evals_alpha_beta[8]],
-                                                    vec![evals_alpha_beta[9]]];
-            let check4 = BivBatchKZG::<P>::verify_at_same_y(&v_srs, &coms_wit_polys.unwrap(), &x_points, &beta, &evals_bivariate, &proofs_alpha_beta.unwrap(), transcript_here, &gamma).unwrap();
-            assert!(check4);
-
-            println!("all checks pass !!!");
+            Some(SNARKProofNoPre {
+                coms_g1_h1,
+                coms_g2_h2,
+                coms_wit_polys: coms_wit_polys.unwrap(),
+                evals_wit_polys,
+                evals_g1_h1,
+                evals_g2_h2,
+                proof_g1_h1,
+                proof_g2_h2,
+                proofs_wit_polys: proofs_wit_polys.unwrap()
+            })
+        } else {
+            None
         }
+    }
 
-        // TODO: invoke the de-batch-bivarate-kzg, de-univariate-kzg over x, de-uni-kzg over y with lagrange
+    pub fn r1cs_verify_no_preprocess(
+        v_srs: &VerifierSRS<P>,
+        proof: &SNARKProofNoPre<P>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        pub_polys: &R1CSDePublicPolys<P>,
+        r: &P::ScalarField,
+        transcript: &mut Transcript,
+        challenge_v: &P::ScalarField,
+        challenge_u1: &P::ScalarField,
+    ) -> bool {
+        // Self-test of evaluation validity
 
-        Some(P::G1::zero())
+        let m = x_domain.size();
+        let l = y_domain.size();
+        let r_pow_m = r.pow([m as u64]);
+        let uni_v_srs_for_x = UniVerifierSRS {
+            g: v_srs.g.clone(),
+            h: v_srs.h.clone(),
+            h_alpha: v_srs.h_alpha.clone()
+        };
+        let uni_v_srs_for_y = UniVerifierSRS {
+            g: v_srs.g.clone(),
+            h: v_srs.h.clone(),
+            h_alpha: v_srs.h_beta.clone()
+        };
+
+        let SNARKProofNoPre {coms_g1_h1,
+            coms_g2_h2,
+            coms_wit_polys,
+            evals_wit_polys,
+            evals_g1_h1,
+            evals_g2_h2,
+            proof_g1_h1,
+            proof_g2_h2,
+            proofs_wit_polys} = proof;
+
+        let slice: &[P::G1] = &coms_g1_h1;
+        <Transcript as ProofTranscript<P>>::append_points(transcript, b"alpha_and_u2", slice);
+        let alpha = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluation_for_x");
+        let u2 = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_ldt_padding");
+        let gamma = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"batch_kzg_for_g1_h1");
+        let slice: &[P::G1] = &coms_g2_h2;
+        <Transcript as ProofTranscript<P>>::append_points(transcript, b"beta", slice);
+        let beta = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluation_for_y");
+
+        let z_h_eval_x = x_domain.evaluate_vanishing_polynomial(alpha);
+        let eval_beta = y_domain.evaluate_all_lagrange_coefficients(beta);
+        let eval_pa_alpha_beta: P::ScalarField = pub_polys.polys_pa.iter().zip(eval_beta.iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
+        let eval_pb_alpha_beta: P::ScalarField = pub_polys.polys_pb.iter().zip(eval_beta.iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
+        let eval_pc_alpha_beta: P::ScalarField = pub_polys.polys_pc.iter().zip(eval_beta.iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
+        let mut eval_r = Vec::new();
+        for i in 0..l {
+            let current  = r_pow_m.pow([i as u64]);
+            eval_r.push(current);
+        }
+        let eval_r_beta: P::ScalarField = eval_r.iter().zip(eval_beta.iter()).map(|(poly, eval)| *poly * *eval).sum();
+
+        let t2 = (alpha * evals_g1_h1[0] + (alpha - challenge_u1) * z_h_eval_x * evals_g1_h1[1])/y_domain.size_as_field_element();
+        let f1 = eval_pa_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[2];
+        let f2 = eval_pb_alpha_beta * evals_wit_polys[0] - eval_r_beta * (evals_wit_polys[4] * r_pow_m + evals_wit_polys[5] * (P::ScalarField::one() - r_pow_m));
+        let f3 = eval_pc_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[6];
+        let f4 = (evals_wit_polys[1] * evals_wit_polys[3] - evals_wit_polys[6]) * eval_r_beta;
+
+        let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3, f4], &challenge_v);
+        let left_hand = (beta - u2) * (alpha - challenge_u1) * eval_rlc;
+        let right_hand = beta * evals_g2_h2[0] + (beta - u2) * t2 + (beta - u2) * y_domain.evaluate_vanishing_polynomial(beta) * (evals_g2_h2[1] + beta.pow([l as u64]) * evals_g2_h2[2]);
+        let check1 = left_hand == right_hand;
+        assert!(check1);
+
+        // check the validity of g1 and h1
+        let check2 = BatchKZG::<P>::verify(&uni_v_srs_for_x, &coms_g1_h1, &alpha, &evals_g1_h1, &proof_g1_h1, &gamma).unwrap();
+        assert!(check2);
+
+        // check the validity of g2 and h2
+        let check3 = BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g2_h2, &beta, &evals_g2_h2, &proof_g2_h2, &gamma).unwrap();
+        assert!(check3);
+
+        // check the validity of bivariate polynomials
+        let evals_bivariate = vec![vec![evals_wit_polys[0]],
+                                                vec![evals_wit_polys[1], evals_wit_polys[2]],
+                                                vec![evals_wit_polys[3], evals_wit_polys[4], evals_wit_polys[5]],
+                                                vec![evals_wit_polys[6]]];
+        let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r]];
+        let check4 = BivBatchKZG::<P>::verify_at_same_y(&v_srs, &coms_wit_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_polys, transcript, &gamma).unwrap();
+        assert!(check4);
+
+        check1 & check2 & check3 & check4
     }
 
     pub fn interpolate_from_eval_domain (
@@ -343,7 +408,7 @@ impl<P: Pairing> DeIPA<P> {
     }
 
     pub fn get_proof_size (
-        proof: SNARKProofNoPre<P>
+        proof: &SNARKProofNoPre<P>
     ) -> usize {
         let field_size = size_of_val(&P::ScalarField::one());
         let group_size = size_of_val(&P::G1::zero());
