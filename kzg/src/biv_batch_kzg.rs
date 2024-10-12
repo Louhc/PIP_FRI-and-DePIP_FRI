@@ -95,7 +95,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         let final_coms_slice = Net::send_to_master(&sub_coms);
 
         if Net::am_master() {
-            let time = Instant::now();
+            // let time = Instant::now();
             let mut final_coms = vec![P::G1::zero(); sub_polynomials.len()];
             let final_coms_slice = final_coms_slice.unwrap();
 
@@ -105,7 +105,7 @@ impl<P: Pairing> BivBatchKZG<P> {
                     final_coms[i] += row[i];
                 }
             }
-            println!("Prover 0 additional committing time: {:?}", time.elapsed());
+            // println!("Prover 0 additional committing time: {:?}", time.elapsed());
             Some(final_coms)
         } else {
             None
@@ -456,7 +456,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         let gamma = *challenge;
         
         // generate q_i()
-        // let time = Instant::now();
+        let time = Instant::now();
         let mut combined_polynomial = UnivariatePolynomial::zero();
         let mut challenge_gamma = P::ScalarField::one();
         let eval_lagrange: <P as Pairing>::ScalarField = evaluate_one_lagrange::<P>(sub_prover_id, domain, y_point);
@@ -485,7 +485,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         } else {
             None
         };
-        // println!("Prover {:?} proof1 after_msm time: {:?}", sub_prover_id, time.elapsed());
+        println!("Prover {:?} proof1 time: {:?}", sub_prover_id, time.elapsed());
 
         // given proof_q, generate challenge eta using fiat-shamir
         let eta = if Net::am_master() {
@@ -645,7 +645,7 @@ impl<P: Pairing> BivBatchKZG<P> {
             transcript, b"random_evaluate_point");
         
         // check1: validity of q and q(eta)
-        let kzg_v_srs = trivial_kzg::VerifierSRS::<P> {
+        let kzg_v_srs = trivial_kzg::UniVerifierSRS::<P> {
             g: v_srs.g, 
             h: v_srs.h,
             h_alpha: v_srs.h_alpha

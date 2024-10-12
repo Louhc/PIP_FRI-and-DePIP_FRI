@@ -4,7 +4,7 @@ use ark_poly::{
 };
 use std::marker::PhantomData;
 use ark_ec::pairing::Pairing;
-use my_kzg::{batch_kzg::BatchKZG, transcript::ProofTranscript, trivial_kzg::{KZG, VerifierSRS}};
+use my_kzg::{batch_kzg::BatchKZG, transcript::ProofTranscript, trivial_kzg::{KZG, UniVerifierSRS}};
 use crate::Error;
 use merlin::Transcript;
 use ark_ff::{Zero, One};
@@ -104,7 +104,7 @@ impl<P: Pairing> IPA<P> {
     
     // partial trivial IPA verifier
     pub fn verify (
-        v_srs: &VerifierSRS<P>,
+        v_srs: &UniVerifierSRS<P>,
         com_left: &P::G1,
         com_right: &P::G1,
         point: &P::ScalarField,
@@ -140,7 +140,7 @@ impl<P: Pairing> IPA<P> {
 
     // partial IPA verifier without ldt
     pub fn verify_no_ldt (
-        v_srs: &VerifierSRS<P>,
+        v_srs: &UniVerifierSRS<P>,
         com_left: &P::G1,
         com_right: &P::G1,
         challenge_u: &P::ScalarField,
@@ -249,7 +249,7 @@ impl<P: Pairing> IPA<P> {
     }
 
     pub fn sumcheck_verify (
-        v_srs: &VerifierSRS<P>,
+        v_srs: &UniVerifierSRS<P>,
         com_left: &P::G1,
         com_right: &P::G1,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
@@ -269,7 +269,7 @@ impl<P: Pairing> IPA<P> {
     }
 
     pub fn sumcheck_no_ldt_verify (
-        v_srs: &VerifierSRS<P>,
+        v_srs: &UniVerifierSRS<P>,
         com_left: &P::G1,
         com_right: &P::G1,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
@@ -368,7 +368,7 @@ impl<P: Pairing> IPA<P> {
     }
 
     pub fn ipa_improved_verify (
-        v_srs: &VerifierSRS<P>,
+        v_srs: &UniVerifierSRS<P>,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
         inner_product: &P::ScalarField,
         proof: &((P::G1, P::G1), (Vec<P::ScalarField>, Vec<P::G1>, P::G1)),
@@ -392,7 +392,7 @@ impl<P: Pairing> IPA<P> {
     }
 
     pub fn trivial_ipa_verify (
-        v_srs: &VerifierSRS<P>,
+        v_srs: &UniVerifierSRS<P>,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
         inner_product: &P::ScalarField,
         proof: &((P::G1, P::G1), (Vec<P::ScalarField>, Vec<P::G1>, P::G1)),

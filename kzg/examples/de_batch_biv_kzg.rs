@@ -94,10 +94,11 @@ fn main() {
         let y_point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
 
         let mut x_points = Vec::new();
+        let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
         for i in 0..polynomial_number {
             if i%2 == 1 {
                 // x_points.push(vec![UniformRand::rand(&mut rng)]);
-                x_points.push(vec![<Bls12_381 as Pairing>::ScalarField::rand(&mut rng)]);
+                x_points.push(vec![point.clone()]);
             }
             else {
                 x_points.push(vec![<Bls12_381 as Pairing>::ScalarField::rand(&mut rng), <Bls12_381 as Pairing>::ScalarField::rand(&mut rng)]);

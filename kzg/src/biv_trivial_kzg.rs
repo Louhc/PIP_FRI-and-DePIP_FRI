@@ -117,8 +117,8 @@ impl<P: Pairing> BivariateKZG<P> {
         y_degree: usize,
         domain: &GeneralEvaluationDomain<P::ScalarField>
     ) -> Result<(Vec<Vec<P::G1Affine>>, VerifierSRS<P>), Error> {
-        let alpha = <P::ScalarField>::rand(rng);
         let beta = EvaluationDomain::sample_element_outside_domain(domain, rng);
+        let alpha = <P::ScalarField>::rand(rng);
         let g = <P::G1>::generator();
         let h = <P::G2>::generator();
         assert!((y_degree + 1).is_power_of_two());

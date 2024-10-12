@@ -8,19 +8,14 @@ use ark_ff::{One, UniformRand, Zero, PrimeField};
 use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
-use crate::trivial_kzg::VerifierSRS;
+use crate::trivial_kzg::UniVerifierSRS;
+use crate::trivial_kzg::KZG;
 use std::marker::PhantomData;
 use ark_std::rand::Rng;
 use crate::Error;
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-
-#[derive(Clone)]
-pub struct SRS<P: Pairing> {
-    pub g_alpha_powers: Vec<P::G1>,
-    pub h_beta_powers: Vec<P::G2>,
-    pub h_alpha: P::G2,
-}
+use ark_poly::{Evaluations, GeneralEvaluationDomain};
 
 pub fn structured_generators_scalar_power<G: CurveGroup>(
     num: usize,
@@ -52,14 +47,14 @@ impl<P: Pairing> BatchKZG<P> {
     pub fn setup<R: Rng>(
         rng: &mut R,
         degree: usize,
-    ) -> Result<(Vec<P::G1Affine>, VerifierSRS<P>), Error> {
+    ) -> Result<(Vec<P::G1Affine>, UniVerifierSRS<P>), Error> {
         let alpha = <P::ScalarField>::rand(rng);
         let g = <P::G1>::generator();
         let h = <P::G2>::generator();
         let g_alpha_powers = structured_generators_scalar_power(degree + 1, &g, &alpha);
         Ok((
             <P as Pairing>::G1::normalize_batch(&g_alpha_powers),
-            VerifierSRS {
+            UniVerifierSRS {
                 g: g.clone(),
                 h: h.clone(),
                 h_alpha: h * alpha,
@@ -84,6 +79,34 @@ impl<P: Pairing> BatchKZG<P> {
             results.push(result);
         }
         Ok(results)
+    }
+
+    pub fn open_lagrange(
+        powers: &[P::G1Affine],
+        evals_vec: &Vec<Evaluations<P::ScalarField>>,
+        point: &P::ScalarField,
+        domain: &GeneralEvaluationDomain<P::ScalarField>,
+        challenge: &P::ScalarField,
+    ) -> Result<P::G1, Error> {
+
+        let mut linear_factor = P::ScalarField::one();
+        let mut challenge_vector = Vec::new();
+        for _ in 0..evals_vec.len() {
+            challenge_vector.push(linear_factor.clone());
+            linear_factor *= challenge;
+        }
+        let mut result_eval = vec![P::ScalarField::zero(); evals_vec[0].evals.len()];
+        for (vector, &coeff) in evals_vec.iter().zip(&challenge_vector) {
+            for (i, &value) in vector.evals.iter().enumerate() {
+                result_eval[i] += coeff * value;
+            }
+        }
+        let result_eval = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(result_eval, *domain);
+
+        let quotient_evals = KZG::<P>::get_quotient_eval_lagrange(&result_eval, &point, &domain);
+
+        // Can unwrap because quotient_coeffs.len() is guaranteed to be equal to powers.len()
+        Ok(P::G1::msm(powers, &quotient_evals).unwrap())
     }
 
     pub fn open(
@@ -119,12 +142,11 @@ impl<P: Pairing> BatchKZG<P> {
         let mut quotient_coeffs = quotient_polynomial.coeffs.to_vec();
         quotient_coeffs.resize(powers.len(), <P::ScalarField>::zero());
 
-        // Can unwrap because quotient_coeffs.len() is guaranteed to be equal to powers.len()
         Ok(P::G1::msm(powers, &quotient_coeffs).unwrap())
     }
 
     pub fn verify(
-        v_srs: &VerifierSRS<P>,
+        v_srs: &UniVerifierSRS<P>,
         coms: &Vec<P::G1>,
         point: &P::ScalarField,
         evals: &Vec<P::ScalarField>,
@@ -238,9 +260,12 @@ mod tests {
     use ark_ff::UniformRand;
     use merlin::Transcript;
     use crate::batch_kzg::BatchKZG;
+    use crate::biv_batch_kzg::BivBatchKZG;
+    use crate::trivial_kzg::{UniVerifierSRS, KZG};
     use ark_poly::polynomial::{
         univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
     };
+    use ark_poly::{GeneralEvaluationDomain, EvaluationDomain};
     use ark_ec::pairing::Pairing;
     use std::time::{Duration, Instant};
     use crate::transcript::ProofTranscript;
@@ -284,6 +309,86 @@ mod tests {
         let challenge = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
             &mut prover_transcript, b"batch_kzg_rlc_challenge");
         let proofs = BatchKZG::<Bls12_381>::open(&g_alpha_powers, &polynomials, &point, &challenge).unwrap();
+        println!("KZG open  time, {:} log_degree: {:?} ms", log_degree, open_start.elapsed().as_millis());
+
+        // Proof size
+        let proof_size = size_of_val(&proofs);
+        println!("KZG proof size, {:} log_degree: {:?} bytes", log_degree, proof_size);
+
+        // Verify
+        std::thread::sleep(Duration::from_millis(5000));
+        let verify_start = Instant::now();
+        let mut verifier_transcript : Transcript = Transcript::new(b"batch univariate KZG");
+        let challenge = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+            &mut verifier_transcript, b"batch_kzg_rlc_challenge");
+        for _ in 0..50 {
+            let is_valid =
+                BatchKZG::<Bls12_381>::verify(&v_srs, &coms, &point, &evals, &proofs, &challenge).unwrap();
+            assert!(is_valid);
+        }
+        let verify_time = verify_start.elapsed().as_millis() / 50;
+        println!("KZG verif time, {:} log_degree: {:?} ms", log_degree, verify_time);
+    }
+
+
+    #[test]
+    fn batch_kzg_lagrange_test() {
+
+        let log_degree = 10;
+        let poly_num = 10;
+        let degree = (1 << log_degree) - 1;
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(1 << log_degree).unwrap();
+
+        let setup_start = Instant::now();
+        // let (g_alpha_powers, v_srs) = KZG::<Bls12_381>::setup_lagrange(&mut rng, degree, &domain).unwrap();
+        let (g_alpha_powers, v_srs) = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, 3, degree, &domain).unwrap();
+        let v_srs = UniVerifierSRS {
+            g: v_srs.g,
+            h: v_srs.h,
+            h_alpha: v_srs.h_beta
+        };
+        let g_alpha_powers: Vec<<Bls12_381 as Pairing>::G1Affine> = g_alpha_powers.iter()
+            .filter_map(|row| row.get(0))
+            .cloned()
+            .collect();
+
+        let time = setup_start.elapsed().as_millis();
+        println!("BatchKZG lagrange setup time, {:} log_degree: {:} ", degree, time);
+
+        let mut polynomials = Vec::new();
+        let mut evals = Vec::new();
+        let mut evals_domain = Vec::new();
+        let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+
+        for _ in 0..poly_num {
+            let polynomial = UnivariatePolynomial::rand(degree, &mut rng);
+            let eval = polynomial.evaluate(&point);
+            let eval_domain = polynomial.clone().evaluate_over_domain(domain.clone());
+            polynomials.push(polynomial);
+            evals.push(eval);
+            evals_domain.push(eval_domain);
+        }
+
+        // Commit
+        let com_start = Instant::now();
+        let mut coms = Vec::new();
+        for eval_domain in &evals_domain {
+            let com = KZG::<Bls12_381>::commit_lagrange(&g_alpha_powers, eval_domain).unwrap();
+            coms.push(com);
+        }
+        let mut prover_transcript : Transcript = Transcript::new(b"batch univariate KZG");
+        
+        println!("KZG commi time, {:} log_degree: {:?} ms", log_degree, com_start.elapsed().as_millis());
+        println!("KZG commi size, {:} log_degree: {:?} bytes", log_degree, size_of_val(&coms[0])*coms.len());
+
+        // TODO: append_point input inconsistency
+        // Open
+        let open_start = Instant::now();
+        // prover_transcript.append_point(b"add_commitments", &coms[0]);
+        let challenge = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+            &mut prover_transcript, b"batch_kzg_rlc_challenge");
+        let proofs = BatchKZG::<Bls12_381>::open_lagrange(&g_alpha_powers, &evals_domain, &point, &domain, &challenge).unwrap();
         println!("KZG open  time, {:} log_degree: {:?} ms", log_degree, open_start.elapsed().as_millis());
 
         // Proof size

@@ -5,7 +5,6 @@ use std::marker::PhantomData;
 use ark_ec::pairing::Pairing;
 use my_kzg::{batch_kzg::BatchKZG, biv_batch_kzg::BivBatchKZG, helper::{get_x_srs, linear_combination_field}, transcript::ProofTranscript, trivial_kzg::{
     // DeKZG, 
-    VerifierSRS,
     KZG
 }};
 use merlin::Transcript;
@@ -17,6 +16,10 @@ use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_bls12_381::Bls12_381;
 use ark_ff::{Field, One, Zero, UniformRand};
 type MyField = <Bls12_381 as Pairing>::ScalarField;
+use std::time::{
+    Instant,
+    // Duration
+};
 
 
 #[derive(Debug, StructOpt)]
@@ -37,7 +40,7 @@ fn init() -> (usize, usize, usize) {
     Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
     let l = Net::n_parties();
     let sub_prover_id = Net::party_id();
-    let m = (1 << 4);
+    let m = 1 << 10;
     (m, l, sub_prover_id)
 }
 
@@ -54,11 +57,17 @@ fn main() {
 
     let x_degree = m - 1;
     let y_degree = l - 1;
-    let srs = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, x_degree, y_degree, &domain_y).unwrap();
-    let powers = &srs.0;
+    let (powers, v_srs) = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, x_degree, y_degree, &domain_y).unwrap();
     let x_srs = get_x_srs::<Bls12_381>(&powers);
+    // Note that y_srs is lagrange-based
+    let y_srs: Vec<<Bls12_381 as Pairing>::G1Affine> = powers.iter()
+        .filter_map(|row| row.get(0))
+        .cloned()
+        .collect();
 
-    let (r1cs_vecs, pub_polys, wit_polys) = generate_distributed_r1cs_polynomial_relation::<Bls12_381>(sub_prover_id, m, l, &challenge_r);
+    let (_r1cs_vecs, pub_polys, wit_polys) = generate_distributed_r1cs_polynomial_relation::<Bls12_381>(sub_prover_id, m, l, &challenge_r);
 
-    let proof = DeIPA::<Bls12_381>::de_r1cs_prove(sub_prover_id, &powers, &x_srs, &wit_polys, &pub_polys, &challenge_r, &domain_x, &domain_y, &mut transcript, &challenge_v, &challenge_u1);
+    let time = Instant::now();
+    let proof = DeIPA::<Bls12_381>::de_r1cs_prove(sub_prover_id, &powers, &x_srs, &y_srs, &v_srs, &wit_polys, &pub_polys, &challenge_r, &domain_x, &domain_y, &mut transcript, &challenge_v, &challenge_u1);
+    println!("Prover {:?} prove total time: {:?}", sub_prover_id, time.elapsed());
 }

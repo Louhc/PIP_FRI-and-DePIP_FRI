@@ -23,26 +23,10 @@ pub struct SRS<P: Pairing> {
 }
 
 #[derive(Clone)]
-pub struct VerifierSRS<P: Pairing> {
+pub struct UniVerifierSRS<P: Pairing> {
     pub g: P::G1,
     pub h: P::G2,
     pub h_alpha: P::G2,
-}
-
-impl<P: Pairing> SRS<P> {
-    pub fn get_commitment_keys(&self) -> (Vec<P::G2>, Vec<P::G1>) {
-        let ck_1 = self.h_beta_powers.iter().step_by(2).cloned().collect();
-        let ck_2 = self.g_alpha_powers.iter().step_by(2).cloned().collect();
-        (ck_1, ck_2)
-    }
-
-    pub fn get_verifier_key(&self) -> VerifierSRS<P> {
-        VerifierSRS {
-            g: self.g_alpha_powers[0].clone(),
-            h: self.h_beta_powers[0].clone(),
-            h_alpha: self.h_alpha.clone(),
-        }
-    }
 }
 
 pub fn structured_generators_scalar_power<G: CurveGroup>(
@@ -91,14 +75,14 @@ impl<P: Pairing> KZG<P> {
     pub fn setup<R: Rng>(
         rng: &mut R,
         degree: usize,
-    ) -> Result<(Vec<P::G1Affine>, VerifierSRS<P>), Error> {
+    ) -> Result<(Vec<P::G1Affine>, UniVerifierSRS<P>), Error> {
         let alpha = <P::ScalarField>::rand(rng);
         let g = <P::G1>::generator();
         let h = <P::G2>::generator();
         let g_alpha_powers = structured_generators_scalar_power(degree + 1, &g, &alpha);
         Ok((
             <P as Pairing>::G1::normalize_batch(&g_alpha_powers),
-            VerifierSRS {
+            UniVerifierSRS {
                 g: g.clone(),
                 h: h.clone(),
                 h_alpha: h * alpha,
@@ -110,7 +94,7 @@ impl<P: Pairing> KZG<P> {
         rng: &mut R,
         degree: usize,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
-    ) -> Result<(Vec<P::G1Affine>, VerifierSRS<P>), Error> {
+    ) -> Result<(Vec<P::G1Affine>, UniVerifierSRS<P>), Error> {
         // let alpha = <P::ScalarField>::rand(rng);
         let alpha = EvaluationDomain::sample_element_outside_domain(domain, rng);
         let g = <P::G1>::generator();
@@ -119,7 +103,7 @@ impl<P: Pairing> KZG<P> {
         let g_alpha_powers = Self::structured_generators_lagrange(degree + 1, &domain, &g, &alpha);
         Ok((
             <P as Pairing>::G1::normalize_batch(&g_alpha_powers),
-            VerifierSRS {
+            UniVerifierSRS {
                 g: g.clone(),
                 h: h.clone(),
                 h_alpha: h * alpha,
@@ -237,7 +221,7 @@ impl<P: Pairing> KZG<P> {
 
 
     pub fn verify(
-        v_srs: &VerifierSRS<P>,
+        v_srs: &UniVerifierSRS<P>,
         com: &P::G1,
         point: &P::ScalarField,
         eval: &P::ScalarField,
@@ -322,7 +306,7 @@ impl<P: Pairing> DeKZG<P> {
     }
 
     pub fn verify(
-        v_srs: &VerifierSRS<P>,
+        v_srs: &UniVerifierSRS<P>,
         com: &P::G1,
         point: &P::ScalarField,
         eval: &P::ScalarField,

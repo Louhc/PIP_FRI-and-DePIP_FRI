@@ -4,7 +4,7 @@ use ark_poly::{
 };
 use std::{marker::PhantomData, vec};
 use ark_ec::pairing::Pairing;
-use my_kzg::{batch_kzg::BatchKZG, transcript::ProofTranscript, trivial_kzg::{KZG, VerifierSRS}};
+use my_kzg::{batch_kzg::BatchKZG, transcript::ProofTranscript, trivial_kzg::{KZG, UniVerifierSRS}};
 use crate::Error;
 use merlin::Transcript;
 use ark_ff::{Field, One, Zero};
@@ -139,7 +139,7 @@ impl<P: Pairing> IPA<P> {
     }
 
     pub fn ipa_from_laurent_verify (
-        v_srs: &VerifierSRS<P>,
+        v_srs: &UniVerifierSRS<P>,
         proof: &(P::G1, Vec<P::G1>, P::ScalarField, Vec<P::ScalarField>, P::G1, P::G1),
         inner_product: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
