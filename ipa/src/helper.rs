@@ -1,5 +1,5 @@
 use ark_ec::pairing::Pairing;
-use ark_ff::{Field, One, Zero, UniformRand};
+use ark_ff::{One, Zero, UniformRand};
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial};
 
@@ -22,14 +22,6 @@ pub struct R1CSPublicPolys<P: Pairing> {
 }
 
 #[derive(Clone)]
-pub struct R1CSDeWitnessPolys<P: Pairing> {
-    pub polys_w: Vec<UnivariatePolynomial<P::ScalarField>>,
-    pub polys_a: Vec<UnivariatePolynomial<P::ScalarField>>,
-    pub polys_b: Vec<UnivariatePolynomial<P::ScalarField>>,
-    pub polys_c: Vec<UnivariatePolynomial<P::ScalarField>>,
-}
-
-#[derive(Clone)]
 pub struct R1CSDePublicPolys<P: Pairing> {
     pub polys_pa: Vec<UnivariatePolynomial<P::ScalarField>>,
     pub polys_pb: Vec<UnivariatePolynomial<P::ScalarField>>,
@@ -45,7 +37,6 @@ pub struct R1CSVectors<P: Pairing> {
     pub vec_a: Vec<P::ScalarField>,
     pub vec_b: Vec<P::ScalarField>,
     pub vec_c: Vec<P::ScalarField>,
-    pub vec_r: Vec<P::ScalarField>,
 }
 
 #[derive(Clone)]
@@ -60,57 +51,56 @@ pub struct R1CSPubVectors<P: Pairing> {
 // <y, w> = <r, b>
 // <z, w> = <r, c>
 // a \odot b = c
-pub fn generate_r1cs_vectors<P: Pairing> (
-    m: usize,
-    l: usize,
-    challenge_r: &P::ScalarField,
-) -> (R1CSVectors<P>, R1CSPubVectors<P>) {
+// pub fn generate_r1cs_vectors<P: Pairing> (
+//     m: usize,
+//     l: usize,
+//     challenge_r: &P::ScalarField,
+// ) -> (R1CSVectors<P>, R1CSPubVectors<P>) {
 
-    let size = m * l;
-    let mut rng = StdRng::seed_from_u64(0u64);
+//     let size = m * l;
+//     let mut rng = StdRng::seed_from_u64(0u64);
 
-    let mut vec_r = Vec::new();
-    let mut value_r = P::ScalarField::one();
-    for _ in 0..size {
-        vec_r.push(value_r.clone());
-        value_r *= challenge_r;
-    }
-    assert!(vec_r[0] == P::ScalarField::one());
-    assert!(vec_r[1] == *challenge_r);
-    assert!(vec_r[2] == (*challenge_r).square());
+//     let mut vec_r = Vec::new();
+//     let mut value_r = P::ScalarField::one();
+//     for _ in 0..size {
+//         vec_r.push(value_r.clone());
+//         value_r *= challenge_r;
+//     }
+//     assert!(vec_r[0] == P::ScalarField::one());
+//     assert!(vec_r[1] == *challenge_r);
+//     assert!(vec_r[2] == (*challenge_r).square());
       
-    let mut vec_a = Vec::new();
-    let mut vec_b = Vec::new();
-    let mut vec_w = Vec::new();
-    for _ in 0..size {
-        vec_a.push(P::ScalarField::rand(&mut rng));
-        vec_b.push(P::ScalarField::rand(&mut rng));
-        vec_w.push(P::ScalarField::rand(&mut rng));
-    }
-    let vec_c: Vec<P::ScalarField> = vec_a.iter().zip(vec_b.iter()).map(|(a, b)| *a * *b).collect();
+//     let mut vec_a = Vec::new();
+//     let mut vec_b = Vec::new();
+//     let mut vec_w = Vec::new();
+//     for _ in 0..size {
+//         vec_a.push(P::ScalarField::rand(&mut rng));
+//         vec_b.push(P::ScalarField::rand(&mut rng));
+//         vec_w.push(P::ScalarField::rand(&mut rng));
+//     }
+//     let vec_c: Vec<P::ScalarField> = vec_a.iter().zip(vec_b.iter()).map(|(a, b)| *a * *b).collect();
 
-    let inner_product_first = get_inner_product::<P>(&vec_r, &vec_a);
-    let vec_x = generate_half_vector_from_inner_product::<P>(&vec_w, &inner_product_first);
-    let inner_product_second = get_inner_product::<P>(&vec_r, &vec_b);
-    let vec_y = generate_half_vector_from_inner_product::<P>(&vec_w, &inner_product_second);
-    let inner_product_third = get_inner_product::<P>(&vec_r, &vec_c);
-    let vec_z = generate_half_vector_from_inner_product::<P>(&vec_w, &inner_product_third);
+//     let inner_product_first = get_inner_product::<P>(&vec_r, &vec_a);
+//     let vec_x = generate_half_vector_from_inner_product::<P>(&vec_w, &inner_product_first);
+//     let inner_product_second = get_inner_product::<P>(&vec_r, &vec_b);
+//     let vec_y = generate_half_vector_from_inner_product::<P>(&vec_w, &inner_product_second);
+//     let inner_product_third = get_inner_product::<P>(&vec_r, &vec_c);
+//     let vec_z = generate_half_vector_from_inner_product::<P>(&vec_w, &inner_product_third);
 
-    (R1CSVectors {
-        vec_x: vec_x.clone(),
-        vec_y: vec_y.clone(),
-        vec_z: vec_z.clone(),
-        vec_w,
-        vec_a,
-        vec_b,
-        vec_c,
-        vec_r
-    }, R1CSPubVectors {
-        vec_x,
-        vec_y,
-        vec_z,
-    })
-}
+//     (R1CSVectors {
+//         vec_x: vec_x.clone(),
+//         vec_y: vec_y.clone(),
+//         vec_z: vec_z.clone(),
+//         vec_w,
+//         vec_a,
+//         vec_b,
+//         vec_c
+//     }, R1CSPubVectors {
+//         vec_x,
+//         vec_y,
+//         vec_z,
+//     })
+// }
 
 pub fn generate_r1cs_de_vectors<P: Pairing> (
     sub_prover_id: usize,
@@ -119,9 +109,6 @@ pub fn generate_r1cs_de_vectors<P: Pairing> (
     challenge_r: &P::ScalarField,
 ) -> (R1CSVectors<P>, R1CSPubVectors<P>) {
 
-    let vectors_left = split_vector::<P>(&vector_left, m, l);
-    let vectors_right = split_vector::<P>(&vector_right, m, l); 
-
     let size = m * l;
     let mut rng = StdRng::seed_from_u64(0u64);
 
@@ -149,15 +136,22 @@ pub fn generate_r1cs_de_vectors<P: Pairing> (
     let inner_product_third = get_inner_product::<P>(&vec_r, &vec_c);
     let vec_z = generate_half_vector_from_inner_product::<P>(&vec_w, &inner_product_third);
 
+    let vecs_x = split_vector::<P>(&vec_x, m, l);
+    let vecs_y = split_vector::<P>(&vec_y, m, l);
+    let vecs_z = split_vector::<P>(&vec_z, m, l);
+    let vecs_w = split_vector::<P>(&vec_w, m, l);
+    let vecs_a = split_vector::<P>(&vec_a, m, l);
+    let vecs_b = split_vector::<P>(&vec_b, m, l);
+    let vecs_c = split_vector::<P>(&vec_c, m, l);
+
     (R1CSVectors {
-        vec_x: vec_x.clone(),
-        vec_y: vec_y.clone(),
-        vec_z: vec_z.clone(),
-        vec_w,
-        vec_a,
-        vec_b,
-        vec_c,
-        vec_r
+        vec_x: vecs_x[sub_prover_id].clone(),
+        vec_y: vecs_y[sub_prover_id].clone(),
+        vec_z: vecs_z[sub_prover_id].clone(),
+        vec_w: vecs_w[sub_prover_id].clone(),
+        vec_a: vecs_a[sub_prover_id].clone(),
+        vec_b: vecs_b[sub_prover_id].clone(),
+        vec_c: vecs_c[sub_prover_id].clone(),
     }, R1CSPubVectors {
         vec_x,
         vec_y,
@@ -166,23 +160,21 @@ pub fn generate_r1cs_de_vectors<P: Pairing> (
 }
 
 
-pub fn generate_r1cs_polynomial_relation<P: Pairing> (
+pub fn generate_r1cs_de_polynomials<P: Pairing> (
     m: usize,
     l: usize,
-    challenge_r: &P::ScalarField,
-) -> (R1CSVectors<P>, R1CSPublicPolys<P>, R1CSWitnessPolys<P>) {
+    r1cs_vecs: &R1CSVectors<P>,
+) -> (R1CSPublicPolys<P>, R1CSWitnessPolys<P>) {
     assert!(m.is_power_of_two());
     assert!(l.is_power_of_two());
 
-    let (r1cs_vecs, _) = generate_r1cs_vectors::<P>(m, l, &challenge_r);
+    let (polynomial_x, polynomial_w) = generate_polynomials_from_vectors::<P>(&r1cs_vecs.vec_x, &r1cs_vecs.vec_w);
+    let polynomial_y = generate_polynomials_from_left_vector::<P>(&r1cs_vecs.vec_y);
+    let polynomial_z = generate_polynomials_from_left_vector::<P>(&r1cs_vecs.vec_z);
+    let (polynomial_a, polynomial_b) = generate_polynomials_from_vectors::<P>(&r1cs_vecs.vec_a, &r1cs_vecs.vec_b);
+    let polynomial_c = generate_polynomials_from_left_vector::<P>(&r1cs_vecs.vec_c);
 
-    let (polynomial_x, polynomial_w) = generate_sumcheck_polynomials_from_vectors::<P>(&r1cs_vecs.vec_x, &r1cs_vecs.vec_w);
-    let (polynomial_y, _) = generate_sumcheck_polynomials_from_vectors::<P>(&r1cs_vecs.vec_y, &r1cs_vecs.vec_w);
-    let (polynomial_z, _) = generate_sumcheck_polynomials_from_vectors::<P>(&r1cs_vecs.vec_z, &r1cs_vecs.vec_w);
-    let (polynomial_a, polynomial_b) = generate_sumcheck_polynomials_from_vectors::<P>(&r1cs_vecs.vec_a, &r1cs_vecs.vec_b);
-    let (polynomial_c, _) = generate_sumcheck_polynomials_from_vectors::<P>(&r1cs_vecs.vec_c, &r1cs_vecs.vec_b);
-
-    (r1cs_vecs, R1CSPublicPolys {
+    (R1CSPublicPolys {
         poly_pa: polynomial_x,
         poly_pb: polynomial_y,
         poly_pc: polynomial_z
@@ -194,35 +186,35 @@ pub fn generate_r1cs_polynomial_relation<P: Pairing> (
     })
 }
 
-pub fn generate_de_r1cs_polynomial_relation<P: Pairing> (
-    m: usize,
-    l: usize,
-    challenge_r: &P::ScalarField,
-) -> (R1CSVectors<P>, R1CSDePublicPolys<P>, R1CSDeWitnessPolys<P>) {
-    assert!(m.is_power_of_two());
-    assert!(l.is_power_of_two());
+// pub fn generate_de_r1cs_polynomial_relation<P: Pairing> (
+//     m: usize,
+//     l: usize,
+//     challenge_r: &P::ScalarField,
+// ) -> (R1CSVectors<P>, R1CSDePublicPolys<P>, R1CSDeWitnessPolys<P>) {
+//     assert!(m.is_power_of_two());
+//     assert!(l.is_power_of_two());
 
-    let (r1cs_vecs, _) = generate_r1cs_vectors::<P>(m, l, &challenge_r);
+//     let (r1cs_vecs, _) = generate_r1cs_vectors::<P>(m, l, &challenge_r);
 
-    let (polynomials_x, polynomials_w) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_x, &r1cs_vecs.vec_w);
-    let (polynomials_y, _) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_y, &r1cs_vecs.vec_w);
-    let (polynomials_z, _) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_z, &r1cs_vecs.vec_w);
-    let (polynomials_a, polynomials_b) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_a, &r1cs_vecs.vec_b);
-    let (polynomials_c, _) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_c, &r1cs_vecs.vec_b);
+//     let (polynomials_x, polynomials_w) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_x, &r1cs_vecs.vec_w);
+//     let (polynomials_y, _) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_y, &r1cs_vecs.vec_w);
+//     let (polynomials_z, _) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_z, &r1cs_vecs.vec_w);
+//     let (polynomials_a, polynomials_b) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_a, &r1cs_vecs.vec_b);
+//     let (polynomials_c, _) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_c, &r1cs_vecs.vec_b);
 
-    (r1cs_vecs, R1CSDePublicPolys {
-        polys_pa: polynomials_x,
-        polys_pb: polynomials_y,
-        polys_pc: polynomials_z
-    }, R1CSDeWitnessPolys {
-        polys_a: polynomials_a,
-        polys_b: polynomials_b,
-        polys_c: polynomials_c,
-        polys_w: polynomials_w
-    })
-}
+//     (r1cs_vecs, R1CSDePublicPolys {
+//         polys_pa: polynomials_x,
+//         polys_pb: polynomials_y,
+//         polys_pc: polynomials_z
+//     }, R1CSDeWitnessPolys {
+//         polys_a: polynomials_a,
+//         polys_b: polynomials_b,
+//         polys_c: polynomials_c,
+//         polys_w: polynomials_w
+//     })
+// }
 
-pub fn generate_pub_r1cs_polynomials_from_vectors<P: Pairing> (
+pub fn generate_r1cs_de_pub_polynomials<P: Pairing> (
     r1cs_pub_vecs: &R1CSPubVectors<P>,
     m: usize,
     l: usize,
@@ -241,34 +233,34 @@ pub fn generate_pub_r1cs_polynomials_from_vectors<P: Pairing> (
     }
 }
 
-pub fn generate_distributed_r1cs_polynomial_relation<P: Pairing> (
-    sub_prover_id: usize,
-    r1cs_vecs: &R1CSVectors<P>,
-    m: usize,
-    l: usize,
-) -> (R1CSPublicPolys<P>, R1CSWitnessPolys<P>) {
-    assert!(m.is_power_of_two());
-    assert!(l.is_power_of_two());
+// pub fn generate_distributed_r1cs_polynomial_relation<P: Pairing> (
+//     sub_prover_id: usize,
+//     r1cs_vecs: &R1CSVectors<P>,
+//     m: usize,
+//     l: usize,
+// ) -> (R1CSPublicPolys<P>, R1CSWitnessPolys<P>) {
+//     assert!(m.is_power_of_two());
+//     assert!(l.is_power_of_two());
 
-    let (polynomials_x, polynomials_w) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_x, &r1cs_vecs.vec_w);
-    let polynomials_y = generate_de_polynomials_from_left_vector::<P>(m, l, &r1cs_vecs.vec_y);
-    let polynomials_z = generate_de_polynomials_from_left_vector::<P>(m, l, &r1cs_vecs.vec_z);
-    let (polynomials_a, polynomials_b) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_a, &r1cs_vecs.vec_b);
-    let polynomials_c = generate_de_polynomials_from_left_vector::<P>(m, l, &r1cs_vecs.vec_c);
+//     let (polynomials_x, polynomials_w) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_x, &r1cs_vecs.vec_w);
+//     let polynomials_y = generate_de_polynomials_from_left_vector::<P>(m, l, &r1cs_vecs.vec_y);
+//     let polynomials_z = generate_de_polynomials_from_left_vector::<P>(m, l, &r1cs_vecs.vec_z);
+//     let (polynomials_a, polynomials_b) = generate_de_polynomials_from_vectors::<P>(m, l, &r1cs_vecs.vec_a, &r1cs_vecs.vec_b);
+//     let polynomials_c = generate_de_polynomials_from_left_vector::<P>(m, l, &r1cs_vecs.vec_c);
 
-    (R1CSPublicPolys {
-        poly_pa: polynomials_x[sub_prover_id].clone(),
-        poly_pb: polynomials_y[sub_prover_id].clone(),
-        poly_pc: polynomials_z[sub_prover_id].clone()
-    }, R1CSWitnessPolys {
-        poly_a: polynomials_a[sub_prover_id].clone(),
-        poly_b: polynomials_b[sub_prover_id].clone(),
-        poly_c: polynomials_c[sub_prover_id].clone(),
-        poly_w: polynomials_w[sub_prover_id].clone()
-    })
-}
+//     (R1CSPublicPolys {
+//         poly_pa: polynomials_x[sub_prover_id].clone(),
+//         poly_pb: polynomials_y[sub_prover_id].clone(),
+//         poly_pc: polynomials_z[sub_prover_id].clone()
+//     }, R1CSWitnessPolys {
+//         poly_a: polynomials_a[sub_prover_id].clone(),
+//         poly_b: polynomials_b[sub_prover_id].clone(),
+//         poly_c: polynomials_c[sub_prover_id].clone(),
+//         poly_w: polynomials_w[sub_prover_id].clone()
+//     })
+// }
 
-pub fn generate_sumcheck_polynomials_from_vectors<P: Pairing> (
+pub fn generate_polynomials_from_vectors<P: Pairing> (
     vector_left: &Vec<P::ScalarField>,
     vector_right: &Vec<P::ScalarField>,
 ) -> (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
@@ -284,6 +276,14 @@ pub fn generate_sumcheck_polynomials_from_vectors<P: Pairing> (
     let polynomial_right = UnivariatePolynomial::from_coefficients_vec(coeffs_right);
 
     (polynomial_left, polynomial_right)
+}
+
+pub fn generate_polynomials_from_left_vector<P: Pairing> (
+    vector_left: &Vec<P::ScalarField>,
+) -> UnivariatePolynomial<P::ScalarField> {
+    let polynomial_left = UnivariatePolynomial::from_coefficients_vec(vector_left.clone());
+
+    polynomial_left
 }
 
 pub fn generate_de_polynomials_from_vectors<P: Pairing> (

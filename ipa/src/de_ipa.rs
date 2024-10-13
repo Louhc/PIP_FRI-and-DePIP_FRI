@@ -43,8 +43,6 @@ impl<P: Pairing> DeIPA<P> {
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         transcript: &mut Transcript,
-        challenge_v: &P::ScalarField,
-        challenge_u1: &P::ScalarField,
     ) -> Option<SNARKProofNoPre<P>> {
 
         assert_eq!(powers[0].len(), x_srs.len());
@@ -66,6 +64,18 @@ impl<P: Pairing> DeIPA<P> {
         let sub_polynomials = vec![wit_polys.poly_w.clone(), wit_polys.poly_a.clone(), wit_polys.poly_b.clone(), wit_polys.poly_c.clone()];
         let coms_wit_polys = BivBatchKZG::<P>::de_commit(sub_prover_id, &powers, &sub_polynomials);
         println!("Prover {:?} commit time: {:?}", sub_prover_id, time.elapsed());
+
+        // generate challenges v and u1
+        let (v, u1) = if Net::am_master() {
+            let slice: &[P::G1] = &coms_wit_polys.as_ref().unwrap();
+            <Transcript as ProofTranscript<P>>::append_points(transcript, b"v_and_u1", slice);
+            let v = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"rlc");
+            let u1 = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_ldt_padding");
+            Net::recv_from_master(Some(vec![(v, u1); Net::n_parties()]));
+            (v, u1)
+        } else {
+            Net::recv_from_master(None)
+        };
 
         // R_i(X) = X^{i-1} and evals R_i(r^{m})
         let time = Instant::now();
@@ -98,14 +108,14 @@ impl<P: Pairing> DeIPA<P> {
         let polynomial_f4 = &(&(&poly_ar * &wit_polys.poly_b) * eval_r) + &eval_r_pow_m_mul_c_r;
 
         // target polynomial, rlc of f1-f4
-        let mut polynomial_target = &polynomial_f1 + &(&polynomial_f2 * *challenge_v);
-        polynomial_target += (*challenge_v * challenge_v, &polynomial_f3);
-        polynomial_target += (challenge_v.pow([3 as u64]), &polynomial_f4);
+        let mut polynomial_target = &polynomial_f1 + &(&polynomial_f2 * v);
+        polynomial_target += (v * v, &polynomial_f3);
+        polynomial_target += (v.pow([3 as u64]), &polynomial_f4);
         println!("Prover {:?} compute target polynomial time: {:?}", sub_prover_id, time.elapsed());
 
         // get g1 and h1
         let time = Instant::now();
-        let (poly_g1, poly_h1) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target, &challenge_u1, &x_domain);
+        let (poly_g1, poly_h1) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target, &u1, &x_domain);
         let com_g1 = KZG::<P>::commit(&x_srs, &poly_g1).unwrap();
         let com_h1 = KZG::<P>::commit(&x_srs, &poly_h1).unwrap();
 
@@ -210,13 +220,13 @@ impl<P: Pairing> DeIPA<P> {
             let polynomials_y = vec![poly_pa_alpha, poly_pb_alpha, poly_pc_alpha, poly_w_alpha,
                                                                                 poly_a_r_alpha, poly_a_r, poly_b_alpha, poly_b_r_inverse, poly_b_0, poly_c_r, poly_r];
             // get the target polynomial over Y via rlc
-            let mut alpha_minus_u1 = alpha - challenge_u1;
+            let mut alpha_minus_u1 = alpha - u1;
             let mut polynomial_target_y = &poly_f1_alpha * alpha_minus_u1;
-            alpha_minus_u1 *= challenge_v;
+            alpha_minus_u1 *= v;
             polynomial_target_y += (alpha_minus_u1, &poly_f2_alpha);
-            alpha_minus_u1 *= challenge_v;
+            alpha_minus_u1 *= v;
             polynomial_target_y += (alpha_minus_u1, &poly_f3_alpha);
-            alpha_minus_u1 *= challenge_v;
+            alpha_minus_u1 *= v;
             polynomial_target_y += (alpha_minus_u1, &poly_f4_alpha);
 
             // get g2, h2low, h2high
@@ -245,7 +255,7 @@ impl<P: Pairing> DeIPA<P> {
         } else {
             (Vec::new(), P::G1::zero(), Vec::new(), Vec::new(), Vec::new(), Vec::new())
         };
-        println!("Prover {:?} computes  time: {:?}", sub_prover_id, time.elapsed());
+        println!("Prover {:?} computes proof_g2_h2 time: {:?}", sub_prover_id, time.elapsed());
 
         // get challenge beta from fiat shamir
         let beta = if Net::am_master() {
@@ -317,8 +327,6 @@ impl<P: Pairing> DeIPA<P> {
         pub_polys: &R1CSDePublicPolys<P>,
         r: &P::ScalarField,
         transcript: &mut Transcript,
-        challenge_v: &P::ScalarField,
-        challenge_u1: &P::ScalarField,
     ) -> bool {
         // Self-test of evaluation validity
 
@@ -346,6 +354,10 @@ impl<P: Pairing> DeIPA<P> {
             proof_g2_h2,
             proofs_wit_polys} = proof;
 
+        let slice: &[P::G1] = &coms_wit_polys;
+        <Transcript as ProofTranscript<P>>::append_points(transcript, b"v_and_u1", slice);
+        let v = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"rlc");
+        let u1 = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_ldt_padding");
         let slice: &[P::G1] = &coms_g1_h1;
         <Transcript as ProofTranscript<P>>::append_points(transcript, b"alpha_and_u2", slice);
         let alpha = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluation_for_x");
@@ -355,6 +367,7 @@ impl<P: Pairing> DeIPA<P> {
         <Transcript as ProofTranscript<P>>::append_points(transcript, b"beta", slice);
         let beta = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluation_for_y");
 
+        let time = Instant::now();
         let z_h_eval_x = x_domain.evaluate_vanishing_polynomial(alpha);
         let eval_beta = y_domain.evaluate_all_lagrange_coefficients(beta);
         let eval_pa_alpha_beta: P::ScalarField = pub_polys.polys_pa.iter().zip(eval_beta.iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
@@ -367,19 +380,21 @@ impl<P: Pairing> DeIPA<P> {
         }
         let eval_r_beta: P::ScalarField = eval_r.iter().zip(eval_beta.iter()).map(|(poly, eval)| *poly * *eval).sum();
 
-        let t2 = (alpha * evals_g1_h1[0] + (alpha - challenge_u1) * z_h_eval_x * evals_g1_h1[1])/y_domain.size_as_field_element();
+        let t2 = (alpha * evals_g1_h1[0] + (alpha - u1) * z_h_eval_x * evals_g1_h1[1])/y_domain.size_as_field_element();
         let f1 = eval_pa_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[2];
         let f2 = eval_pb_alpha_beta * evals_wit_polys[0] - eval_r_beta * (evals_wit_polys[4] * r_pow_m + evals_wit_polys[5] * (P::ScalarField::one() - r_pow_m));
         let f3 = eval_pc_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[6];
         let f4 = (evals_wit_polys[1] * evals_wit_polys[3] - evals_wit_polys[6]) * eval_r_beta;
 
-        let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3, f4], &challenge_v);
-        let left_hand = (beta - u2) * (alpha - challenge_u1) * eval_rlc;
+        let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3, f4], &v);
+        let left_hand = (beta - u2) * (alpha - u1) * eval_rlc;
         let right_hand = beta * evals_g2_h2[0] + (beta - u2) * t2 + (beta - u2) * y_domain.evaluate_vanishing_polynomial(beta) * (evals_g2_h2[1] + beta.pow([l as u64]) * evals_g2_h2[2]);
         let check1 = left_hand == right_hand;
         assert!(check1);
+        println!("Verifier evaluation check time: {:?}", time.elapsed());
 
         // check the validity of g1 and h1
+        let time = Instant::now();
         let check2 = BatchKZG::<P>::verify(&uni_v_srs_for_x, &coms_g1_h1, &alpha, &evals_g1_h1, &proof_g1_h1, &gamma).unwrap();
         assert!(check2);
 
@@ -395,6 +410,7 @@ impl<P: Pairing> DeIPA<P> {
         let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r]];
         let check4 = BivBatchKZG::<P>::verify_at_same_y(&v_srs, &coms_wit_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_polys, transcript, &gamma).unwrap();
         assert!(check4);
+        println!("Verifier pairing time: {:?}", time.elapsed());
 
         check1 & check2 & check3 & check4
     }
