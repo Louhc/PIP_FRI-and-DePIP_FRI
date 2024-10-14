@@ -23,6 +23,7 @@ use std::time::{
     Instant,
     // Duration
 };
+use rayon::prelude::*;
 
 pub struct BivBatchKZG<P: Pairing> {
     _pairing: PhantomData<P>,
@@ -83,29 +84,30 @@ impl<P: Pairing> BivBatchKZG<P> {
     ) -> Option<Vec<P::G1>> {
         // the sub_bivariate_polynomial is f_i(X)L_i(Y), so only need srs related to L_i(Y)
         let sub_powers = powers[sub_prover_id].clone();
-        let mut sub_coms = Vec::new();
 
-        for sub_polynomial in sub_polynomials {
-            assert!(sub_powers.len() >= sub_polynomial.degree() + 1);
-
-            let mut coeffs = sub_polynomial.coeffs.to_vec();
+        let sub_coms: Vec<P::G1> = sub_polynomials.par_iter().map(|polynomial| {
+            let mut coeffs = polynomial.coeffs.to_vec();
             coeffs.resize(sub_powers.len(), <P::ScalarField>::zero());
-            sub_coms.push(P::G1::msm(&sub_powers, &coeffs).unwrap());
-        }
+            P::G1::msm(&sub_powers, &coeffs).unwrap()
+        }).collect();
+        
         let final_coms_slice = Net::send_to_master(&sub_coms);
 
         if Net::am_master() {
-            // let time = Instant::now();
-            let mut final_coms = vec![P::G1::zero(); sub_polynomials.len()];
+            // let mut final_coms = vec![P::G1::zero(); sub_polynomials.len()];
             let final_coms_slice = final_coms_slice.unwrap();
-
-            for row in final_coms_slice {
-                assert_eq!(row.len(), sub_polynomials.len());
-                for i in 0..row.len() {
-                    final_coms[i] += row[i];
-                }
-            }
-            // println!("Prover 0 additional committing time: {:?}", time.elapsed());
+            let final_coms: Vec<_> = final_coms_slice
+            .par_iter()
+            .map(|row| {
+                row.iter().cloned().collect::<Vec<_>>()
+            })
+            .reduce_with(|mut acc, row| {
+                acc.iter_mut().zip(row.iter()).for_each(|(a, &b)| {
+                    *a += b;
+                });
+                acc
+            })
+            .unwrap_or_else(|| vec![P::G1::zero(); sub_polynomials.len()]);
             Some(final_coms)
         } else {
             None

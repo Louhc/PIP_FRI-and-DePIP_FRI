@@ -4,13 +4,14 @@ set -ex
 trap "exit" INT TERM
 trap "kill 0" EXIT
 
-cargo build --example $1 --release
+# cargo build --example $1 --release
+cargo build --release --example $1 --no-default-features --features "parallel"
 BIN=../target/release/examples/$1
 
 PROCS=()
 for i in 0 1 2 3
 do
-  $BIN $i ./data/4_local &
+  RAYON_NUM_THREADS=8 $BIN $i ./data/4_local &
   #RUST_LOG=debug $BIN $i ./data/4 &
   pid=$!
   PROCS+=("$pid")

@@ -1,7 +1,7 @@
 use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, EvaluationDomain, Evaluations, GeneralEvaluationDomain, Polynomial};
 use std::marker::PhantomData;
 use ark_ec::pairing::Pairing;
-use my_kzg::{batch_kzg::BatchKZG, biv_batch_kzg::BivBatchKZG, biv_trivial_kzg::VerifierSRS, helper::linear_combination_field, transcript::ProofTranscript, trivial_kzg::{UniVerifierSRS, KZG}};
+use my_kzg::{batch_kzg::BatchKZG, biv_batch_kzg::BivBatchKZG, biv_trivial_kzg::VerifierSRS, helper::linear_combination_field, transcript::ProofTranscript, trivial_kzg::UniVerifierSRS};
 use merlin::Transcript;
 use crate::{ipa::IPA, helper::{R1CSPublicPolys, R1CSWitnessPolys, R1CSDePublicPolys}};
 use ark_ff::{Zero, One, Field};
@@ -10,6 +10,7 @@ use std::time::{
     Instant,
     // Duration
 };
+use rayon::iter::{ParallelIterator, IntoParallelRefIterator};
 
 pub struct DeIPA<P: Pairing> {
     _pairing: PhantomData<P>,
@@ -116,17 +117,17 @@ impl<P: Pairing> DeIPA<P> {
         // get g1 and h1
         let time = Instant::now();
         let (poly_g1, poly_h1) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target, &u1, &x_domain);
-        let com_g1 = KZG::<P>::commit(&x_srs, &poly_g1).unwrap();
-        let com_h1 = KZG::<P>::commit(&x_srs, &poly_h1).unwrap();
+        let com_g1_h1 = BatchKZG::<P>::commit(&x_srs, &vec![poly_g1.clone(), poly_h1.clone()]).unwrap();
 
         // send com of g1 and h1 to P0
-        let com_g1_h1_slice = Net::send_to_master(&(com_g1, com_h1));
-        let com_g1_h1 = if Net::am_master() {
-            com_g1_h1_slice.unwrap().iter().fold((P::G1::zero(), P::G1::zero()), |(acc1, acc2), &(a, b)| {(acc1 + a, acc2 + b)})
+        let com_g1_h1_slice = Net::send_to_master(&com_g1_h1);
+        let coms_g1_h1 = if Net::am_master() {
+            let com_g1_h1_slice = com_g1_h1_slice.unwrap();
+            vec![com_g1_h1_slice.par_iter().map(|vec| vec[0]).sum(), com_g1_h1_slice.par_iter().map(|vec| vec[1]).sum()]
         } else {
-            (P::G1::zero(), P::G1::zero())
+            Vec::new()
         };
-        let coms_g1_h1 = vec![com_g1_h1.0, com_g1_h1.1];
+        // let coms_g1_h1 = vec![com_g1_h1.0, com_g1_h1.1];
         println!("Prover {:?} g_1 h_1 commit time: {:?}", sub_prover_id, time.elapsed());
 
         // generate new challenges alpha and u2
@@ -245,11 +246,12 @@ impl<P: Pairing> DeIPA<P> {
             let polys_g2_h2 = vec![poly_g2, poly_h2_low, poly_h2_high];
 
             // compute commitments to g2, h2low, h2high
-            let com_g2 = KZG::<P>::commit_lagrange(&y_srs, &evals_g2).unwrap();
-            let com_h2_low = KZG::<P>::commit_lagrange(&y_srs, &evals_h2_low).unwrap();
-            let com_h2_high = KZG::<P>::commit_lagrange(&y_srs, &evals_h2_high).unwrap();
-            let coms_g2_h2 = vec![com_g2, com_h2_low, com_h2_high];
             let evals_domain_g2_h2 = vec![evals_g2, evals_h2_low, evals_h2_high];
+            let coms_g2_h2 = BatchKZG::<P>::commit_lagrange(&y_srs, &evals_domain_g2_h2).unwrap();
+            // let com_g2 = KZG::<P>::commit_lagrange(&y_srs, &evals_g2).unwrap();
+            // let com_h2_low = KZG::<P>::commit_lagrange(&y_srs, &evals_h2_low).unwrap();
+            // let com_h2_high = KZG::<P>::commit_lagrange(&y_srs, &evals_h2_high).unwrap();
+            // let coms_g2_h2 = vec![com_g2, com_h2_low, com_h2_high];
 
             (evals_g1_h1, proof_g1_h1, coms_g2_h2, evals_domain_g2_h2, polynomials_y, polys_g2_h2)
         } else {

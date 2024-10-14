@@ -12,6 +12,7 @@ use ark_ff::UniformRand;
 type MyField = <Bls12_381 as Pairing>::ScalarField;
 use std::time::Instant;
 
+// By default, 
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "example", about = "An example of StructOpt usage.")]
@@ -31,7 +32,7 @@ fn init() -> (usize, usize, usize) {
     Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
     let l = Net::n_parties();
     let sub_prover_id = Net::party_id();
-    let m = 1 << 20;
+    let m = 1 << 22;
     (m, l, sub_prover_id)
 }
 
@@ -45,6 +46,7 @@ fn main() {
 
     let x_degree = m - 1;
     let y_degree = l - 1;
+    let time = Instant::now();
     let (powers, v_srs) = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, x_degree, y_degree, &domain_y).unwrap();
     let x_srs = get_x_srs::<Bls12_381>(&powers);
     // Note that y_srs is lagrange-based
@@ -52,6 +54,7 @@ fn main() {
         .filter_map(|row| row.get(0))
         .cloned()
         .collect();
+    println!("Setup time: {:?}", time.elapsed());
 
     let (r1cs_de_vecs, r1cs_pub_vecs) = generate_r1cs_de_vectors::<Bls12_381>(sub_prover_id, m, l, &challenge_r);
 

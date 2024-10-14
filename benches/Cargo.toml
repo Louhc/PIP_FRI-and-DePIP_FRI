@@ -1,33 +1,33 @@
 [package]
 name = "benches"
 version = "0.3.0"
-authors = ["Nirvan Tyagi <nirvan.tyagi@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 merlin = "3.0.0"
+rayon = { version = "1", optional = true }
 
 [dev-dependencies]
-ark-ec = { version = "0.4", features = [ "parallel" ] }
-ark-ff = { version = "0.4", features = [ "parallel" ] }
-ark-poly = { version = "0.4", features = [ "parallel" ] }
-ark-std = { version = "0.4", features = [ "parallel" ] }
-ark-groth16 = { version = "0.4", features = [ "parallel", "r1cs" ] }
-ark-crypto-primitives = { version = "0.4", features = [ "parallel", "r1cs", "prf" ] }
+ark-ec = { version = "0.4", default-features = false }
+ark-ff = { version = "0.4", default-features = false }
+ark-poly = { version = "0.4", default-features = false }
+ark-std = { version = "0.4", default-features = false }
+ark-crypto-primitives = { version = "0.4", features = ["r1cs", "prf" ] }
 ark-bls12-381 = { version = "0.4", features = [ "curve" ] }
 ark-ed-on-bls12-381 = "0.4"
-ark-bls12-377 = { version = "0.4", features = [ "curve", "r1cs" ] }
-ark-bw6-761 = "0.4"
 criterion = "0.5.0"
 
 ark-relations = "0.4"
 ark-r1cs-std = "0.4"
 
-digest = "0.9"
-blake2 = "0.9"
+digest = "0.10.7"
+blake2 = "0.10.6"
 csv = "1"
+
+de_network = { version = "0.1.0", path = "../de_network"}
+structopt = "0.3"
 
 my_kzg = {path = "../kzg"}
 my_ipa = {path = "../ipa"}
@@ -57,3 +57,13 @@ harness = false
 name = "my_ipa"
 path = "benches/ipa.rs"
 harness = false
+
+[[bench]]
+name = "de_ipa"
+path = "benches/de_ipa_test.rs"
+harness = false
+
+[features]
+default = [ "parallel" ]
+parallel = [ "rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel", "ark-crypto-primitives/parallel"]
+print-trace = [ "ark-std/print-trace" ]
