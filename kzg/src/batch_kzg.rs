@@ -8,6 +8,8 @@ use ark_ff::{One, UniformRand, Zero, PrimeField, Field};
 use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
+use crate::helper::generator_numerator_polynomial;
+use crate::helper::interpolate_on_trivial_domain;
 use crate::trivial_kzg::UniVerifierSRS;
 use crate::trivial_kzg::KZG;
 use std::marker::PhantomData;
@@ -148,6 +150,17 @@ impl<P: Pairing> BatchKZG<P> {
         Ok(P::G1::msm(powers, &quotient_coeffs).unwrap())
     }
 
+    pub fn open_on_one_poly(
+        powers: &[P::G1Affine],
+        polynomial: &UnivariatePolynomial<P::ScalarField>,
+        points: &Vec<P::ScalarField>,
+    ) -> Result<P::G1, Error> {
+
+        let divider_polynomial = generator_numerator_polynomial::<P>(&points);
+        let quotient_polynomial = polynomial / &divider_polynomial;
+        Ok(KZG::<P>::commit(&powers, &quotient_polynomial).unwrap())
+    }
+
     pub fn verify(
         v_srs: &UniVerifierSRS<P>,
         coms: &Vec<P::G1>,
@@ -166,6 +179,23 @@ impl<P: Pairing> BatchKZG<P> {
             linear_factor *= challenge;
             linear_combination = linear_combination + (coms[i].clone() - v_srs.g * evals[i]) * linear_factor;
         }
+
+        let is_valid = P::pairing(linear_combination.clone(), v_srs.h.clone())
+            == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point);
+        Ok(is_valid)
+    }
+
+    pub fn verify_on_one_poly(
+        v_srs: &UniVerifierSRS<P>,
+        com: &P::G1,
+        points: &Vec<P::ScalarField>,
+        evals: &Vec<P::ScalarField>,
+        proof: &P::G1,
+    ) -> Result<bool, Error> {
+        assert!(points.len() == evals.len());
+
+        let minus_polynomial = interpolate_on_trivial_domain::<P>(&points, &evals);
+
 
         let is_valid = P::pairing(linear_combination.clone(), v_srs.h.clone())
             == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point);
