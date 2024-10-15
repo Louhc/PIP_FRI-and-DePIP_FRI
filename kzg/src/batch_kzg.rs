@@ -9,7 +9,7 @@ use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
 use crate::helper::generator_numerator_polynomial;
-use crate::helper::interpolate_on_trivial_domain;
+// use crate::helper::interpolate_on_trivial_domain;
 use crate::trivial_kzg::UniVerifierSRS;
 use crate::trivial_kzg::KZG;
 use std::marker::PhantomData;
@@ -185,21 +185,21 @@ impl<P: Pairing> BatchKZG<P> {
         Ok(is_valid)
     }
 
-    pub fn verify_on_one_poly(
-        v_srs: &UniVerifierSRS<P>,
-        com: &P::G1,
-        points: &Vec<P::ScalarField>,
-        evals: &Vec<P::ScalarField>,
-        proof: &P::G1,
-    ) -> Result<bool, Error> {
-        assert!(points.len() == evals.len());
+    // pub fn verify_on_one_poly(
+    //     v_srs: &UniVerifierSRS<P>,
+    //     com: &P::G1,
+    //     points: &Vec<P::ScalarField>,
+    //     evals: &Vec<P::ScalarField>,
+    //     proof: &P::G1,
+    // ) -> Result<bool, Error> {
+    //     assert!(points.len() == evals.len());
 
-        let minus_polynomial = interpolate_on_trivial_domain::<P>(&points, &evals);
+    //     let minus_polynomial = interpolate_on_trivial_domain::<P>(&points, &evals);
         
-        let is_valid = P::pairing(linear_combination.clone(), v_srs.h.clone())
-            == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point);
-        Ok(is_valid)
-    }
+    //     let is_valid = P::pairing(linear_combination.clone(), v_srs.h.clone())
+    //         == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point);
+    //     Ok(is_valid)
+    // }
 }
 
 #[derive(Default, Clone, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq, Debug)]
