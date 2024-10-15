@@ -20,6 +20,7 @@ use std::marker::PhantomData;
 use ark_std::rand::Rng;
 // use ark_std::rand::{rngs::StdRng, SeedableRng};
 // use digest::Digest;
+use rayon::prelude::*;
 
 use crate::Error;
 
@@ -57,7 +58,7 @@ impl<F: FftField> BivariatePolynomial<F> {
         let y_evals = EvaluationDomain::evaluate_all_lagrange_coefficients(domain, *y);
 
         y_evals
-            .iter()
+            .par_iter()
             .zip(&self.x_polynomials)
             .map(|(y_eval, x_polynomial)| y_eval.clone() * x_polynomial.evaluate(&x))
             .sum()

@@ -14,6 +14,7 @@ use ark_std::rand::Rng;
 use crate::Error;
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use rayon::prelude::*;
 
 #[derive(Clone)]
 pub struct SRS<P: Pairing> {
@@ -259,7 +260,7 @@ impl<P: Pairing> DeKZG<P> {
         // guaranteed by the Net if delayed
         // the output vec lengh equals to sub prover number
         if Net::am_master() {
-            Some(final_com_slice.unwrap().iter().sum())
+            Some(final_com_slice.unwrap().par_iter().sum())
         } else {
             None
         }
@@ -273,7 +274,7 @@ impl<P: Pairing> DeKZG<P> {
         let final_eval_slice = Net::send_to_master(&sub_eval);
 
         if Net::am_master() {
-            Some(final_eval_slice.unwrap().iter().sum())
+            Some(final_eval_slice.unwrap().par_iter().sum())
         } else {
             None
         }
@@ -299,7 +300,7 @@ impl<P: Pairing> DeKZG<P> {
         let final_proof_slice = Net::send_to_master(&sub_proof);
 
         if Net::am_master() {
-            Some(final_proof_slice.unwrap().iter().sum())
+            Some(final_proof_slice.unwrap().par_iter().sum())
         } else {
             None
         }

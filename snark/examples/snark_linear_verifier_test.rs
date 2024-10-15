@@ -61,6 +61,7 @@ fn main() {
     let time = Instant::now();
     let mut transcript : Transcript = Transcript::new(b"R1CS inner product");
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<Bls12_381>(m, l, &r1cs_de_vecs);
+    println!("Prover {:?} starts prove", sub_prover_id);
     let proof = DeIPA::<Bls12_381>::de_r1cs_prove(sub_prover_id, &powers, &x_srs, &y_srs, &sub_wit_polys, &sub_pub_polys, &challenge_r, &domain_x, &domain_y, &mut transcript);
     println!("Prover {:?} prove total time: {:?}", sub_prover_id, time.elapsed());
 

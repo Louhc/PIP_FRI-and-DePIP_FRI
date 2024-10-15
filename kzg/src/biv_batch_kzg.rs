@@ -223,9 +223,8 @@ impl<P: Pairing> BivBatchKZG<P> {
         let mut polynomial_combined_slice_q1 = UnivariatePolynomial::zero();
 
         for polynomial in sub_polynomials {
-            // let eval = polynomial.evaluate(&x);
+
             polynomial_combined_slice_q1 += (linear_factor, polynomial);
-            // evals_slice.push(polynomial.evaluate(&x));
             linear_factor *= challenge;
         }
 
@@ -244,7 +243,7 @@ impl<P: Pairing> BivBatchKZG<P> {
             // let proof_1_test = sub_proofs_and_evals.clone().unwrap().iter().map(|&(first, _)| first).sum();
 
             // generate the second part proof
-            let y_srs: Vec<<P as Pairing>::G1Affine> = powers.iter()
+            let y_srs: Vec<<P as Pairing>::G1Affine> = powers.par_iter()
                 .filter_map(|row| row.get(0))
                 .cloned()
                 .collect();
@@ -462,15 +461,22 @@ impl<P: Pairing> BivBatchKZG<P> {
         let mut combined_polynomial = UnivariatePolynomial::zero();
         let mut challenge_gamma = P::ScalarField::one();
         let eval_lagrange: <P as Pairing>::ScalarField = evaluate_one_lagrange::<P>(sub_prover_id, domain, y_point);
-        for j in 0..x_points.len() {
-            // generate f_i,j(x) L_i,j(beta)
-            let polynomial_f_x_beta = &sub_polynomials[j] * eval_lagrange;
 
-            // generate final poynomial with linear combination
-            let combined_polynomial_slice = &polynomial_f_x_beta / &generator_numerator_polynomial::<P>(&x_points[j]);
+        let results: Vec<_> = x_points
+            .par_iter()
+            .enumerate()
+            .map(|(j, x_point)| {
+                let polynomial_f_x_beta = &sub_polynomials[j] * eval_lagrange;
+                let combined_polynomial_slice = &polynomial_f_x_beta / &generator_numerator_polynomial::<P>(x_point);
+                (j, combined_polynomial_slice)
+            })
+            .collect();
+
+        for (_, combined_polynomial_slice) in results {
             combined_polynomial += (challenge_gamma, &combined_polynomial_slice);
             challenge_gamma *= gamma;
         }
+        
 
         let polynomial_q_slice = &combined_polynomial;
         let mut coeffs_q_slice = polynomial_q_slice.coeffs.to_vec();
@@ -483,7 +489,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         let proof_q = Net::send_to_master(&proof_q_slice);
         // first-part proof, commitments to q
         let proof_q = if Net::am_master() {
-            Some(proof_q.unwrap().iter().sum())
+            Some(proof_q.unwrap().par_iter().sum())
         } else {
             None
         };
@@ -502,24 +508,25 @@ impl<P: Pairing> BivBatchKZG<P> {
         
         // generate evaluations of f_j,i(eta, beta)
         let point_eta_beta = (eta, *y_point);
-        let sub_evals_eta: Vec<P::ScalarField> = sub_polynomials.iter().map(|poly| poly.evaluate(&eta)).collect();
-        let evals_eta_beta: Vec<P::ScalarField> = sub_evals_eta.iter().map(|eval| eval.clone() * eval_lagrange).collect();
+        let sub_evals_eta: Vec<P::ScalarField> = sub_polynomials.par_iter().map(|poly| poly.evaluate(&eta)).collect();
+        let evals_eta_beta: Vec<P::ScalarField> = sub_evals_eta.par_iter().map(|eval| eval.clone() * eval_lagrange).collect();
         let eval_q_slice = polynomial_q_slice.evaluate(&eta);
         let evals_eta_beta_and_q = Net::send_to_master(&(evals_eta_beta, eval_q_slice));
 
         // P_0 computes evaluations of f_j(eta, beta) and q(eta)
         let (evals_eta_beta, eval_q) = if Net::am_master() {
             let evals_eta_beta_and_q = evals_eta_beta_and_q.unwrap();
-            let mut evals_eta_beta = vec![P::ScalarField::zero(); sub_polynomials.len()];
-            let eval_q: <P as Pairing>::ScalarField = evals_eta_beta_and_q.iter().map(|&(_, second)| second).sum();
-            for eval_eta_beta_and_q in evals_eta_beta_and_q {
-                for i in 0..eval_eta_beta_and_q.0.len() {
-                    evals_eta_beta[i] += eval_eta_beta_and_q.0[i];
-                }
-            }
+            let eval_q: <P as Pairing>::ScalarField = evals_eta_beta_and_q.par_iter().map(|&(_, second)| second).sum();
+            let mut evals_eta_beta = vec![<P as Pairing>::ScalarField::zero(); evals_eta_beta_and_q[0].0.len()];
+
+            // 计算 evals_eta_beta
+            evals_eta_beta.par_iter_mut().enumerate().for_each(|(i, eval)| {
+                *eval = evals_eta_beta_and_q.par_iter().map(|eval_eta_beta_and_q| eval_eta_beta_and_q.0[i]).sum();
+            });
+
             (evals_eta_beta, eval_q)
         } else {
-            (vec![P::ScalarField::zero(); sub_polynomials.len()], P::ScalarField::zero())
+            (Vec::new(), P::ScalarField::zero())
         };
 
         // generate challenge theta using fiat-shamir, used for batch kzg open
