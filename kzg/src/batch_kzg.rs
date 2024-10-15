@@ -195,8 +195,7 @@ impl<P: Pairing> BatchKZG<P> {
         assert!(points.len() == evals.len());
 
         let minus_polynomial = interpolate_on_trivial_domain::<P>(&points, &evals);
-
-
+        
         let is_valid = P::pairing(linear_combination.clone(), v_srs.h.clone())
             == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point);
         Ok(is_valid)

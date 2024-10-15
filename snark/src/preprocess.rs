@@ -38,4 +38,6 @@ pub fn prove_t_for_col_row<P: Pairing> (
     let eval_one = P::ScalarField::one();
     let eval_delta = t_col.evaluate(&delta);
     let eval_omega_delta = t_col.evaluate(&(*delta * omega));
+
+    
 }
