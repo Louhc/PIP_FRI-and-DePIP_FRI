@@ -9,6 +9,7 @@ ark-ff = { version = "0.4", default-features = false }
 ark-poly = { version = "0.4", default-features = false }
 ark-std = { version = "0.4", default-features = false }
 ark-serialize = { version = "0.4.2", features = [ "derive" ] }
+ark-relations = { version = "0.4.0", default-features = false, optional = true }
 digest = "0.10.7"
 num-traits = "0.2"
 itertools = "0.13.0"
@@ -18,20 +19,21 @@ my_kzg = { path = "../kzg" }
 my_ipa = { path = "../ipa" }
 de_network = { version = "0.1.0", path = "../de_network"}
 structopt = "0.3"
-
+ark-r1cs-std = { version = "0.4", default-features = false, optional = true }
+ark-crypto-primitives = { version = "^0.3.0", default-features = true }
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.4", features = [ "curve" ] }
-ark-ed-on-bls12-381 = "0.4"
+ark-ed-on-bls12-381 = { version = "0.4", features = ["r1cs"] }
 
 
-ark-relations = "0.4"
-ark-r1cs-std = "0.4"
+ark-relations = { version = "0.4", default-features = false }
 blake2 = "0.10.6"
 
 csv = "1"
 
 [features]
-default = [ "parallel" ]
+default = [ "parallel", "r1cs"]
 parallel = [ "rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel"]
 print-trace = [ "ark-std/print-trace" ]
+r1cs = [ "ark-relations", "ark-r1cs-std", "ark-crypto-primitives/r1cs" ]

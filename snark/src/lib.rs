@@ -2,3 +2,4 @@
 
 pub mod snark_linear_verifier;
 // pub mod preprocess;
+pub mod r1cs;

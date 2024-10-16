@@ -4,5 +4,6 @@ members = [
   "benches",
   "kzg",
   "ipa",
-  "snark"
+  "snark",
+  "rollup"
 ]

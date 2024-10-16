@@ -25,7 +25,7 @@ use std::time::{
 };
 use rayon::prelude::*;
 
-macro_rules! par_join_3 {
+#[macro_export] macro_rules! par_join_3 {
     ($task1:expr, $task2:expr, $task3:expr) => {{
         let ((result1, result2), result3) = rayon::join(
             || rayon::join($task1, $task2), $task3,
