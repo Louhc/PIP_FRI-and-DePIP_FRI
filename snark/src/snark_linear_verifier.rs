@@ -13,6 +13,16 @@ use std::time::{
 };
 use rayon::prelude::*;
 
+macro_rules! par_join_4 {
+    ($task1:expr, $task2:expr, $task3:expr, $task4:expr) => {{
+        let ((result1, result2), (result3, result4)) = rayon::join(
+            || rayon::join($task1, $task2),
+            || rayon::join($task3, $task4)
+        );
+        (result1, result2, result3, result4)
+    }};
+}
+
 pub struct DeIPA<P: Pairing> {
     _pairing: PhantomData<P>,
 }
@@ -288,7 +298,7 @@ impl<P: Pairing> DeIPA<P> {
         println!("Prover {:?} computs proofs of bivariate polynomials time: {:?}", sub_prover_id, time.elapsed());
 
         let time = Instant::now();
-        let  (evals_g1_h1, proof_g1_h1, evals_wit_polys, evals_g2_h2, proof_g2_h2) = if Net::am_master() {
+        let (evals_g1_h1, proof_g1_h1, evals_wit_polys, evals_g2_h2, proof_g2_h2) = if Net::am_master() {
             // compute proof and evaluations to g2, h2low, h2high
             let proof_g2_h2 = BatchKZG::<P>::open_lagrange(&y_srs, &evals_domain_g2_h2, &beta, &y_domain, &gamma).unwrap();
             let eval_g2 = polys_g2_h2[0].evaluate(&beta);
@@ -383,36 +393,69 @@ impl<P: Pairing> DeIPA<P> {
         let time = Instant::now();
         let z_h_eval_x = x_domain.evaluate_vanishing_polynomial(alpha);
         let eval_beta = y_domain.evaluate_all_lagrange_coefficients(beta);
-        let eval_pa_alpha_beta: P::ScalarField = pub_polys.polys_pa.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
-        let eval_pb_alpha_beta: P::ScalarField = pub_polys.polys_pb.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
-        let eval_pc_alpha_beta: P::ScalarField = pub_polys.polys_pc.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
-        let mut eval_r = Vec::new();
-        for i in 0..l {
-            let current  = r_pow_m.pow([i as u64]);
-            eval_r.push(current);
-        }
-        let eval_r_beta: P::ScalarField = eval_r.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| *poly * *eval).sum();
+        let mut eval_r = vec![r_pow_m; l];
+        eval_r.par_iter_mut().enumerate().for_each(|(i, val)| {
+            *val = r_pow_m.pow([i as u64]);
+        });
+        let (eval_pa_alpha_beta, eval_pb_alpha_beta, eval_pc_alpha_beta, eval_r_beta)
+        : (P::ScalarField, P::ScalarField, P::ScalarField, P::ScalarField) = par_join_4!(
+            || pub_polys.polys_pa.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum(),
+            || pub_polys.polys_pb.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum(), 
+            || pub_polys.polys_pc.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum(), 
+            || eval_r.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| *poly * *eval).sum()
+        );
 
-        let t2 = (alpha * evals_g1_h1[0] + (alpha - u1) * z_h_eval_x * evals_g1_h1[1])/y_domain.size_as_field_element();
-        let f1 = eval_pa_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[2];
-        let f2 = eval_pb_alpha_beta * evals_wit_polys[0] - eval_r_beta * (evals_wit_polys[4] * r_pow_m + evals_wit_polys[5] * (P::ScalarField::one() - r_pow_m));
-        let f3 = eval_pc_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[6];
-        let f4 = (evals_wit_polys[1] * evals_wit_polys[3] - evals_wit_polys[6]) * eval_r_beta;
+        // let eval_pa_alpha_beta: P::ScalarField = pub_polys.polys_pa.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
+        // let eval_pb_alpha_beta: P::ScalarField = pub_polys.polys_pb.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
+        // let eval_pc_alpha_beta: P::ScalarField = pub_polys.polys_pc.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
+        // let mut eval_r = Vec::new();
+        // for i in 0..l {
+        //     let current  = r_pow_m.pow([i as u64]);
+        //     eval_r.push(current);
+        // }
+        // let eval_r_beta: P::ScalarField = eval_r.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| *poly * *eval).sum();
 
-        let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3, f4], &v);
-        let left_hand = (beta - u2) * (alpha - u1) * eval_rlc;
-        let right_hand = beta * evals_g2_h2[0] + (beta - u2) * t2 + (beta - u2) * y_domain.evaluate_vanishing_polynomial(beta) * (evals_g2_h2[1] + beta.pow([l as u64]) * evals_g2_h2[2]);
+        let (f1, f2, f3, f4): (P::ScalarField, P::ScalarField, P::ScalarField, P::ScalarField) = par_join_4!(
+            || eval_pa_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[2],
+            || eval_pb_alpha_beta * evals_wit_polys[0] - eval_r_beta * (evals_wit_polys[4] * r_pow_m + evals_wit_polys[5] * (P::ScalarField::one() - r_pow_m)),
+            || eval_pc_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[6],
+            || (evals_wit_polys[1] * evals_wit_polys[3] - evals_wit_polys[6]) * eval_r_beta
+        );
+
+        // let f1 = eval_pa_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[2];
+        // let f2 = eval_pb_alpha_beta * evals_wit_polys[0] - eval_r_beta * (evals_wit_polys[4] * r_pow_m + evals_wit_polys[5] * (P::ScalarField::one() - r_pow_m));
+        // let f3 = eval_pc_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[6];
+        // let f4 = (evals_wit_polys[1] * evals_wit_polys[3] - evals_wit_polys[6]) * eval_r_beta;
+
+        let (left_hand, right_hand) = rayon::join(
+            || {
+                let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3, f4], &v);
+                let left_hand = (beta - u2) * (alpha - u1) * eval_rlc;
+                left_hand
+            },
+            || {
+                let t2 = (alpha * evals_g1_h1[0] + (alpha - u1) * z_h_eval_x * evals_g1_h1[1])/y_domain.size_as_field_element();
+                let right_hand = beta * evals_g2_h2[0] + (beta - u2) * t2 + (beta - u2) * y_domain.evaluate_vanishing_polynomial(beta) * (evals_g2_h2[1] + beta.pow([l as u64]) * evals_g2_h2[2]);
+                right_hand
+        });
+
         let check1 = left_hand == right_hand;
         assert!(check1);
         println!("Verifier evaluation check time: {:?}", time.elapsed());
 
         // check the validity of g1 and h1
         let time = Instant::now();
-        let check2 = BatchKZG::<P>::verify(&uni_v_srs_for_x, &coms_g1_h1, &alpha, &evals_g1_h1, &proof_g1_h1, &gamma).unwrap();
+
+        let (check2, check3) = rayon::join(
+            || BatchKZG::<P>::verify(&uni_v_srs_for_x, &coms_g1_h1, &alpha, &evals_g1_h1, &proof_g1_h1, &gamma).unwrap(),
+            || BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g2_h2, &beta, &evals_g2_h2, &proof_g2_h2, &gamma).unwrap()
+        );
+
+        // let check2 = BatchKZG::<P>::verify(&uni_v_srs_for_x, &coms_g1_h1, &alpha, &evals_g1_h1, &proof_g1_h1, &gamma).unwrap();
         assert!(check2);
 
         // check the validity of g2 and h2
-        let check3 = BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g2_h2, &beta, &evals_g2_h2, &proof_g2_h2, &gamma).unwrap();
+        // let check3 = BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g2_h2, &beta, &evals_g2_h2, &proof_g2_h2, &gamma).unwrap();
         assert!(check3);
 
         // check the validity of bivariate polynomials
