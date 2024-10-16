@@ -111,14 +111,17 @@ pub fn linear_combination_poly<P: Pairing> (
     challenge: &P::ScalarField,
 ) -> UnivariatePolynomial<P::ScalarField> {
 
-    let mut linear_factor = P::ScalarField::one();
-    let mut result_poly = UnivariatePolynomial::zero();
+    let mut linear_factors = vec![P::ScalarField::one(); polynomials.len()];
+        linear_factors.par_iter_mut().enumerate().for_each(|(i, val)| {
+            *val = challenge.pow([i as u64]);
+    });
+    // an example of polynomial rlc using par_iter()
+    let combined_polynomial = polynomials.par_iter().zip(linear_factors.par_iter())
+        .map(|(poly, factor)| poly * *factor)
+        .reduce_with(|acc, poly| acc + poly)
+        .unwrap_or(UnivariatePolynomial::zero());
 
-    for poly in polynomials {
-        result_poly += (linear_factor, poly);
-        linear_factor *= challenge;
-    }
-    result_poly
+    combined_polynomial
 }
 
 pub fn linear_combination_field<P: Pairing> (

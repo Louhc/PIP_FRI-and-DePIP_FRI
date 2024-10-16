@@ -48,10 +48,10 @@ name = "biv_trivial_kzg"
 path = "benches/biv_trivial_kzg.rs"
 harness = false
 
-[[bench]]
-name = "biv_batch_kzg"
-path = "benches/biv_batch_kzg.rs"
-harness = false
+# [[bench]]
+# name = "biv_batch_kzg"
+# path = "benches/biv_batch_kzg.rs"
+# harness = false
 
 [[bench]]
 name = "my_ipa"

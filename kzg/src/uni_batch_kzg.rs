@@ -251,9 +251,11 @@ impl<P: Pairing> BatchKZG<P> {
         let f = f - *com_h * eval_zt;
         
         // final check
-        let is_valid = P::pairing(f.clone(), v_srs.h.clone())
-            == P::pairing(com_l.clone(), v_srs.h_alpha.clone() - v_srs.h.clone() * z);
-        Ok(is_valid)
+        let (left, right) = rayon::join(
+            || P::pairing(f, v_srs.h),
+            || P::pairing(com_l, v_srs.h_alpha - v_srs.h * z)
+        );
+        Ok(left == right)
     }
 
     pub fn verify(
@@ -284,10 +286,11 @@ impl<P: Pairing> BatchKZG<P> {
         //     linear_factor *= challenge;
         //     linear_combination = linear_combination + (coms[i].clone() - v_srs.g * evals[i]) * linear_factor;
         // }
-
-        let is_valid = P::pairing(linear_combination, v_srs.h)
-            == P::pairing(proof, v_srs.h_alpha - v_srs.h * point);
-        Ok(is_valid)
+        let (left, right) = rayon::join(
+            || P::pairing(linear_combination, v_srs.h),
+            || P::pairing(proof, v_srs.h_alpha - v_srs.h * point)
+        );
+        Ok(left == right)
     }
 }
 

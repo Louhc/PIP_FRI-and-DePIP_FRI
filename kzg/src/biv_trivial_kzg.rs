@@ -90,17 +90,30 @@ impl<P: Pairing> BivariateKZG<P> {
         let g = <P::G1>::generator();
         let h = <P::G2>::generator();
 
-        let mut final_srs: Vec<Vec<P::G1Affine>> = Vec::new();
-        let mut temp = g;
-        for _ in 0..(y_degree + 1) {
+        let mut challenge_vector = vec![g; y_degree + 1];
+        challenge_vector.par_iter_mut().enumerate().for_each(|(i, val)| {
+            *val = g * beta.pow([i as u64]);
+        });
+        let final_srs: Vec<Vec<P::G1Affine>> = challenge_vector.into_par_iter().map(|temp|{
             let temp_srs = structured_generators_scalar_power(
                 x_degree + 1,
                 &temp,
                 &alpha,
             );
-            final_srs.push( <P as Pairing>::G1::normalize_batch(&temp_srs));
-            temp *= beta;
-        }
+            <P as Pairing>::G1::normalize_batch(&temp_srs)
+        }).collect();
+
+        // let mut final_srs: Vec<Vec<P::G1Affine>> = Vec::new();
+        // let mut temp = g;
+        // for _ in 0..(y_degree + 1) {
+        //     let temp_srs = structured_generators_scalar_power(
+        //         x_degree + 1,
+        //         &temp,
+        //         &alpha,
+        //     );
+        //     final_srs.push( <P as Pairing>::G1::normalize_batch(&temp_srs));
+        //     temp *= beta;
+        // }
 
         Ok((final_srs,
             VerifierSRS {
@@ -123,17 +136,27 @@ impl<P: Pairing> BivariateKZG<P> {
         let h = <P::G2>::generator();
         assert!((y_degree + 1).is_power_of_two());
 
-        let mut final_srs: Vec<Vec<P::G1Affine>> = Vec::new();
+        // let mut final_srs: Vec<Vec<P::G1Affine>> = Vec::new();
         let y_evals = EvaluationDomain::evaluate_all_lagrange_coefficients(domain, beta);
         assert_eq!(y_evals.len(), y_degree+1);
-        for i in 0..(y_degree + 1) {
+
+        let final_srs = y_evals.par_iter().map(|y_eval| {
             let temp_srs = structured_generators_scalar_power(
                 x_degree + 1,
-                &(g * y_evals[i]),
+                &(g * y_eval),
                 &alpha,
             );
-            final_srs.push(<P as Pairing>::G1::normalize_batch(&temp_srs));
-        }
+            <P as Pairing>::G1::normalize_batch(&temp_srs)
+        }).collect();
+
+        // for i in 0..(y_degree + 1) {
+        //     let temp_srs = structured_generators_scalar_power(
+        //         x_degree + 1,
+        //         &(g * y_evals[i]),
+        //         &alpha,
+        //     );
+        //     final_srs.push(<P as Pairing>::G1::normalize_batch(&temp_srs));
+        // }
 
         Ok((final_srs,
             VerifierSRS {

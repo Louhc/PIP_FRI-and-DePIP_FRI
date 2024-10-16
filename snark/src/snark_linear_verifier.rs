@@ -76,12 +76,10 @@ impl<P: Pairing> DeIPA<P> {
 
         // f_a(rX)
         // get (1, r, r^{2} ..., r^{m-1})
-        let mut r_m_powers = Vec::new();
-        let mut current = P::ScalarField::one();
-        for _ in 0..m {
-            r_m_powers.push(current.clone());
-            current *= r;
-        }
+        let mut r_m_powers = vec![P::ScalarField::one(); m];
+        r_m_powers.par_iter_mut().enumerate().for_each(|(i, val)| {
+            *val = r.pow([i as u64]);
+        });
         let coeffs_a = wit_polys.poly_a.coeffs.to_vec();
         let coeffs_ar: Vec<P::ScalarField> = coeffs_a.par_iter().zip(r_m_powers.par_iter()).map(|(left, right)| *left * *right).collect();
         let poly_ar = UnivariatePolynomial::from_coefficients_vec(coeffs_ar);
@@ -91,7 +89,6 @@ impl<P: Pairing> DeIPA<P> {
         let points_r = vec![*r, P::ScalarField::zero(), r.clone().inverse().unwrap(), *r];
         let evals_r: Vec<P::ScalarField> = polys_r.par_iter().zip(points_r.par_iter()).map(|(poly, point)| poly.evaluate(&point)).collect();
         let eval_b_virtual = evals_r[2] * r_pow_m + evals_r[1] * (P::ScalarField::one() - r_pow_m);
-
 
         // let eval_a_r = wit_polys.poly_a.evaluate(r);
         // let eval_b_0 = wit_polys.poly_b.evaluate(&P::ScalarField::zero());
