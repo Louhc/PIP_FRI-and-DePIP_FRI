@@ -4,7 +4,7 @@ use ark_poly::{
 };
 use std::marker::PhantomData;
 use ark_ec::pairing::Pairing;
-use my_kzg::{batch_kzg::BatchKZG, transcript::ProofTranscript, trivial_kzg::{KZG, UniVerifierSRS}};
+use my_kzg::{uni_batch_kzg::BatchKZG, transcript::ProofTranscript, uni_trivial_kzg::{KZG, UniVerifierSRS}};
 use crate::Error;
 use merlin::Transcript;
 use ark_ff::{Zero, One};
@@ -419,7 +419,7 @@ mod tests{
     type MyField = <Bls12_381 as Pairing>::ScalarField;
     use crate::ipa::IPA;
     // use crate::sumcheck::SUMCHECK;
-    use my_kzg::batch_kzg::BatchKZG;
+    use my_kzg::uni_batch_kzg::BatchKZG;
     use merlin::Transcript;
     use ark_ff::{
         UniformRand,

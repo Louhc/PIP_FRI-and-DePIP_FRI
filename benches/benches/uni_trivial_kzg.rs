@@ -1,7 +1,7 @@
 use ark_bls12_381::Bls12_381;
 use ark_ec::pairing::Pairing;
 use ark_ff::UniformRand;
-use my_kzg::trivial_kzg::KZG;
+use my_kzg::uni_trivial_kzg::KZG;
 use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial
 };

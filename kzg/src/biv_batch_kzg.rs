@@ -9,7 +9,7 @@ use ark_poly::polynomial::{
 use ark_poly::{EvaluationDomain, Evaluations, GeneralEvaluationDomain};
 use merlin::Transcript;
 use crate::helper::evaluate_one_lagrange;
-use crate::trivial_kzg::{self, KZG, DeKZG};
+use crate::uni_trivial_kzg::{self, KZG, DeKZG};
 use crate::biv_trivial_kzg::BivariateKZG;
 use crate::{helper::{interpolate_on_trivial_domain, generator_numerator_polynomial}, transcript::ProofTranscript};
 use std::marker::PhantomData;
@@ -376,7 +376,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         // let gamma = <Transcript as ProofTranscript<P>>::challenge_scalar(
         //     transcript, b"combined_polynomial_x_beta");
         let gamma = *challenge;
-        let x_point_vec = x_points.iter().flatten().cloned().collect();
+        let x_point_vec = x_points.par_iter().flatten().cloned().collect();
         let numerator_polynomial = generator_numerator_polynomial::<P>(&x_point_vec);
         
         let mut combined_polynomial = UnivariatePolynomial::zero();
@@ -654,7 +654,7 @@ impl<P: Pairing> BivBatchKZG<P> {
             transcript, b"random_evaluate_point");
         
         // check1: validity of q and q(eta)
-        let kzg_v_srs = trivial_kzg::UniVerifierSRS::<P> {
+        let kzg_v_srs = uni_trivial_kzg::UniVerifierSRS::<P> {
             g: v_srs.g, 
             h: v_srs.h,
             h_alpha: v_srs.h_alpha

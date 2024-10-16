@@ -326,7 +326,7 @@ mod tests {
     use ark_bls12_381::Bls12_381;
     use ark_std::rand::{rngs::StdRng, SeedableRng};
     use ark_ff::UniformRand;
-    use crate::trivial_kzg::KZG;
+    use crate::uni_trivial_kzg::KZG;
     use ark_poly::{polynomial::{
         univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial
     }, GeneralEvaluationDomain, EvaluationDomain, Evaluations};

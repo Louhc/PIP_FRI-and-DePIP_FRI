@@ -1,7 +1,7 @@
 use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, EvaluationDomain, Evaluations, GeneralEvaluationDomain, Polynomial};
 use std::marker::PhantomData;
 use ark_ec::pairing::Pairing;
-use my_kzg::{batch_kzg::BatchKZG, biv_batch_kzg::BivBatchKZG, biv_trivial_kzg::VerifierSRS, helper::linear_combination_field, transcript::ProofTranscript, trivial_kzg::UniVerifierSRS};
+use my_kzg::{uni_batch_kzg::BatchKZG, biv_batch_kzg::BivBatchKZG, biv_trivial_kzg::VerifierSRS, helper::linear_combination_field, transcript::ProofTranscript, uni_trivial_kzg::UniVerifierSRS};
 use merlin::Transcript;
 use crate::{ipa::IPA, helper::{R1CSPublicPolys, R1CSWitnessPolys, R1CSDePublicPolys}};
 use ark_ff::{Zero, One, Field};

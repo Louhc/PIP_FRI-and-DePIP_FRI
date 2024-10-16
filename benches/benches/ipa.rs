@@ -5,7 +5,7 @@ use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use merlin::Transcript;
 use my_ipa::{ipa::IPA, ipa_from_laurent};
-use my_kzg::batch_kzg::BatchKZG;
+use my_kzg::uni_batch_kzg::BatchKZG;
 use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, Criterion};

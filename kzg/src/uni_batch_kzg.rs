@@ -8,10 +8,11 @@ use ark_ff::{One, UniformRand, Zero, PrimeField, Field};
 use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
-use crate::helper::generator_numerator_polynomial;
-// use crate::helper::interpolate_on_trivial_domain;
-use crate::trivial_kzg::UniVerifierSRS;
-use crate::trivial_kzg::KZG;
+use crate::helper::{generator_numerator_polynomial, interpolate_on_trivial_domain};
+use merlin::Transcript;
+use crate::transcript::ProofTranscript;
+use crate::uni_trivial_kzg::UniVerifierSRS;
+use crate::uni_trivial_kzg::KZG;
 use std::marker::PhantomData;
 use ark_std::rand::Rng;
 use crate::Error;
@@ -20,6 +21,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_poly::{Evaluations, GeneralEvaluationDomain};
 use rayon::prelude::*;
 
+// This is the batch KZG, a simple version of multiple polynomials on one point, and a more complicated version of multiple polynomials on multiple polynomials, from [https://eprint.iacr.org/2020/081.pdf]
 pub fn structured_generators_scalar_power<G: CurveGroup>(
     num: usize,
     g: &G,
@@ -133,10 +135,10 @@ impl<P: Pairing> BatchKZG<P> {
         linear_factors.par_iter_mut().enumerate().for_each(|(i, val)| {
             *val = challenge.pow([i as u64]);
         });
-        let combined_polynomial = polynomials.par_iter().zip(linear_factors.par_iter()).map(|(poly, factor)| poly * *factor).reduce(
-            || UnivariatePolynomial::zero(),
-            |acc, poly| acc + poly,
-        );
+        let combined_polynomial = polynomials.par_iter().zip(linear_factors.par_iter())
+            .map(|(poly, factor)| poly * *factor)
+            .reduce_with(|acc, poly| acc + poly)
+            .unwrap_or(UnivariatePolynomial::zero());
 
         // Trick to calculate (p(x) - p(z)) / (x - z) as p(x) / (x - z) ignoring remainder p(z)
         let quotient_polynomial = &combined_polynomial
@@ -150,15 +152,124 @@ impl<P: Pairing> BatchKZG<P> {
         Ok(P::G1::msm(powers, &quotient_coeffs).unwrap())
     }
 
-    pub fn open_on_one_poly(
+    pub fn open_multiple_polys_and_points(
         powers: &[P::G1Affine],
-        polynomial: &UnivariatePolynomial<P::ScalarField>,
-        points: &Vec<P::ScalarField>,
-    ) -> Result<P::G1, Error> {
+        polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>,
+        points: &Vec<Vec<P::ScalarField>>,
+        challenge: &P::ScalarField,
+        transcript: &mut Transcript,
+    ) -> Result<(Vec<Vec<P::ScalarField>>, P::G1, P::G1), Error> {
+        assert_eq!(polynomials.len(), points.len());
+        let gamma = *challenge;
+        let point_vec = points.par_iter().flatten().cloned().collect();
+        let numerator_polynomial = generator_numerator_polynomial::<P>(&point_vec);
 
-        let divider_polynomial = generator_numerator_polynomial::<P>(&points);
-        let quotient_polynomial = polynomial / &divider_polynomial;
-        Ok(KZG::<P>::commit(&powers, &quotient_polynomial).unwrap())
+        let mut challenge_vector = vec![P::ScalarField::one(); polynomials.len()];
+        challenge_vector.par_iter_mut().enumerate().for_each(|(i, val)| {
+            *val = gamma.pow([i as u64]);
+        });
+
+        let evals: Vec<Vec<P::ScalarField>> = polynomials.par_iter().zip(points.par_iter()).map(|(poly, x_points)|{
+            x_points.par_iter().map(|point| poly.evaluate(&point)).collect()
+        }).collect();
+        let polys_r: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
+            zip(evals.par_iter()).
+            map(|(row_points, row_evals)| 
+            interpolate_on_trivial_domain::<P>(row_points, row_evals)
+            ).collect();
+        let auxiliary_polys: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
+            map(|row_points| &numerator_polynomial / &generator_numerator_polynomial::<P>(row_points)).collect();
+        
+        let polys_to_sum: Vec<UnivariatePolynomial<P::ScalarField>> = polynomials.par_iter().
+            zip(polys_r.par_iter()).
+            zip(auxiliary_polys.par_iter()).
+            zip(challenge_vector.par_iter()).
+            map(|(((poly, poly_r), aux_poly), factor)| 
+            &(&(poly - poly_r) * aux_poly) * *factor
+            ).collect();
+        let mut target_poly = UnivariatePolynomial::zero();
+        for poly in polys_to_sum.iter() {
+            target_poly += poly;
+        }
+        let poly_h = &target_poly / &numerator_polynomial;
+        let com_h = KZG::<P>::commit(&powers, &poly_h).unwrap();
+
+        // generate challenge z
+        <Transcript as ProofTranscript<P>>::append_point(transcript, b"random_evaluate_point_z", &com_h);
+        let z = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluate_point_z");
+
+        // generate polynomial fz
+        let polys_fz: Vec<UnivariatePolynomial<P::ScalarField>> = polynomials.par_iter().
+            zip(polys_r.par_iter()).
+            zip(auxiliary_polys.par_iter()).
+            zip(challenge_vector.par_iter()).
+            map(|(((poly, poly_r), aux_poly), factor)| 
+            &(poly + &UnivariatePolynomial::from_coefficients_vec(vec![-poly_r.evaluate(&z)])) * (*factor * aux_poly.evaluate(&z))
+            ).collect();
+        let mut target_poly = UnivariatePolynomial::zero();
+        for poly in polys_fz.iter() {
+            target_poly += poly;
+        }
+        let poly_l = &(&target_poly - &(&poly_h * numerator_polynomial.evaluate(&z))) / 
+                                    &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);
+        let com_l = KZG::<P>::commit(&powers, &poly_l).unwrap();
+
+        Ok((evals, com_h, com_l))
+    }
+
+
+    pub fn verify_multiple_polys_and_points(
+        v_srs: &UniVerifierSRS<P>,
+        coms: &Vec<P::G1>,
+        points: &Vec<Vec<P::ScalarField>>,
+        proof: &(Vec<Vec<P::ScalarField>>, P::G1, P::G1),
+        challenge: &P::ScalarField,
+        transcript: &mut Transcript
+    ) -> Result<bool, Error> {
+        let (evals, com_h, com_l) = proof;
+        assert_eq!(coms.len(), points.len());
+        assert!(coms.len() == evals.len());
+
+        let gamma = challenge;
+        let mut challenge_vector = vec![P::ScalarField::one(); points.len()];
+        challenge_vector.par_iter_mut().enumerate().for_each(|(i, val)| {
+            *val = gamma.pow([i as u64]);
+        });
+        // generate challenge z
+        <Transcript as ProofTranscript<P>>::append_point(transcript, b"random_evaluate_point_z", &com_h);
+        let z = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluate_point_z");
+
+        // generate auxiliary_evals
+        let point_vec = points.par_iter().flatten().cloned().collect();
+        let numerator_polynomial = generator_numerator_polynomial::<P>(&point_vec);
+        let eval_zt = numerator_polynomial.evaluate(&z);
+        let polys_r: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
+            zip(evals.par_iter()).
+            map(|(row_points, row_evals)| 
+            interpolate_on_trivial_domain::<P>(row_points, row_evals)
+            ).collect();
+        let auxiliary_evals: Vec<P::ScalarField> = points.par_iter().
+            zip(challenge_vector.par_iter()).
+            map(|(row_points, linear_factor)|
+            *linear_factor * eval_zt / generator_numerator_polynomial::<P>(row_points).evaluate(&z)
+            ).collect();
+
+        // generate evals_r
+        let exps: Vec<P::G1> = polys_r.par_iter().
+            zip(coms.par_iter()).
+            map(|(poly_r, com)| 
+            *com - v_srs.g.clone() * poly_r.evaluate(&z)
+            ).collect();
+
+        // generate F
+        let f: P::G1 = auxiliary_evals.par_iter().zip(exps.par_iter()).
+            map(|(eval, exp)| *exp * *eval).sum();
+        let f = f - *com_h * eval_zt;
+        
+        // final check
+        let is_valid = P::pairing(f.clone(), v_srs.h.clone())
+            == P::pairing(com_l.clone(), v_srs.h_alpha.clone() - v_srs.h.clone() * z);
+        Ok(is_valid)
     }
 
     pub fn verify(
@@ -184,22 +295,6 @@ impl<P: Pairing> BatchKZG<P> {
             == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point);
         Ok(is_valid)
     }
-
-    // pub fn verify_on_one_poly(
-    //     v_srs: &UniVerifierSRS<P>,
-    //     com: &P::G1,
-    //     points: &Vec<P::ScalarField>,
-    //     evals: &Vec<P::ScalarField>,
-    //     proof: &P::G1,
-    // ) -> Result<bool, Error> {
-    //     assert!(points.len() == evals.len());
-
-    //     let minus_polynomial = interpolate_on_trivial_domain::<P>(&points, &evals);
-        
-    //     let is_valid = P::pairing(linear_combination.clone(), v_srs.h.clone())
-    //         == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point);
-    //     Ok(is_valid)
-    // }
 }
 
 #[derive(Default, Clone, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq, Debug)]
@@ -291,9 +386,9 @@ mod tests {
     use ark_std::rand::{rngs::StdRng, SeedableRng};
     use ark_ff::UniformRand;
     use merlin::Transcript;
-    use crate::batch_kzg::BatchKZG;
+    use crate::uni_batch_kzg::BatchKZG;
     use crate::biv_batch_kzg::BivBatchKZG;
-    use crate::trivial_kzg::{UniVerifierSRS, KZG};
+    use crate::uni_trivial_kzg::{UniVerifierSRS, KZG};
     use ark_poly::polynomial::{
         univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
     };
@@ -349,10 +444,10 @@ mod tests {
         // Verify
         std::thread::sleep(Duration::from_millis(5000));
         let verify_start = Instant::now();
-        let mut verifier_transcript : Transcript = Transcript::new(b"batch univariate KZG");
-        let challenge = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
-            &mut verifier_transcript, b"batch_kzg_rlc_challenge");
         for _ in 0..50 {
+            let mut verifier_transcript : Transcript = Transcript::new(b"batch univariate KZG");
+            let challenge = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+                &mut verifier_transcript, b"batch_kzg_rlc_challenge");
             let is_valid =
                 BatchKZG::<Bls12_381>::verify(&v_srs, &coms, &point, &evals, &proofs, &challenge).unwrap();
             assert!(is_valid);
@@ -435,6 +530,68 @@ mod tests {
         for _ in 0..50 {
             let is_valid =
                 BatchKZG::<Bls12_381>::verify(&v_srs, &coms, &point, &evals, &proofs, &challenge).unwrap();
+            assert!(is_valid);
+        }
+        let verify_time = verify_start.elapsed().as_millis() / 50;
+        println!("KZG verif time, {:} log_degree: {:?} ms", log_degree, verify_time);
+    }
+
+    #[test]
+    fn batch_kzg_multiple_polys_and_points_test() {
+
+        let log_degree = 10;
+        let poly_num = 10;
+        let degree = (1 << log_degree) - 1;
+        let mut rng = StdRng::seed_from_u64(0u64);
+
+        let setup_start = Instant::now();
+        let (g_alpha_powers, v_srs) = BatchKZG::<Bls12_381>::setup(&mut rng, degree).unwrap();
+        println!("BatchKZG setup time, {:} log_degree: {:?} ", degree, setup_start.elapsed());
+
+        let mut polynomials = Vec::new();
+        let mut points = Vec::new();
+
+        for _ in 0..poly_num {
+            let polynomial = UnivariatePolynomial::rand(degree, &mut rng);
+            polynomials.push(polynomial);
+            let mut point_vec = Vec::new();
+            let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+            point_vec.push(point);
+            let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+            point_vec.push(point);
+            points.push(point_vec);
+        }
+
+        // Commit
+        let com_start = Instant::now();
+        let coms = BatchKZG::<Bls12_381>::commit(&g_alpha_powers, &polynomials).unwrap();
+        let mut prover_transcript : Transcript = Transcript::new(b"batch univariate KZG");
+        
+        println!("KZG commi time, {:} log_degree: {:?} ms", log_degree, com_start.elapsed().as_millis());
+        println!("KZG commi size, {:} log_degree: {:?} bytes", log_degree, size_of_val(&coms[0])*coms.len());
+
+        // TODO: append_point input inconsistency
+        // Open
+        let open_start = Instant::now();
+        // prover_transcript.append_point(b"add_commitments", &coms[0]);
+        let challenge = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+            &mut prover_transcript, b"batch_kzg_rlc_challenge");
+        let proof = BatchKZG::<Bls12_381>::open_multiple_polys_and_points(&g_alpha_powers, &polynomials, &points, &challenge, &mut prover_transcript).unwrap();
+        println!("KZG open  time, {:} log_degree: {:?} ms", log_degree, open_start.elapsed().as_millis());
+
+        // Proof size
+        let proof_size = size_of_val(&proof.1) + size_of_val(&proof.2) + proof.0.len() * (size_of_val(&proof.0[0][0]) * proof.0[0].len());
+        println!("KZG proof size, {:} log_degree: {:?} bytes", log_degree, proof_size);
+
+        // Verify
+        std::thread::sleep(Duration::from_millis(5000));
+        let verify_start = Instant::now();
+        for _ in 0..50 {
+            let mut verifier_transcript : Transcript = Transcript::new(b"batch univariate KZG");
+            let challenge = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+                &mut verifier_transcript, b"batch_kzg_rlc_challenge");
+            let is_valid =
+                BatchKZG::<Bls12_381>::verify_multiple_polys_and_points(&v_srs, &coms, &points, &proof, &challenge, &mut verifier_transcript).unwrap();
             assert!(is_valid);
         }
         let verify_time = verify_start.elapsed().as_millis() / 50;

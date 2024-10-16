@@ -12,8 +12,8 @@ use ark_poly::{polynomial::{
     Evaluations, 
     GeneralEvaluationDomain};
 
-use crate::trivial_kzg::structured_generators_scalar_power;
-use crate::trivial_kzg::KZG;
+use crate::uni_trivial_kzg::structured_generators_scalar_power;
+use crate::uni_trivial_kzg::KZG;
 
 use std::marker::PhantomData;
 

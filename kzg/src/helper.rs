@@ -23,6 +23,7 @@ pub fn generator_numerator_polynomial<P: Pairing> (
             points_without_repeat.push(*point);
         }
     }
+
     let mut numerator_polynomial = UnivariatePolynomial::from_coefficients_vec(vec![
         -points_without_repeat[0],
         P::ScalarField::one()
