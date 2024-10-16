@@ -163,45 +163,30 @@ impl<P: Pairing> KZG<P> {
         point: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> Vec<P::ScalarField> {
-        let power_log = evals.evals.len().trailing_zeros();
-        let power = 1 << power_log;
-        let field_two = <P::ScalarField>::one() + <P::ScalarField>::one();
-        let power_as_field = field_two.pow([power_log as u64]);
+        let power = domain.size();
+        let power_as_field = domain.size_as_field_element();
 
         // Make use of the batch inversion function
         // Compute (z - g^i)^-1
         let g = domain.group_gen();
-        let mut divider_vec = Vec::new();
-        let mut g_power = <P::ScalarField>::one();
-        for _ in 0..evals.evals.len() {
-            let cur_term = *point - g_power;
-            divider_vec.push(cur_term);
-            g_power *= g;
-        }
+        let mut g_powers = vec![P::ScalarField::one(); evals.evals.len()];
+        g_powers.par_iter_mut().enumerate().for_each(|(i, val)| {
+            *val = g.pow([i as u64]);
+        });
+        let mut divider_vec: Vec<P::ScalarField> = g_powers.par_iter().map(|g_power| *point - g_power).collect();
         batch_inversion(divider_vec.as_mut_slice());
-        assert_eq!(divider_vec[0], (*point - P::ScalarField::one()).inverse().unwrap());
-        assert_eq!(divider_vec[1], (*point - g).inverse().unwrap());
 
         // Compute P(z) = (z^power - 1) / power \cdot \sum P(g^i) * g^i / (z - g^i)
         let mut constant_term = point.pow([power as u64]) - P::ScalarField::one();
         constant_term *= power_as_field.inverse().unwrap();
 
-        let mut g_power = <P::ScalarField>::one();
-        let mut sum = P::ScalarField::zero();
-        for i in 0..evals.evals.len() {
-            let current = evals.evals[i] * g_power * divider_vec[i];
-            sum += current;
-            g_power *= g;
-        }
+        let sum: P::ScalarField = evals.evals.par_iter().zip(g_powers.par_iter()).zip(divider_vec.par_iter())
+            .map(|((eval, g_power), divider)| *eval * *g_power * divider).sum();
         let p_z = constant_term * sum;
 
         // pi = (P(g^i) - P(z)) / (g^i - z) \cdot G
-        let mut quotient_evals = Vec::new();
-        for i in 0..evals.evals.len() {
-            // compute quotient_evals
-            let quotient_eval = (p_z - evals.evals[i]) * divider_vec[i];
-            quotient_evals.push(quotient_eval);
-        }
+        let quotient_evals: Vec<P::ScalarField> = evals.evals.par_iter().zip(divider_vec.par_iter())
+            .map(|(eval, divider)| (p_z - eval) * divider).collect();
         assert_eq!(quotient_evals.len(), power);
 
         quotient_evals
@@ -228,8 +213,13 @@ impl<P: Pairing> KZG<P> {
         eval: &P::ScalarField,
         proof: &P::G1,
     ) -> Result<bool, Error> {
-        Ok(P::pairing(com.clone() - v_srs.g * eval, v_srs.h.clone())
-            == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point))
+        let (left, right) = rayon::join(
+            || P::pairing(com.clone() - v_srs.g * eval, v_srs.h.clone()), 
+            || P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point)
+        );
+        Ok(left == right)
+        // Ok(P::pairing(com.clone() - v_srs.g * eval, v_srs.h.clone())
+        //     == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point))
     }
 }
 
@@ -313,8 +303,11 @@ impl<P: Pairing> DeKZG<P> {
         eval: &P::ScalarField,
         proof: &P::G1,
     ) -> Result<bool, Error> {
-        Ok(P::pairing(com.clone() - v_srs.g * eval, v_srs.h.clone())
-            == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point))
+        let (left, right) = rayon::join(
+            || P::pairing(com.clone() - v_srs.g * eval, v_srs.h.clone()), 
+            || P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point)
+        );
+        Ok(left == right)
     }
 
 }
@@ -343,7 +336,7 @@ mod tests {
             .unwrap();
         csv_writer.flush().unwrap();
 
-        let log_degree = 20;
+        let log_degree = 10;
         let degree = (1 << log_degree) - 1;
         // let repeat: usize = 1;
         let mut rng = StdRng::seed_from_u64(0u64);

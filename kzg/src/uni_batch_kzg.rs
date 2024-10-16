@@ -2,47 +2,21 @@ use ark_ec::{
     pairing::Pairing,
     scalar_mul::variable_base::VariableBaseMSM,
     CurveGroup, Group,
-    scalar_mul::fixed_base::FixedBase,
 };
-use ark_ff::{One, UniformRand, Zero, PrimeField, Field};
-use ark_poly::polynomial::{
-    univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
-};
+use ark_ff::{One, UniformRand, Zero, Field};
+use ark_poly::{polynomial::{
+    univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial},
+    Evaluations, GeneralEvaluationDomain};
 use crate::helper::{generator_numerator_polynomial, interpolate_on_trivial_domain};
 use merlin::Transcript;
 use crate::transcript::ProofTranscript;
-use crate::uni_trivial_kzg::UniVerifierSRS;
-use crate::uni_trivial_kzg::KZG;
+use crate::uni_trivial_kzg::{KZG, structured_generators_scalar_power, UniVerifierSRS};
 use std::marker::PhantomData;
 use ark_std::rand::Rng;
 use crate::Error;
-use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_poly::{Evaluations, GeneralEvaluationDomain};
 use rayon::prelude::*;
 
 // This is the batch KZG, a simple version of multiple polynomials on one point, and a more complicated version of multiple polynomials on multiple polynomials, from [https://eprint.iacr.org/2020/081.pdf]
-pub fn structured_generators_scalar_power<G: CurveGroup>(
-    num: usize,
-    g: &G,
-    s: &G::ScalarField,
-) -> Vec<G> {
-    assert!(num > 0);
-    let mut powers_of_scalar = vec![];
-    let mut pow_s = G::ScalarField::one();
-    for _ in 0..num {
-        powers_of_scalar.push(pow_s);
-        pow_s *= s;
-    }
-
-    let window_size = FixedBase::get_mul_window_size(num);
-
-    let scalar_bits = G::ScalarField::MODULUS_BIT_SIZE as usize;
-    let g_table = FixedBase::get_window_table(scalar_bits, window_size, g.clone());
-    let powers_of_g = FixedBase::msm::<G>(scalar_bits, window_size, &g_table, &powers_of_scalar);
-    powers_of_g
-}
-
 pub struct BatchKZG<P: Pairing> {
     _pairing: PhantomData<P>,
 }
@@ -67,7 +41,6 @@ impl<P: Pairing> BatchKZG<P> {
         ))
     }
 
-    // use par_iter for speed up
     pub fn commit(
         powers: &[P::G1Affine],
         polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>,
@@ -111,13 +84,13 @@ impl<P: Pairing> BatchKZG<P> {
             *val = challenge.pow([i as u64]);
         });
 
-        let mut result_eval = vec![P::ScalarField::zero(); evals_vec[0].evals.len()];
-        for (vector, &coeff) in evals_vec.iter().zip(&linear_factors) {
-            for (i, &value) in vector.evals.iter().enumerate() {
-                result_eval[i] += coeff * value;
-            }
-        }
-        let result_eval = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(result_eval, *domain);
+        // an example of field vectors rlc using par_iter()
+        let num_cols = evals_vec[0].evals.len();
+        let col_sums: Vec<P::ScalarField> = (0..num_cols).into_par_iter()
+            .map(|col_index| evals_vec.par_iter().zip(linear_factors.par_iter()).map(|(row, factor)| row[col_index] * factor).sum())
+            .collect();
+
+        let result_eval = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(col_sums, *domain);
 
         let quotient_evals = KZG::<P>::get_quotient_eval_lagrange(&result_eval, &point, &domain);
 
@@ -135,6 +108,8 @@ impl<P: Pairing> BatchKZG<P> {
         linear_factors.par_iter_mut().enumerate().for_each(|(i, val)| {
             *val = challenge.pow([i as u64]);
         });
+
+        // an example of polynomial rlc using par_iter()
         let combined_polynomial = polynomials.par_iter().zip(linear_factors.par_iter())
             .map(|(poly, factor)| poly * *factor)
             .reduce_with(|acc, poly| acc + poly)
@@ -172,13 +147,22 @@ impl<P: Pairing> BatchKZG<P> {
         let evals: Vec<Vec<P::ScalarField>> = polynomials.par_iter().zip(points.par_iter()).map(|(poly, x_points)|{
             x_points.par_iter().map(|point| poly.evaluate(&point)).collect()
         }).collect();
-        let polys_r: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
+        let (polys_r, auxiliary_polys): (Vec<UnivariatePolynomial<P::ScalarField>>, Vec<UnivariatePolynomial<P::ScalarField>>) = rayon::join(
+            || points.par_iter().
             zip(evals.par_iter()).
             map(|(row_points, row_evals)| 
             interpolate_on_trivial_domain::<P>(row_points, row_evals)
-            ).collect();
-        let auxiliary_polys: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
-            map(|row_points| &numerator_polynomial / &generator_numerator_polynomial::<P>(row_points)).collect();
+            ).collect(), 
+            || points.par_iter().
+            map(|row_points| &numerator_polynomial / &generator_numerator_polynomial::<P>(row_points)).collect()
+        );
+        // let polys_r: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
+        //     zip(evals.par_iter()).
+        //     map(|(row_points, row_evals)| 
+        //     interpolate_on_trivial_domain::<P>(row_points, row_evals)
+        //     ).collect();
+        // let auxiliary_polys: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
+        //     map(|row_points| &numerator_polynomial / &generator_numerator_polynomial::<P>(row_points)).collect();
         
         let polys_to_sum: Vec<UnivariatePolynomial<P::ScalarField>> = polynomials.par_iter().
             zip(polys_r.par_iter()).
@@ -187,10 +171,10 @@ impl<P: Pairing> BatchKZG<P> {
             map(|(((poly, poly_r), aux_poly), factor)| 
             &(&(poly - poly_r) * aux_poly) * *factor
             ).collect();
-        let mut target_poly = UnivariatePolynomial::zero();
-        for poly in polys_to_sum.iter() {
-            target_poly += poly;
-        }
+        let target_poly = polys_to_sum
+            .into_par_iter() 
+            .reduce_with(|acc, poly| acc + poly)
+            .unwrap_or_else(UnivariatePolynomial::zero);
         let poly_h = &target_poly / &numerator_polynomial;
         let com_h = KZG::<P>::commit(&powers, &poly_h).unwrap();
 
@@ -206,10 +190,10 @@ impl<P: Pairing> BatchKZG<P> {
             map(|(((poly, poly_r), aux_poly), factor)| 
             &(poly + &UnivariatePolynomial::from_coefficients_vec(vec![-poly_r.evaluate(&z)])) * (*factor * aux_poly.evaluate(&z))
             ).collect();
-        let mut target_poly = UnivariatePolynomial::zero();
-        for poly in polys_fz.iter() {
-            target_poly += poly;
-        }
+        let target_poly = polys_fz
+            .into_par_iter()
+            .reduce_with(|acc, poly| acc + poly)
+            .unwrap_or_else(UnivariatePolynomial::zero);
         let poly_l = &(&target_poly - &(&poly_h * numerator_polynomial.evaluate(&z))) / 
                                     &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);
         let com_l = KZG::<P>::commit(&powers, &poly_l).unwrap();
@@ -284,100 +268,111 @@ impl<P: Pairing> BatchKZG<P> {
         assert!(coms.len() >= 1);
         assert!(coms.len() == evals.len());
 
-        let mut linear_factor = P::ScalarField::one();
-        let mut linear_combination = coms[0].clone() - v_srs.g * evals[0];
-        for i in 1..coms.len() {
-            linear_factor *= challenge;
-            linear_combination = linear_combination + (coms[i].clone() - v_srs.g * evals[i]) * linear_factor;
-        }
+        let gamma = challenge;
+        let mut challenge_vector = vec![P::ScalarField::one(); coms.len()];
+        challenge_vector.par_iter_mut().enumerate().for_each(|(i, val)| {
+            *val = gamma.pow([i as u64]);
+        });
 
-        let is_valid = P::pairing(linear_combination.clone(), v_srs.h.clone())
-            == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point);
+        // an example of g1 rlc using par_iter()
+        let linear_combination: P::G1 = coms.par_iter().zip(evals.par_iter()).zip(challenge_vector.par_iter()).
+            map(|((com, eval), factor)| (*com - v_srs.g * eval) * factor).sum();
+
+        // let mut linear_factor = P::ScalarField::one();
+        // let mut linear_combination = coms[0].clone() - v_srs.g * evals[0];
+        // for i in 1..coms.len() {
+        //     linear_factor *= challenge;
+        //     linear_combination = linear_combination + (coms[i].clone() - v_srs.g * evals[i]) * linear_factor;
+        // }
+
+        let is_valid = P::pairing(linear_combination, v_srs.h)
+            == P::pairing(proof, v_srs.h_alpha - v_srs.h * point);
         Ok(is_valid)
     }
 }
 
-#[derive(Default, Clone, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq, Debug)]
-pub struct DeBatchKZG<P: Pairing> {
-    _pairing: PhantomData<P>,
-}
+// unused in the final protocol
+// #[derive(Default, Clone, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq, Debug)]
+// pub struct DeBatchKZG<P: Pairing> {
+//     _pairing: PhantomData<P>,
+// }
 
-impl<P: Pairing> DeBatchKZG<P> {
+// impl<P: Pairing> DeBatchKZG<P> {
 
-    pub fn de_commit(
-        powers: &[P::G1Affine],
-        sub_polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>
-    ) -> Option<Vec<P::G1>> {
-        let mut sub_coms = Vec::new();
+//     pub fn de_commit(
+//         powers: &[P::G1Affine],
+//         sub_polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>
+//     ) -> Option<Vec<P::G1>> {
+//         let mut sub_coms = Vec::new();
 
-        for sub_polynomial in sub_polynomials.iter() {
-            assert!(powers.len() >= sub_polynomial.degree() + 1);
-            let mut coeffs = sub_polynomial.coeffs.to_vec();
-            coeffs.resize(powers.len(), <P::ScalarField>::zero());
+//         for sub_polynomial in sub_polynomials.iter() {
+//             assert!(powers.len() >= sub_polynomial.degree() + 1);
+//             let mut coeffs = sub_polynomial.coeffs.to_vec();
+//             coeffs.resize(powers.len(), <P::ScalarField>::zero());
 
-            let sub_com = P::G1::msm(powers, &coeffs).unwrap();
-            sub_coms.push(sub_com);
-        }
-        let final_coms_slice = Net::send_to_master(&sub_coms);
+//             let sub_com = P::G1::msm(powers, &coeffs).unwrap();
+//             sub_coms.push(sub_com);
+//         }
+//         let final_coms_slice = Net::send_to_master(&sub_coms);
 
-        // guaranteed by the Net if delayed
-        // the output vec lengh equals to sub prover number
-        if Net::am_master() {
-            let mut final_coms = vec![P::G1::zero(); sub_polynomials.len()];
-            let final_coms_slice = final_coms_slice.unwrap();
-            for row in final_coms_slice {
-                for i in 0..row.len() {
-                    final_coms[i] += row[i];
-                }
-            }
-            Some(final_coms)
-        } else {
-            None
-        }
-    }
+//         // guaranteed by the Net if delayed
+//         // the output vec lengh equals to sub prover number
+//         if Net::am_master() {
+//             let mut final_coms = vec![P::G1::zero(); sub_polynomials.len()];
+//             let final_coms_slice = final_coms_slice.unwrap();
+//             for row in final_coms_slice {
+//                 for i in 0..row.len() {
+//                     final_coms[i] += row[i];
+//                 }
+//             }
+//             Some(final_coms)
+//         } else {
+//             None
+//         }
+//     }
 
-    pub fn de_open(
-        powers: &[P::G1Affine],
-        sub_polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>,
-        point: &P::ScalarField,
-        // transcript: &mut Transcript,
-        challenge: &P::ScalarField,
-    ) -> Option<P::G1> {
+//     pub fn de_open(
+//         powers: &[P::G1Affine],
+//         sub_polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>,
+//         point: &P::ScalarField,
+//         // transcript: &mut Transcript,
+//         challenge: &P::ScalarField,
+//     ) -> Option<P::G1> {
 
-        assert!(powers.len() >= sub_polynomials[0].degree() + 1);
-        let poly_num = sub_polynomials.len();
-        let mut linear_factor = P::ScalarField::one();
+//         assert!(powers.len() >= sub_polynomials[0].degree() + 1);
+//         let poly_num = sub_polynomials.len();
+//         let mut linear_factor = P::ScalarField::one();
 
-        // let challenge = <Transcript as ProofTranscript<P>>::challenge_scalar(
-        //     transcript, b"batch_kzg_rlc_challenge");
+//         // let challenge = <Transcript as ProofTranscript<P>>::challenge_scalar(
+//         //     transcript, b"batch_kzg_rlc_challenge");
 
-        let mut combined_polynomial = UnivariatePolynomial::from_coefficients_vec(
-             vec![P::ScalarField::zero(); poly_num]);
-        for i in 0..sub_polynomials.len() {
-            combined_polynomial += (linear_factor, &sub_polynomials[i]);
-            linear_factor *= challenge;
-        }
+//         let mut combined_polynomial = UnivariatePolynomial::from_coefficients_vec(
+//              vec![P::ScalarField::zero(); poly_num]);
+//         for i in 0..sub_polynomials.len() {
+//             combined_polynomial += (linear_factor, &sub_polynomials[i]);
+//             linear_factor *= challenge;
+//         }
 
-        // Trick to calculate (p(x) - p(z)) / (x - z) as p(x) / (x - z) ignoring remainder p(z)
-        let quotient_polynomial = &combined_polynomial
-            / &UnivariatePolynomial::from_coefficients_vec(vec![
-                -point.clone(),
-                P::ScalarField::one(),
-            ]);
-        let mut quotient_coeffs = quotient_polynomial.coeffs.to_vec();
-        quotient_coeffs.resize(powers.len(), <P::ScalarField>::zero());
+//         // Trick to calculate (p(x) - p(z)) / (x - z) as p(x) / (x - z) ignoring remainder p(z)
+//         let quotient_polynomial = &combined_polynomial
+//             / &UnivariatePolynomial::from_coefficients_vec(vec![
+//                 -point.clone(),
+//                 P::ScalarField::one(),
+//             ]);
+//         let mut quotient_coeffs = quotient_polynomial.coeffs.to_vec();
+//         quotient_coeffs.resize(powers.len(), <P::ScalarField>::zero());
 
-        let sub_proof = P::G1::msm(powers, &quotient_coeffs).unwrap();
-        let final_proof_slice = Net::send_to_master(&sub_proof);
+//         let sub_proof = P::G1::msm(powers, &quotient_coeffs).unwrap();
+//         let final_proof_slice = Net::send_to_master(&sub_proof);
 
-        if Net::am_master() {
-            Some(final_proof_slice.unwrap().iter().sum())
-        } else {
-            None
-        }
-    }
+//         if Net::am_master() {
+//             Some(final_proof_slice.unwrap().iter().sum())
+//         } else {
+//             None
+//         }
+//     }
 
-}
+// }
 
 
 #[cfg(test)]

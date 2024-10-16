@@ -9,6 +9,7 @@ use ark_poly::{polynomial::{
 }   , 
     GeneralEvaluationDomain, EvaluationDomain};
 use std::collections::HashSet;
+use rayon::prelude::*;
 
 pub fn generator_numerator_polynomial<P: Pairing> (
     points: &Vec<P::ScalarField>
@@ -44,28 +45,30 @@ pub fn interpolate_on_trivial_domain<P: Pairing> (
     evals: &Vec<P::ScalarField>,
 ) -> UnivariatePolynomial<P::ScalarField> {
     assert_eq!(points.len(), evals.len());
-    let mut result_polynomial = UnivariatePolynomial::zero();
+    // let mut result_polynomial = UnivariatePolynomial::zero();
 
     let numerator_polynomial = generator_numerator_polynomial::<P>(&points);
 
-    for i in 0..points.len() {
+    points.par_iter().enumerate().map(|(i, &point_i)| {
         let mut constant_term = P::ScalarField::one();
-        for j in 0..points.len() {
-            if j!= i {
-                constant_term *= points[i] - points[j];
+        for (j, &point_j) in points.iter().enumerate() {
+            if i != j {
+                constant_term *= point_i - point_j;
             }
         }
         constant_term = constant_term.inverse().unwrap();
         constant_term *= evals[i];
         
         let divider_polynomial = &UnivariatePolynomial::from_coefficients_vec(vec![
-            -points[i].clone(),
+            -point_i.clone(),
             P::ScalarField::one()
             ]);
         let quotient_polynomial = &numerator_polynomial / &divider_polynomial;
-        result_polynomial += &(&quotient_polynomial * constant_term);
-    }
-    result_polynomial   
+        &quotient_polynomial * constant_term
+    }).reduce(
+        || UnivariatePolynomial::zero(),
+        |acc, poly| acc + poly
+    )
 }
 
 // evaluate one evaluation of the id-th lagrange polynomial at the given point
