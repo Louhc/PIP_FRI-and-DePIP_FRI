@@ -7,27 +7,15 @@ use my_ipa::ipa::IPA;
 use my_ipa::helper::{R1CSPublicPolys, R1CSWitnessPolys, R1CSDePublicPolys};
 use ark_ff::{Zero, One, Field};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
-use std::time::{
-    Instant,
-    // Duration
-};
+use std::time::Instant;
 use rayon::prelude::*;
+use crate::par_join_4;
 
-macro_rules! par_join_4 {
-    ($task1:expr, $task2:expr, $task3:expr, $task4:expr) => {{
-        let ((result1, result2), (result3, result4)) = rayon::join(
-            || rayon::join($task1, $task2),
-            || rayon::join($task3, $task4)
-        );
-        (result1, result2, result3, result4)
-    }};
-}
-
-pub struct DeIPA<P: Pairing> {
+pub struct DeSNARKLog<P: Pairing> {
     _pairing: PhantomData<P>,
 }
 
-pub struct SNARKProofNoPre<P: Pairing> {
+pub struct SNARKProofLog<P: Pairing> {
     coms_wit_polys: Vec<P::G1>,
     coms_g1_h1: Vec<P::G1>,
     coms_g2_h2: Vec<P::G1>,
@@ -40,7 +28,7 @@ pub struct SNARKProofNoPre<P: Pairing> {
 }
 
 
-impl<P: Pairing> DeIPA<P> {
+impl<P: Pairing> DeSNARKLog<P> {
 
     pub fn de_r1cs_prove (
         // id can be zero
@@ -51,11 +39,10 @@ impl<P: Pairing> DeIPA<P> {
         y_srs: &Vec<P::G1Affine>,
         wit_polys: &R1CSWitnessPolys<P>,
         pub_polys: &R1CSPublicPolys<P>,
-        r: &P::ScalarField,
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         transcript: &mut Transcript,
-    ) -> Option<SNARKProofNoPre<P>> {
+    ) -> Option<SNARKProofLog<P>> {
 
         assert_eq!(powers[0].len(), x_srs.len());
         let m = x_srs.len();
@@ -67,17 +54,20 @@ impl<P: Pairing> DeIPA<P> {
         let coms_wit_polys = BivBatchKZG::<P>::de_commit(sub_prover_id, &powers, &sub_polynomials);
         println!("Prover {:?} commit time: {:?}", sub_prover_id, time.elapsed());
 
-        // generate challenges v and u1
-        let (v, u1) = if Net::am_master() {
+        // generate challenges r, v, and u1
+        let (r, v, u1) = if Net::am_master() {
             let slice: &[P::G1] = &coms_wit_polys.as_ref().unwrap();
-            <Transcript as ProofTranscript<P>>::append_points(transcript, b"v_and_u1", slice);
+            <Transcript as ProofTranscript<P>>::append_points(transcript, b"r_v_u1", slice);
+            let r = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"challenge_r");
             let v = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"rlc");
             let u1 = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_ldt_padding");
             Net::recv_from_master(Some(vec![(v, u1); Net::n_parties()]));
-            (v, u1)
+            (r, v, u1)
         } else {
             Net::recv_from_master(None)
         };
+
+        // generate 
 
         // R_i(X) = X^{i-1} and evals R_i(r^{m})
         let time = Instant::now();
@@ -96,16 +86,9 @@ impl<P: Pairing> DeIPA<P> {
 
         // f1 - f4
         let polys_r = vec![&wit_polys.poly_a, &wit_polys.poly_b, &wit_polys.poly_b, &wit_polys.poly_c];
-        let points_r = vec![*r, P::ScalarField::zero(), r.clone().inverse().unwrap(), *r];
+        let points_r = vec![r, P::ScalarField::zero(), r.clone().inverse().unwrap(), r];
         let evals_r: Vec<P::ScalarField> = polys_r.par_iter().zip(points_r.par_iter()).map(|(poly, point)| poly.evaluate(&point)).collect();
         let eval_b_virtual = evals_r[2] * r_pow_m + evals_r[1] * (P::ScalarField::one() - r_pow_m);
-
-        // let eval_a_r = wit_polys.poly_a.evaluate(r);
-        // let eval_b_0 = wit_polys.poly_b.evaluate(&P::ScalarField::zero());
-        // let eval_b_inverse = wit_polys.poly_b.evaluate(&r.clone().inverse().unwrap());
-        // let eval_b_virtual = eval_b_inverse * r_pow_m + eval_b_0 * (P::ScalarField::one() - r_pow_m);
-        // let eval_c_r = wit_polys.poly_c.evaluate(r);
-        // let eval_r_pow_m_mul_c_r = UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * eval_c_r]);
 
         let domain_2x = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(2 * m).unwrap();
         let polys_f = vec![&pub_polys.poly_pa, &pub_polys.poly_pb, &pub_polys.poly_pc, &wit_polys.poly_w, &poly_ar, &wit_polys.poly_b];
@@ -119,16 +102,6 @@ impl<P: Pairing> DeIPA<P> {
         let evals_domain_target = Evaluations::<P::ScalarField>::from_vec_and_domain(evals_target, domain_2x);
         let polynomial_target = evals_domain_target.interpolate();
 
-        // let eval_r_pow_m_mul_c_r = UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * evals_r[3]]);
-        // let polynomial_f1 = &pub_polys.poly_pa * &wit_polys.poly_w + UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * evals_r[0]]);
-        // let polynomial_f2 = &pub_polys.poly_pb * &wit_polys.poly_w + UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * eval_b_virtual]);
-        // let polynomial_f3 = &(&pub_polys.poly_pc * &wit_polys.poly_w) + &eval_r_pow_m_mul_c_r;
-        // let polynomial_f4 = &(&(&poly_ar * &wit_polys.poly_b) * eval_r) + &eval_r_pow_m_mul_c_r;
-
-        // // target polynomial, rlc of f1-f4
-        // let mut polynomial_target = &polynomial_f1 + &(&polynomial_f2 * v);
-        // polynomial_target += (v * v, &polynomial_f3);
-        // polynomial_target += (v.pow([3 as u64]), &polynomial_f4);
         println!("Prover {:?} compute target polynomial time: {:?}", sub_prover_id, time.elapsed());
 
         // get g1 and h1
@@ -164,7 +137,7 @@ impl<P: Pairing> DeIPA<P> {
         // also send g1(alpha) and h1(alpha)
         let time = Instant::now();
         let polys_alpha = vec![pub_polys.poly_pa.clone(), pub_polys.poly_pb.clone(), pub_polys.poly_pc.clone(), wit_polys.poly_w.clone(), wit_polys.poly_a.clone(), wit_polys.poly_b.clone()];
-        let points_alpha = vec![alpha, alpha, alpha, alpha, *r * alpha, alpha];
+        let points_alpha = vec![alpha, alpha, alpha, alpha, r * alpha, alpha];
         let evals_alpha: Vec<P::ScalarField> = polys_alpha.par_iter().zip(points_alpha.par_iter()).map(|(poly, point)| poly.evaluate(&point)).collect();
         // let eval_pa_alpha = pub_polys.poly_pa.evaluate(&alpha);
         // let eval_pb_alpha = pub_polys.poly_pb.evaluate(&alpha);
@@ -293,7 +266,7 @@ impl<P: Pairing> DeIPA<P> {
 
         // generate proof to alpha, beta
         let time = Instant::now();
-        let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r]];
+        let x_points = vec![vec![alpha], vec![r * alpha, r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![r]];
         let proofs_wit_polys= BivBatchKZG::<P>::de_open_lagrange_at_same_y(sub_prover_id, &powers, &x_srs, &sub_polynomials, &x_points, &beta, &y_domain, transcript, &gamma);
         println!("Prover {:?} computs proofs of bivariate polynomials time: {:?}", sub_prover_id, time.elapsed());
 
@@ -326,7 +299,7 @@ impl<P: Pairing> DeIPA<P> {
         println!("Prover {:?} computes g2 and h_2 evals and proofs time: {:?}", sub_prover_id, time.elapsed());
 
         if Net::am_master() {
-            Some(SNARKProofNoPre {
+            Some(SNARKProofLog {
                 coms_g1_h1,
                 coms_g2_h2,
                 coms_wit_polys: coms_wit_polys.unwrap(),
@@ -344,7 +317,7 @@ impl<P: Pairing> DeIPA<P> {
 
     pub fn r1cs_verify_no_preprocess(
         v_srs: &VerifierSRS<P>,
-        proof: &SNARKProofNoPre<P>,
+        proof: &SNARKProofLog<P>,
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         pub_polys: &R1CSDePublicPolys<P>,
@@ -367,7 +340,7 @@ impl<P: Pairing> DeIPA<P> {
             h_alpha: v_srs.h_beta.clone()
         };
 
-        let SNARKProofNoPre {coms_g1_h1,
+        let SNARKProofLog {coms_g1_h1,
             coms_g2_h2,
             coms_wit_polys,
             evals_wit_polys,
@@ -404,16 +377,6 @@ impl<P: Pairing> DeIPA<P> {
             || pub_polys.polys_pc.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum(), 
             || eval_r.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| *poly * *eval).sum()
         );
-
-        // let eval_pa_alpha_beta: P::ScalarField = pub_polys.polys_pa.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
-        // let eval_pb_alpha_beta: P::ScalarField = pub_polys.polys_pb.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
-        // let eval_pc_alpha_beta: P::ScalarField = pub_polys.polys_pc.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
-        // let mut eval_r = Vec::new();
-        // for i in 0..l {
-        //     let current  = r_pow_m.pow([i as u64]);
-        //     eval_r.push(current);
-        // }
-        // let eval_r_beta: P::ScalarField = eval_r.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| *poly * *eval).sum();
 
         let (f1, f2, f3, f4): (P::ScalarField, P::ScalarField, P::ScalarField, P::ScalarField) = par_join_4!(
             || eval_pa_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[2],
@@ -480,7 +443,7 @@ impl<P: Pairing> DeIPA<P> {
     }
 
     pub fn get_proof_size (
-        proof: &SNARKProofNoPre<P>
+        proof: &SNARKProofLog<P>
     ) -> usize {
         let field_size = size_of_val(&P::ScalarField::one());
         let group_size = size_of_val(&P::G1::zero());

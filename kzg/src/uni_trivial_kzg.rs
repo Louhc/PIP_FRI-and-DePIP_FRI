@@ -117,11 +117,11 @@ impl<P: Pairing> KZG<P> {
         polynomial: &UnivariatePolynomial<P::ScalarField>,
     ) -> Result<P::G1, Error> {
         assert!(powers.len() >= polynomial.degree() + 1);
-        let mut coeffs = polynomial.coeffs.to_vec();
-        coeffs.resize(powers.len(), <P::ScalarField>::zero());
+        let coeffs = polynomial.coeffs.to_vec();
+        // coeffs.resize(powers.len(), <P::ScalarField>::zero());
 
         // Can unwrap because coeffs.len() is guaranteed to be equal to powers.len()
-        Ok(P::G1::msm(powers, &coeffs).unwrap())
+        Ok(P::G1::msm_unchecked(powers, &coeffs))
     }
 
     pub fn commit_lagrange(
@@ -149,11 +149,10 @@ impl<P: Pairing> KZG<P> {
                 -point.clone(),
                 P::ScalarField::one(),
             ]);
-        let mut quotient_coeffs = quotient_polynomial.coeffs.to_vec();
-        quotient_coeffs.resize(powers.len(), <P::ScalarField>::zero());
+        let quotient_coeffs = quotient_polynomial.coeffs.to_vec();
 
         // Can unwrap because quotient_coeffs.len() is guaranteed to be equal to powers.len()
-        Ok(P::G1::msm(powers, &quotient_coeffs).unwrap())
+        Ok(P::G1::msm_unchecked(powers, &quotient_coeffs))
     }
 
     // Given the evaluations, compute the quotient polynomial evaluations

@@ -1,5 +1,5 @@
 [package]
-name = "snark"
+name = "my_snark"
 version = "0.4.0"
 edition = "2018"
 

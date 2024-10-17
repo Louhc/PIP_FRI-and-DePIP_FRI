@@ -383,23 +383,13 @@ impl<P: Pairing> BivBatchKZG<P> {
         assert!(powers.len().is_power_of_two());
         assert!(powers[0].len() >= bivariate_polynomials[0].x_polynomials[0].degree() + 1);
 
-        let mut extended_powers: Vec<<P as Pairing>::G1Affine> = Vec::new();
-        for i in 0..powers.len() {
-            extended_powers.extend(&powers[i]);
-        }
-        println!("srs length is: {:?}", extended_powers.len());
-
-        let mut coms = Vec::new();
-        for j in 0..bivariate_polynomials.len() {
-            let mut extended_coeff: Vec<<P as Pairing>::ScalarField> = Vec::new();
-            for i in 0..powers.len() {
-                let mut coeffs = bivariate_polynomials[j].x_polynomials[i].coeffs.to_vec();
-                coeffs.resize(powers[0].len(), <P::ScalarField>::zero());
-                extended_coeff.extend(&coeffs);
-            }
-            coms.push(P::G1::msm(&extended_powers, &extended_coeff).unwrap());
-        }
-
+        let coms: Vec<P::G1> = bivariate_polynomials.par_iter().map(|biv_poly| {
+            biv_poly.x_polynomials.par_iter().zip(powers.par_iter()).map(|(poly, power)| {
+                let mut coeffs = poly.coeffs.to_vec();
+                coeffs.resize(power.len(), <P::ScalarField>::zero());
+                P::G1::msm(&power, &coeffs).unwrap()
+            }).sum()
+        }).collect();
         Ok(coms)
     }
 
@@ -717,297 +707,297 @@ impl<P: Pairing> BivBatchKZG<P> {
 }
 
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use ark_bls12_381::Bls12_381;
-//     use ark_std::rand::{rngs::StdRng, SeedableRng};
-//     use ark_poly::polynomial::{
-//         univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial,
-//     };
-//     use ark_std::UniformRand;
-//     use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
-//     const BIVARIATE_X_DEGREE: usize = 10;
-//     const BIVARIATE_Y_DEGREE: usize = 15;
-//     const POLYNOMIAL_NUMBER: usize = 10;
-//     type TestBivariatePolyCommitment = BivBatchKZG<Bls12_381>;
-//     use crate::helper::get_x_srs;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_bls12_381::Bls12_381;
+    use ark_std::rand::{rngs::StdRng, SeedableRng};
+    use ark_poly::polynomial::{
+        univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial,
+    };
+    use ark_std::UniformRand;
+    use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
+    const BIVARIATE_X_DEGREE: usize = 10;
+    const BIVARIATE_Y_DEGREE: usize = 15;
+    const POLYNOMIAL_NUMBER: usize = 10;
+    type TestBivariatePolyCommitment = BivBatchKZG<Bls12_381>;
+    use crate::helper::get_x_srs;
 
-    // #[test]
-    // fn bivariate_poly_commit_at_the_same_point_test() {
-    //     let mut rng = StdRng::seed_from_u64(0u64);
-    //     let srs =
-    //         TestBivariatePolyCommitment::setup(&mut rng, BIVARIATE_X_DEGREE, BIVARIATE_Y_DEGREE)
-    //             .unwrap();
-    //     // let v_srs = srs.0.get_verifier_key();
+    #[test]
+    fn bivariate_poly_commit_at_the_same_point_test() {
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let srs =
+            TestBivariatePolyCommitment::setup(&mut rng, BIVARIATE_X_DEGREE, BIVARIATE_Y_DEGREE)
+                .unwrap();
+        // let v_srs = srs.0.get_verifier_key();
 
-    //     let mut bivariate_polynomials = Vec::new();
-    //     for _ in 0..POLYNOMIAL_NUMBER {
-    //         let mut x_polynomials = Vec::new();
-    //         for _ in 0..BIVARIATE_Y_DEGREE + 1 {
-    //             let mut x_polynomial_coeffs = vec![];
-    //             for _ in 0..BIVARIATE_X_DEGREE + 1 {
-    //                 x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
-    //             }
-    //             x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
-    //                 &x_polynomial_coeffs,
-    //             ));
-    //         }
-    //         bivariate_polynomials.push (BivariatePolynomial { x_polynomials });
-    //     }
+        let mut bivariate_polynomials = Vec::new();
+        for _ in 0..POLYNOMIAL_NUMBER {
+            let mut x_polynomials = Vec::new();
+            for _ in 0..BIVARIATE_Y_DEGREE + 1 {
+                let mut x_polynomial_coeffs = vec![];
+                for _ in 0..BIVARIATE_X_DEGREE + 1 {
+                    x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+                }
+                x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
+                    &x_polynomial_coeffs,
+                ));
+            }
+            bivariate_polynomials.push (BivariatePolynomial { x_polynomials });
+        }
 
-    //     // Commit to the polynomials
-    //     let coms =
-    //         TestBivariatePolyCommitment::commit(&srs.0, &bivariate_polynomials).unwrap();
-    //     let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same point");
-    //     let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(&mut prover_transcript, b"combined_polynomials_evaluated_at_the_same_point");
+        // Commit to the polynomials
+        let coms =
+            TestBivariatePolyCommitment::commit(&srs.0, &bivariate_polynomials).unwrap();
+        let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same point");
+        let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(&mut prover_transcript, b"combined_polynomials_evaluated_at_the_same_point");
 
-    //     // Evaluate at challenge point
-    //     let point = (UniformRand::rand(&mut rng), UniformRand::rand(&mut rng));
-    //     let eval_proof = TestBivariatePolyCommitment::open(
-    //         &srs.0,
-    //         &bivariate_polynomials,
-    //         &point,
-    //         &gamma
-    //     )
-    //     .unwrap();
+        // Evaluate at challenge point
+        let point = (UniformRand::rand(&mut rng), UniformRand::rand(&mut rng));
+        let eval_proof = TestBivariatePolyCommitment::open(
+            &srs.0,
+            &bivariate_polynomials,
+            &point,
+            &gamma
+        )
+        .unwrap();
 
-    //     let mut evals = Vec::new();
-    //     for i in 0..bivariate_polynomials.len() {
-    //         let eval = bivariate_polynomials[i].evaluate(&point);
-    //         evals.push(eval);
-    //     }
+        let mut evals = Vec::new();
+        for i in 0..bivariate_polynomials.len() {
+            let eval = bivariate_polynomials[i].evaluate(&point);
+            evals.push(eval);
+        }
 
-    //     // proof size
-    //     println!("Proof size is {} bytes", size_of_val(&eval_proof));
+        // proof size
+        println!("Proof size is {} bytes", size_of_val(&eval_proof));
 
-    //     // Verify proof
-    //     let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same point");
-    //     let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
-    //         &mut verifier_transcript, b"combined_polynomials_evaluated_at_the_same_point");
-    //     assert!(
-    //         TestBivariatePolyCommitment::verify(&srs.1, &coms, &point, &evals, &eval_proof, &gamma).unwrap()
-    //     );
+        // Verify proof
+        let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same point");
+        let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+            &mut verifier_transcript, b"combined_polynomials_evaluated_at_the_same_point");
+        assert!(
+            TestBivariatePolyCommitment::verify(&srs.1, &coms, &point, &evals, &eval_proof, &gamma).unwrap()
+        );
 
-    // }
+    }
 
-    // #[test]
-    // fn bivariate_poly_commit_lagrange_at_the_same_point_test() {
-    //     let mut rng = StdRng::seed_from_u64(0u64);
-    //     let domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(BIVARIATE_Y_DEGREE + 1).unwrap();
-    //     let srs =
-    //         TestBivariatePolyCommitment::setup_lagrange(&mut rng, BIVARIATE_X_DEGREE, BIVARIATE_Y_DEGREE, &domain)
-    //             .unwrap();
+    #[test]
+    fn bivariate_poly_commit_lagrange_at_the_same_point_test() {
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(BIVARIATE_Y_DEGREE + 1).unwrap();
+        let srs =
+            TestBivariatePolyCommitment::setup_lagrange(&mut rng, BIVARIATE_X_DEGREE, BIVARIATE_Y_DEGREE, &domain)
+                .unwrap();
 
-    //     let mut bivariate_polynomials = Vec::new();
-    //     for _ in 0..POLYNOMIAL_NUMBER {
-    //         let mut x_polynomials = Vec::new();
-    //         for _ in 0..BIVARIATE_Y_DEGREE + 1 {
-    //             let mut x_polynomial_coeffs = vec![];
-    //             for _ in 0..BIVARIATE_X_DEGREE + 1 {
-    //                 x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
-    //             }
-    //             x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
-    //                 &x_polynomial_coeffs,
-    //             ));
-    //         }
-    //         bivariate_polynomials.push (BivariatePolynomial { x_polynomials });
-    //     }
+        let mut bivariate_polynomials = Vec::new();
+        for _ in 0..POLYNOMIAL_NUMBER {
+            let mut x_polynomials = Vec::new();
+            for _ in 0..BIVARIATE_Y_DEGREE + 1 {
+                let mut x_polynomial_coeffs = vec![];
+                for _ in 0..BIVARIATE_X_DEGREE + 1 {
+                    x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+                }
+                x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
+                    &x_polynomial_coeffs,
+                ));
+            }
+            bivariate_polynomials.push (BivariatePolynomial { x_polynomials });
+        }
 
-    //     // Commit to the polynomials
-    //     let coms =
-    //         TestBivariatePolyCommitment::commit(&srs.0, &bivariate_polynomials).unwrap();
-    //     let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same point");
-    //     let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
-    //             &mut prover_transcript, b"combined_polynomials_evaluated_at_the_same_point");
+        // Commit to the polynomials
+        let coms =
+            TestBivariatePolyCommitment::commit(&srs.0, &bivariate_polynomials).unwrap();
+        let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same point");
+        let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+                &mut prover_transcript, b"combined_polynomials_evaluated_at_the_same_point");
 
-    //     // Evaluate at challenge point
-    //     let point = (UniformRand::rand(&mut rng), UniformRand::rand(&mut rng));
-    //     let eval_proof = TestBivariatePolyCommitment::open_lagrange(
-    //         &srs.0,
-    //         &bivariate_polynomials,
-    //         &point,
-    //         &domain,
-    //         &gamma
-    //     ).unwrap();
+        // Evaluate at challenge point
+        let point = (UniformRand::rand(&mut rng), UniformRand::rand(&mut rng));
+        let eval_proof = TestBivariatePolyCommitment::open_lagrange(
+            &srs.0,
+            &bivariate_polynomials,
+            &point,
+            &domain,
+            &gamma
+        ).unwrap();
 
-    //     let mut evals = Vec::new();
-    //     for i in 0..bivariate_polynomials.len() {
-    //         let eval = bivariate_polynomials[i].evaluate_lagrange(&point, &domain);
-    //         evals.push(eval);
-    //     }
+        let mut evals = Vec::new();
+        for i in 0..bivariate_polynomials.len() {
+            let eval = bivariate_polynomials[i].evaluate_lagrange(&point, &domain);
+            evals.push(eval);
+        }
 
-    //     // proof size
-    //     println!("Proof size is {} bytes", size_of_val(&eval_proof));
+        // proof size
+        println!("Proof size is {} bytes", size_of_val(&eval_proof));
 
-    //     // Verify proof
-    //     let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same point");
-    //     let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
-    //         &mut verifier_transcript, b"combined_polynomials_evaluated_at_the_same_point");
-    //     assert!(
-    //         TestBivariatePolyCommitment::verify(&srs.1, &coms, &point, &evals, &eval_proof, &gamma).unwrap()
-    //     );
+        // Verify proof
+        let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same point");
+        let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+            &mut verifier_transcript, b"combined_polynomials_evaluated_at_the_same_point");
+        assert!(
+            TestBivariatePolyCommitment::verify(&srs.1, &coms, &point, &evals, &eval_proof, &gamma).unwrap()
+        );
 
-    // }
+    }
 
-    // #[test]
-    // fn bivariate_poly_commit_at_the_same_y_test() {
-    //     let mut rng = StdRng::seed_from_u64(0u64);
-    //     let srs =
-    //         TestBivariatePolyCommitment::setup(&mut rng, BIVARIATE_X_DEGREE, BIVARIATE_Y_DEGREE)
-    //             .unwrap();
-    //     // let v_srs = srs.0.get_verifier_key();
+    #[test]
+    fn bivariate_poly_commit_at_the_same_y_test() {
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let srs =
+            TestBivariatePolyCommitment::setup(&mut rng, BIVARIATE_X_DEGREE, BIVARIATE_Y_DEGREE)
+                .unwrap();
+        // let v_srs = srs.0.get_verifier_key();
 
-    //     let mut bivariate_polynomials = Vec::new();
-    //     for _ in 0..POLYNOMIAL_NUMBER {
-    //         let mut x_polynomials = Vec::new();
-    //         for _ in 0..BIVARIATE_Y_DEGREE + 1 {
-    //             let mut x_polynomial_coeffs = vec![];
-    //             for _ in 0..BIVARIATE_X_DEGREE + 1 {
-    //                 x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
-    //             }
-    //             x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
-    //                 &x_polynomial_coeffs,
-    //             ));
-    //         }
-    //         bivariate_polynomials.push (BivariatePolynomial { x_polynomials });
-    //     }
+        let mut bivariate_polynomials = Vec::new();
+        for _ in 0..POLYNOMIAL_NUMBER {
+            let mut x_polynomials = Vec::new();
+            for _ in 0..BIVARIATE_Y_DEGREE + 1 {
+                let mut x_polynomial_coeffs = vec![];
+                for _ in 0..BIVARIATE_X_DEGREE + 1 {
+                    x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+                }
+                x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
+                    &x_polynomial_coeffs,
+                ));
+            }
+            bivariate_polynomials.push (BivariatePolynomial { x_polynomials });
+        }
 
-    //     // Commit to the polynomials
-    //     let coms =
-    //         TestBivariatePolyCommitment::commit(&srs.0, &bivariate_polynomials).unwrap();
-    //     let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
-    //     let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
-    //         &mut prover_transcript, b"combined_polynomial_x_beta");
-    //     println!("com size is {} bytes", coms.len() * size_of_val(&coms[0]));
+        // Commit to the polynomials
+        let coms =
+            TestBivariatePolyCommitment::commit(&srs.0, &bivariate_polynomials).unwrap();
+        let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
+        let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+            &mut prover_transcript, b"combined_polynomial_x_beta");
+        println!("com size is {} bytes", coms.len() * size_of_val(&coms[0]));
 
-    //     // Evaluate at multiple challenge points
-    //     let y_point = UniformRand::rand(&mut rng);
-    //     let mut x_points = Vec::new();
-    //     for i in 0..bivariate_polynomials.len() {
-    //         if i%2 == 1 {
-    //             // x_points.push(vec![UniformRand::rand(&mut rng)]);
-    //             x_points.push(vec![UniformRand::rand(&mut rng), UniformRand::rand(&mut rng)]);
-    //         }
-    //         else {
-    //             x_points.push(vec![UniformRand::rand(&mut rng), UniformRand::rand(&mut rng), UniformRand::rand(&mut rng)]);
-    //         }
-    //     }
+        // Evaluate at multiple challenge points
+        let y_point = UniformRand::rand(&mut rng);
+        let mut x_points = Vec::new();
+        for i in 0..bivariate_polynomials.len() {
+            if i%2 == 1 {
+                // x_points.push(vec![UniformRand::rand(&mut rng)]);
+                x_points.push(vec![UniformRand::rand(&mut rng), UniformRand::rand(&mut rng)]);
+            }
+            else {
+                x_points.push(vec![UniformRand::rand(&mut rng), UniformRand::rand(&mut rng), UniformRand::rand(&mut rng)]);
+            }
+        }
 
-    //     let eval_proof = TestBivariatePolyCommitment::open_at_same_y(
-    //         &srs.0,
-    //         &bivariate_polynomials,
-    //         &x_points,
-    //         &y_point,
-    //         &mut prover_transcript,
-    //         &gamma
-    //     ).unwrap();
+        let eval_proof = TestBivariatePolyCommitment::open_at_same_y(
+            &srs.0,
+            &bivariate_polynomials,
+            &x_points,
+            &y_point,
+            &mut prover_transcript,
+            &gamma
+        ).unwrap();
 
-    //     let mut evals: Vec<Vec<<Bls12_381 as Pairing>::ScalarField>> = Vec::new();
-    //     for i in 0..POLYNOMIAL_NUMBER {
-    //         let mut eval_i = Vec::new();
-    //         for j in 0..x_points[i].len() {
-    //             let point = (x_points[i][j], y_point);
-    //             let eval = bivariate_polynomials[i].evaluate(&point);
-    //             eval_i.push(eval);
-    //         }
-    //         evals.push(eval_i);
-    //     }
+        let mut evals: Vec<Vec<<Bls12_381 as Pairing>::ScalarField>> = Vec::new();
+        for i in 0..POLYNOMIAL_NUMBER {
+            let mut eval_i = Vec::new();
+            for j in 0..x_points[i].len() {
+                let point = (x_points[i][j], y_point);
+                let eval = bivariate_polynomials[i].evaluate(&point);
+                eval_i.push(eval);
+            }
+            evals.push(eval_i);
+        }
 
-    //     // proof size
-    //     let proof_size = (eval_proof.1.len() + 1) * size_of_val(&<Bls12_381 as Pairing>::ScalarField::one()) + 4 * size_of_val(&eval_proof.0);
-    //     println!("Proof size is {} bytes", proof_size);
+        // proof size
+        let proof_size = (eval_proof.1.len() + 1) * size_of_val(&<Bls12_381 as Pairing>::ScalarField::one()) + 4 * size_of_val(&eval_proof.0);
+        println!("Proof size is {} bytes", proof_size);
 
-    //     // Verify proof
-    //     let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
-    //     let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
-    //         &mut verifier_transcript, b"combined_polynomial_x_beta");
-    //     assert!(
-    //         TestBivariatePolyCommitment::verify_at_same_y(&srs.1, &coms, &x_points, &y_point, &evals, &eval_proof, &mut verifier_transcript, &gamma).unwrap()
-    //     );
+        // Verify proof
+        let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
+        let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+            &mut verifier_transcript, b"combined_polynomial_x_beta");
+        assert!(
+            TestBivariatePolyCommitment::verify_at_same_y(&srs.1, &coms, &x_points, &y_point, &evals, &eval_proof, &mut verifier_transcript, &gamma).unwrap()
+        );
 
-    // }
+    }
 
-    // #[test]
-    // fn bivariate_poly_commit_lagrange_at_the_same_y_test() {
-    //     let mut rng = StdRng::seed_from_u64(0u64);
-    //     let domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(BIVARIATE_Y_DEGREE + 1).unwrap();
-    //     let srs =
-    //         TestBivariatePolyCommitment::setup_lagrange(&mut rng, BIVARIATE_X_DEGREE, BIVARIATE_Y_DEGREE, &domain)
-    //             .unwrap();
-    //     let x_srs = get_x_srs::<Bls12_381>(&srs.0);
+    #[test]
+    fn bivariate_poly_commit_lagrange_at_the_same_y_test() {
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(BIVARIATE_Y_DEGREE + 1).unwrap();
+        let srs =
+            TestBivariatePolyCommitment::setup_lagrange(&mut rng, BIVARIATE_X_DEGREE, BIVARIATE_Y_DEGREE, &domain)
+                .unwrap();
+        let x_srs = get_x_srs::<Bls12_381>(&srs.0);
 
-    //     let mut bivariate_polynomials = Vec::new();
-    //     for _ in 0..POLYNOMIAL_NUMBER {
-    //         let mut x_polynomials = Vec::new();
-    //         for _ in 0..BIVARIATE_Y_DEGREE + 1 {
-    //             let mut x_polynomial_coeffs = vec![];
-    //             for _ in 0..BIVARIATE_X_DEGREE + 1 {
-    //                 x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
-    //             }
-    //             x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
-    //                 &x_polynomial_coeffs,
-    //             ));
-    //         }
-    //         bivariate_polynomials.push (BivariatePolynomial { x_polynomials });
-    //     }
+        let mut bivariate_polynomials = Vec::new();
+        for _ in 0..POLYNOMIAL_NUMBER {
+            let mut x_polynomials = Vec::new();
+            for _ in 0..BIVARIATE_Y_DEGREE + 1 {
+                let mut x_polynomial_coeffs = vec![];
+                for _ in 0..BIVARIATE_X_DEGREE + 1 {
+                    x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+                }
+                x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
+                    &x_polynomial_coeffs,
+                ));
+            }
+            bivariate_polynomials.push (BivariatePolynomial { x_polynomials });
+        }
 
-    //     // Commit to the polynomials
-    //     let coms =
-    //         TestBivariatePolyCommitment::commit(&srs.0, &bivariate_polynomials).unwrap();
-    //     let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
-    //     let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
-    //         &mut prover_transcript, b"combined_polynomial_x_beta");
-    //     println!("com size is {} bytes", coms.len() * size_of_val(&coms[0]));
+        // Commit to the polynomials
+        let coms =
+            TestBivariatePolyCommitment::commit(&srs.0, &bivariate_polynomials).unwrap();
+        let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
+        let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+            &mut prover_transcript, b"combined_polynomial_x_beta");
+        println!("com size is {} bytes", coms.len() * size_of_val(&coms[0]));
 
-    //     // Evaluate at multiple challenge points
-    //     let y_point = UniformRand::rand(&mut rng);
-    //     let mut x_points = Vec::new();
-    //     for i in 0..bivariate_polynomials.len() {
-    //         if i%2 == 1 {
-    //             // x_points.push(vec![UniformRand::rand(&mut rng)]);
-    //             x_points.push(vec![UniformRand::rand(&mut rng), UniformRand::rand(&mut rng)]);
-    //         }
-    //         else {
-    //             x_points.push(vec![UniformRand::rand(&mut rng), UniformRand::rand(&mut rng), UniformRand::rand(&mut rng)]);
-    //         }
-    //     }
+        // Evaluate at multiple challenge points
+        let y_point = UniformRand::rand(&mut rng);
+        let mut x_points = Vec::new();
+        for i in 0..bivariate_polynomials.len() {
+            if i%2 == 1 {
+                // x_points.push(vec![UniformRand::rand(&mut rng)]);
+                x_points.push(vec![UniformRand::rand(&mut rng), UniformRand::rand(&mut rng)]);
+            }
+            else {
+                x_points.push(vec![UniformRand::rand(&mut rng), UniformRand::rand(&mut rng), UniformRand::rand(&mut rng)]);
+            }
+        }
 
-    //     let eval_proof = TestBivariatePolyCommitment::open_lagrange_at_same_y(
-    //         &srs.0,
-    //         &x_srs, 
-    //         &bivariate_polynomials,
-    //         &x_points,
-    //         &y_point,
-    //         &domain,
-    //         &mut prover_transcript,
-    //         &gamma
-    //     )
-    //     .unwrap();
+        let eval_proof = TestBivariatePolyCommitment::open_lagrange_at_same_y(
+            &srs.0,
+            &x_srs, 
+            &bivariate_polynomials,
+            &x_points,
+            &y_point,
+            &domain,
+            &mut prover_transcript,
+            &gamma
+        )
+        .unwrap();
 
-    //     let mut evals: Vec<Vec<<Bls12_381 as Pairing>::ScalarField>> = Vec::new();
-    //     for i in 0..POLYNOMIAL_NUMBER {
-    //         let mut eval_i = Vec::new();
-    //         for j in 0..x_points[i].len() {
-    //             let point = (x_points[i][j], y_point);
-    //             let eval = bivariate_polynomials[i].evaluate_lagrange(&point, &domain);
-    //             eval_i.push(eval);
-    //         }
-    //         evals.push(eval_i);
-    //     }
+        let mut evals: Vec<Vec<<Bls12_381 as Pairing>::ScalarField>> = Vec::new();
+        for i in 0..POLYNOMIAL_NUMBER {
+            let mut eval_i = Vec::new();
+            for j in 0..x_points[i].len() {
+                let point = (x_points[i][j], y_point);
+                let eval = bivariate_polynomials[i].evaluate_lagrange(&point, &domain);
+                eval_i.push(eval);
+            }
+            evals.push(eval_i);
+        }
 
-    //     // proof size
-    //     let proof_size = (eval_proof.1.len() + 1) * size_of_val(&<Bls12_381 as Pairing>::ScalarField::one()) + 4 * size_of_val(&eval_proof.0);
-    //     println!("Proof size is {} bytes", proof_size);
+        // proof size
+        let proof_size = (eval_proof.1.len() + 1) * size_of_val(&<Bls12_381 as Pairing>::ScalarField::one()) + 4 * size_of_val(&eval_proof.0);
+        println!("Proof size is {} bytes", proof_size);
 
-    //     // Verify proof
-    //     let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
-    //     let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
-    //         &mut verifier_transcript, b"combined_polynomial_x_beta");
-    //     assert!(
-    //         TestBivariatePolyCommitment::verify_at_same_y(&srs.1, &coms, &x_points, &y_point, &evals, &eval_proof, &mut verifier_transcript, &gamma).unwrap()
-    //     );
+        // Verify proof
+        let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
+        let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+            &mut verifier_transcript, b"combined_polynomial_x_beta");
+        assert!(
+            TestBivariatePolyCommitment::verify_at_same_y(&srs.1, &coms, &x_points, &y_point, &evals, &eval_proof, &mut verifier_transcript, &gamma).unwrap()
+        );
 
-    // }
+    }
 
-// }
+}

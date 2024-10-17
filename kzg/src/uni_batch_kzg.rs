@@ -49,9 +49,8 @@ impl<P: Pairing> BatchKZG<P> {
         assert!(powers.len() >= polynomials[0].degree() + 1);
 
         Ok(polynomials.par_iter().map(|polynomial| {
-            let mut coeffs = polynomial.coeffs.to_vec();
-            coeffs.resize(powers.len(), <P::ScalarField>::zero());
-            P::G1::msm(powers, &coeffs).unwrap()
+            let coeffs = polynomial.coeffs.to_vec();
+            P::G1::msm_unchecked(powers, &coeffs)
         })
         .collect())
 
