@@ -1,19 +1,19 @@
-use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, 
-    // DenseUVPolynomial, 
-    EvaluationDomain, Evaluations, GeneralEvaluationDomain, 
-    // Polynomial
+use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, 
+    EvaluationDomain, Evaluations, GeneralEvaluationDomain, Polynomial
 };
 // use std::marker::PhantomData;
 use ark_ec::pairing::Pairing;
+use merlin::Transcript;
+use my_ipa::ipa::IPA;
 use my_kzg::{biv_batch_kzg::BivBatchKZG, par_join_3, uni_batch_kzg::BatchKZG, uni_trivial_kzg::KZG};
-// use merlin::Transcript;
 // use my_ipa::helper::{R1CSPublicPolys, R1CSWitnessPolys, R1CSDePublicPolys};
 use ark_ff::{Zero, One, Field};
-use de_network::{DeMultiNet as Net, DeNet};
+use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 // use std::time::Instant;
 use rayon::prelude::*;
-use crate::indexer::DeLowerAandBEvals;
-
+use crate::indexer::{DeLowerAandBEvals, DeLowerAandBPolys};
+use crate::snark_linear::interpolate_from_eval_domain;
+use crate::par_join_4;
 
 #[derive(Clone)]
 // The original data of row index vectors for pa, pb, pc
@@ -41,7 +41,6 @@ pub struct DeValPolys<P: Pairing> {
     pub val_pb: UnivariatePolynomial<P::ScalarField>,
     pub val_pc: UnivariatePolynomial<P::ScalarField>,
 }
-
 
 #[derive(Clone)]
 // polynomials of A_low, A_high for rows, defined by r^{row_low} and r^{row_high}
@@ -410,10 +409,345 @@ pub fn compute_g3_h3<P: Pairing> (
     upper_a_t_polys: &DeAandTPolys<P>,
     upper_b_t_polys: &DeBandTPolys<P>,
     m_domain: &GeneralEvaluationDomain<P::ScalarField>,
-    beta: P::ScalarField,
-    v: P::ScalarField,
-    u3: P::ScalarField,
+    eval_beta: &P::ScalarField,
+    w: &P::ScalarField,
+    u3: &P::ScalarField,
+) -> Vec<UnivariatePolynomial<P::ScalarField>> {
+    let m_prime = m_domain.size();
+    let domain_4m = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(4 * m_prime).unwrap();
+    let num_cols: usize = 4;
+    // let eval_beta = evaluate_one_lagrange::<P>(sub_prover_id, y_domain, &beta);
+    
+    let (evals_first, evals_second, evals_third): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = par_join_3!(
+        || {
+            let polys_first = vec![&val_polys.val_pa, &upper_a_t_polys.a_pa_high, &upper_a_t_polys.a_pa_low, &upper_b_t_polys.b_pa];
+            let evals_first: Vec<Vec<P::ScalarField>> = polys_first.par_iter().map(|&f| f.clone().evaluate_over_domain(domain_4m).evals).collect();
+            (0..num_cols).into_par_iter().map(|j| {
+                    evals_first.par_iter().map(|row| row[j]).product()
+                }).collect()
+        }, 
+        || {
+            let polys_second = vec![&val_polys.val_pb, &upper_a_t_polys.a_pb_high, &upper_a_t_polys.a_pb_low, &upper_b_t_polys.b_pb];
+            let evals_second: Vec<Vec<P::ScalarField>> = polys_second.par_iter().map(|&f| f.clone().evaluate_over_domain(domain_4m).evals).collect();
+            let evals_second: Vec<P::ScalarField> = (0..num_cols).into_par_iter().map(|j| {
+                    evals_second.par_iter().map(|row| row[j]).product()
+                }).collect();
+            evals_second.par_iter().map(|eval| *eval * w).collect()
+        }, 
+        || {
+            let polys_third = vec![&val_polys.val_pc, &upper_a_t_polys.a_pc_high, &upper_a_t_polys.a_pc_low, &upper_b_t_polys.b_pc];
+            let evals_third: Vec<Vec<P::ScalarField>> = polys_third.par_iter().map(|&f| f.clone().evaluate_over_domain(domain_4m).evals).collect();
+            let evals_third: Vec<P::ScalarField> = (0..num_cols).into_par_iter().map(|j| {
+                    evals_third.par_iter().map(|row| row[j]).product()
+                }).collect();
+            evals_third.par_iter().map(|eval| *eval * w.square()).collect()
+        }
+    );
+    let evals_target: Vec<P::ScalarField> = evals_first.par_iter().zip(evals_second.par_iter()).zip(evals_third.par_iter())
+        .map(|((&a, &b), &c)| (a + b + c) * eval_beta).collect();
+    let evals_domain_target = Evaluations::<P::ScalarField>::from_vec_and_domain(evals_target, domain_4m);
+    let poly_target = evals_domain_target.interpolate();
+
+    // compute poly_g3 and poly_h
+    let (poly_g3, poly_h) = IPA::<P>::get_g_mul_u_and_h(&poly_target, &u3, &m_domain);
+    let coeffs_h3 = poly_h.coeffs.to_vec();
+    assert!(coeffs_h3.len() > 2 * m_prime);
+    assert!(coeffs_h3.len() < 3 * m_prime);
+    let (poly_h3_low, poly_h3_mid, poly_h3_high): (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) = par_join_3!(
+        || {
+            let coeffs_h3_low = coeffs_h3[0..m_prime].to_vec();
+            UnivariatePolynomial::from_coefficients_vec(coeffs_h3_low)
+        }, 
+        || {
+            let coeffs_h3_mid = coeffs_h3[m_prime..(2 * m_prime)].to_vec();
+            UnivariatePolynomial::from_coefficients_vec(coeffs_h3_mid)
+        }, 
+        || {
+            let coeffs_h3_high = coeffs_h3[(2 * m_prime) ..].to_vec();
+            UnivariatePolynomial::from_coefficients_vec(coeffs_h3_high)
+        }
+    );
+
+    let polys_vec = vec![poly_g3, poly_h3_low, poly_h3_mid, poly_h3_high];
+
+    polys_vec
+}
+
+pub fn commit_g3_h3 <P: Pairing> (
+    m_srs: &Vec<P::G1Affine>,
+    polys_g3_h3: &Vec<UnivariatePolynomial<P::ScalarField>>,
 ) -> Vec<P::G1> {
+    let sub_com_g3_h3 = BatchKZG::<P>::commit(&m_srs, &polys_g3_h3).unwrap();
+
+    let sub_com_g3_h3 = Net::send_to_master(&sub_com_g3_h3);
+    let coms_g3_h3 = if Net::am_master() {
+        let sub_coms_g3_h3 = sub_com_g3_h3.unwrap();
+        assert_eq!(sub_coms_g3_h3[0].len(), 4);
+        vec![sub_coms_g3_h3.par_iter().map(|coms| coms[0]).sum(), sub_coms_g3_h3.par_iter().map(|coms| coms[1]).sum(), 
+        sub_coms_g3_h3.par_iter().map(|coms| coms[2]).sum(), sub_coms_g3_h3.par_iter().map(|coms| coms[3]).sum()]
+    } else {
+        Vec::new()
+    };
+
+    coms_g3_h3
+}
+
+// compute de-evals of upper and lower polys at delta
+pub fn compute_evals_at_delta_beta <P: Pairing> (
+    val_polys: &DeValPolys<P>,
+    upper_a_t_polys: &DeAandTPolys<P>,
+    upper_b_t_polys: &DeBandTPolys<P>,
+    lower_a_b_polys: &DeLowerAandBPolys<P>,
+    eval_beta: &P::ScalarField,
+    delta: &P::ScalarField,
+) -> (Vec<P::ScalarField>, Vec<P::ScalarField>) {
+    
+    // evaluate upper polys Alow, Ahigh, B plus L(beta) evaluations on delta and beta
+    let (evals_first, evals_second, evals_third): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = par_join_3!(
+        || {
+            let polys = vec![&val_polys.val_pa, &upper_a_t_polys.a_pa_low, &upper_a_t_polys.a_pa_high, &upper_b_t_polys.b_pa];
+            polys.par_iter().map(|&poly| poly.clone().evaluate(&delta)).collect()
+        }, 
+        || {
+            let polys = vec![&val_polys.val_pb, &upper_a_t_polys.a_pb_low, &upper_a_t_polys.a_pb_high, &upper_b_t_polys.b_pb];
+            polys.par_iter().map(|&poly| poly.clone().evaluate(&delta)).collect()
+        }, 
+        || {
+            let polys = vec![&val_polys.val_pc, &upper_a_t_polys.a_pc_low, &upper_a_t_polys.a_pc_high, &upper_b_t_polys.b_pc];
+            polys.par_iter().map(|&poly| poly.clone().evaluate(&delta)).collect()
+        }
+    );
+    let mut upper_evals = evals_first;
+    upper_evals.extend(evals_second);
+    upper_evals.extend(evals_third);
+    upper_evals.extend(vec![eval_beta]);
+
+    // evaluate lower polys alow ahigh b evaluations on delta, used only for lookup
+    let (lower_evals_first, lower_evals_second, lower_evals_third): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = par_join_3!(
+        || {
+            let polys = vec![&lower_a_b_polys.la_pa_low, &lower_a_b_polys.la_pa_high, &lower_a_b_polys.lb_pa];
+            polys.par_iter().map(|&poly| poly.clone().evaluate(&delta)).collect()
+        }, 
+        || {
+            let polys = vec![&lower_a_b_polys.la_pb_low, &lower_a_b_polys.la_pb_high, &lower_a_b_polys.lb_pb];
+            polys.par_iter().map(|&poly| poly.clone().evaluate(&delta)).collect()
+        }, 
+        || {
+            let polys = vec![&lower_a_b_polys.la_pc_low, &lower_a_b_polys.la_pc_high, &lower_a_b_polys.lb_pc];
+            polys.par_iter().map(|&poly| poly.clone().evaluate(&delta)).collect()
+        }
+    );
+    let mut lower_evals = lower_evals_first;
+    lower_evals.extend(lower_evals_second);
+    lower_evals.extend(lower_evals_third);
+
+    (upper_evals, lower_evals)
+ }
+
+ pub fn send_evals_at_delta_beta <P: Pairing> (
+    upper_evals: &Vec<P::ScalarField>, 
+    lower_evals: &Vec<P::ScalarField>,
+) -> (Vec<Vec<P::ScalarField>>, Vec<Vec<P::ScalarField>>) {
+     // total evals
+     let evals = Net::send_to_master(&(upper_evals.clone(), lower_evals.clone()));
+
+     let (upper_total_evals, lower_total_evals) = if Net::am_master() {
+         let evals = evals.unwrap();
+         let upper_evals = evals.par_iter().map(|(a, _)| a.clone()).collect();
+         let lower_evals = evals.par_iter().map(|(_, b)| b.clone()).collect();
+         (upper_evals, lower_evals)
+     } else {
+         (Vec::new(), Vec::new())
+     };
+     (upper_total_evals, lower_total_evals)
+}
+
+
+pub fn compute_g4_h4 <P: Pairing> (
+    upper_total_evals: &Vec<Vec<P::ScalarField>>,
+    y_domain: &GeneralEvaluationDomain<P::ScalarField>,
+    delta: &P::ScalarField,
+    w: &P::ScalarField,
+    u3: &P::ScalarField,
+    u4: &P::ScalarField,
+) -> Vec<UnivariatePolynomial<P::ScalarField>> { 
+    let l = y_domain.size();
+    let domain_8y = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(8 * l).unwrap();
+    let polys_g4_h4 = if Net::am_master() {
+
+        let evals = upper_total_evals.clone();
+        // evaluate evaluations 
+        let (evals_first, evals_second, evals_third): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = par_join_3!(
+            || {
+                let evals_val_pa: Vec<P::ScalarField> = evals.par_iter().map(|eval| eval[0]).collect();
+                let evals_a_pa_low: Vec<P::ScalarField> = evals.par_iter().map(|eval| eval[1]).collect();
+                let evals_a_pa_high: Vec<P::ScalarField> = evals.par_iter().map(|eval| eval[2]).collect();
+                let evals_b_pa: Vec<P::ScalarField> = evals.par_iter().map(|eval| eval[3]).collect();
+
+                let evals_vec = vec![evals_val_pa, evals_a_pa_low, evals_a_pa_high, evals_b_pa];
+                let polys: Vec<UnivariatePolynomial<P::ScalarField>> = evals_vec.par_iter().map(|evals| interpolate_from_eval_domain::<P>(&evals, &y_domain)).collect();
+
+                let evals_vec: Vec<Vec<P::ScalarField>> = polys.into_par_iter().map(|poly| poly.evaluate_over_domain(domain_8y).evals).collect();
+                assert_eq!(evals_vec[0].len(), 8 * l);
+                let evals_first: Vec<P::ScalarField> = (0..(8 * l)).into_par_iter().map(|j| {
+                    evals_vec.par_iter().map(|row| row[j]).product()
+                    }).collect();
+                evals_first
+            }, 
+            || {
+                let evals_val_pb: Vec<P::ScalarField> = evals.par_iter().map(|eval| eval[4]).collect();
+                let evals_a_pb_low: Vec<P::ScalarField> = evals.par_iter().map(|eval| eval[5]).collect();
+                let evals_a_pb_high: Vec<P::ScalarField> = evals.par_iter().map(|eval| eval[6]).collect();
+                let evals_b_pb: Vec<P::ScalarField> = evals.par_iter().map(|eval| eval[7]).collect();
+
+                let evals_vec = vec![evals_val_pb, evals_a_pb_low, evals_a_pb_high, evals_b_pb];
+                let polys: Vec<UnivariatePolynomial<P::ScalarField>> = evals_vec.par_iter().map(|evals| interpolate_from_eval_domain::<P>(&evals, &y_domain)).collect();
+
+                let evals_vec: Vec<Vec<P::ScalarField>> = polys.into_par_iter().map(|poly| poly.evaluate_over_domain(domain_8y).evals).collect();
+                assert_eq!(evals_vec[0].len(), 8 * l);
+                let evals_second: Vec<P::ScalarField> = (0..(8 * l)).into_par_iter().map(|j| {
+                    evals_vec.par_iter().map(|row| row[j]).product()
+                    }).collect();
+                evals_second.par_iter().map(|eval| *eval * w).collect()
+            }, 
+            || {
+                let evals_val_pc: Vec<P::ScalarField> = evals.par_iter().map(|eval| eval[8]).collect();
+                let evals_a_pc_low: Vec<P::ScalarField> = evals.par_iter().map(|eval| eval[9]).collect();
+                let evals_a_pc_high: Vec<P::ScalarField> = evals.par_iter().map(|eval| eval[10]).collect();
+                let evals_b_pc: Vec<P::ScalarField> = evals.par_iter().map(|eval| eval[11]).collect();
+
+                let evals_vec = vec![evals_val_pc, evals_a_pc_low, evals_a_pc_high, evals_b_pc];
+                let polys: Vec<UnivariatePolynomial<P::ScalarField>> = evals_vec.par_iter().map(|evals| interpolate_from_eval_domain::<P>(&evals, &y_domain)).collect();
+
+                let evals_vec: Vec<Vec<P::ScalarField>> = polys.into_par_iter().map(|poly| poly.evaluate_over_domain(domain_8y).evals).collect();
+                assert_eq!(evals_vec[0].len(), 8 * l);
+                let evals_third: Vec<P::ScalarField> = (0..(8 * l)).into_par_iter().map(|j| {
+                    evals_vec.par_iter().map(|row| row[j]).product()
+                    }).collect();
+                evals_third.par_iter().map(|eval| *eval * w.square()).collect()
+            }
+        );
+        let evals_beta: Vec<P::ScalarField> = evals.par_iter().map(|eval| eval[12]).collect();
+        let poly_beta = interpolate_from_eval_domain::<P>(&evals_beta, &y_domain);
+        let evals_beta = poly_beta.evaluate_over_domain(domain_8y).evals;
+
+        let evals_target = evals_first.par_iter().zip(evals_second.par_iter())
+            .zip(evals_third.par_iter()).zip(evals_beta.par_iter())
+            .map(|(((a, b), c), d)| (*a + *b + *c) * d * (*delta - *u3)).collect();
+        let poly_target = interpolate_from_eval_domain::<P>(&evals_target, &domain_8y);
+        let (poly_g4, poly_h4) = IPA::<P>::get_g_mul_u_and_h(&poly_target, &u4, &y_domain);
+        let coeffs_h4 = poly_h4.coeffs.to_vec();
+        assert!(coeffs_h4.len() > 3 * l);
+        assert!(coeffs_h4.len() < 4 * l);
+        let (poly_h4_one, poly_h4_two, poly_h4_three, poly_h4_four): 
+            (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>, 
+            UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) = par_join_4!(
+            || {
+                let coeffs_h4_one = coeffs_h4[0..l].to_vec();
+                UnivariatePolynomial::from_coefficients_vec(coeffs_h4_one)
+            }, 
+            || {
+                let coeffs_h4_two = coeffs_h4[l..(2 * l)].to_vec();
+                UnivariatePolynomial::from_coefficients_vec(coeffs_h4_two)
+            }, 
+            || {
+                let coeffs_h4_three = coeffs_h4[(2 * l) ..(3 * l)].to_vec();
+                UnivariatePolynomial::from_coefficients_vec(coeffs_h4_three)
+            } ,
+            || {
+                let coeffs_h4_four = coeffs_h4[(3 * l) ..].to_vec();
+                UnivariatePolynomial::from_coefficients_vec(coeffs_h4_four)
+            }
+        );
+
+        assert_eq!(evals.len(), 13);
+        vec![poly_g4, poly_h4_one, poly_h4_two, poly_h4_three, poly_h4_four]
+    } else {
+        Vec::new()
+    };
+
+    polys_g4_h4
+}
+
+pub fn commit_g4_h4<P: Pairing> (
+    y_srs: &Vec<P::G1Affine>,
+    polys_g4_h4: &Vec<UnivariatePolynomial<P::ScalarField>>,
+) -> Vec<P::G1> {
+    if Net::am_master() {
+        BatchKZG::<P>::commit(&y_srs, &polys_g4_h4).unwrap()
+    } else {
+        Vec::new()
+    }
+}
+
+// only work for P0
+pub fn open_t_and_f2 <P: Pairing> (
+    x_srs: &[P::G1Affine],
+    t_row_low: &UnivariatePolynomial<P::ScalarField>,
+    t_row_high: &UnivariatePolynomial<P::ScalarField>,
+    t_col: &UnivariatePolynomial<P::ScalarField>,
+    poly_f2: &UnivariatePolynomial<P::ScalarField>,
+    x_domain: &GeneralEvaluationDomain<P::ScalarField>,
+    delta: &P::ScalarField,
+    // gamma is usually used for batch open
+    gamma: &P::ScalarField,
+    transcript: &mut Transcript,
+) -> (Vec<Vec<P::ScalarField>>, P::G1, P::G1) {
+
+    let w = x_domain.group_gen();
+    let t_points = vec![P::ScalarField::one(), *delta, w * delta];
+    let f2_points = vec![P::ScalarField::zero()];
+
+    let polys = vec![t_row_low.clone(), t_row_high.clone(), t_col.clone(), poly_f2.clone()];
+    let points = vec![t_points.clone(), t_points.clone(), t_points, f2_points];
+    
+    let proof = BatchKZG::<P>::open_multiple_polys_and_points(&x_srs, &polys, &points, &gamma, transcript).unwrap();
+    proof
+}
+
+// TODO: here the evals are sent again
+pub fn open_val_upper_lower_a_b <P: Pairing> (
+    sub_prover_id: usize,
+    m_powers: &Vec<Vec<P::G1Affine>>,
+    val_polys: &DeValPolys<P>,
+    upper_a_t_polys: &DeAandTPolys<P>,
+    upper_b_t_polys: &DeBandTPolys<P>,
+    lower_a_b_polys: &DeLowerAandBPolys<P>,
+    upper_evals: &Vec<P::ScalarField>,
+    lower_evals: &Vec<P::ScalarField>,
+    y_domain: &GeneralEvaluationDomain<P::ScalarField>,
+    delta: &P::ScalarField,
+    zeta: &P::ScalarField,
+    gamma: &P::ScalarField,
+) -> Option<(P::G1, P::G1)> {
+    let sub_polys = vec![
+        val_polys.val_pa.clone(), upper_a_t_polys.a_pa_low.clone(), upper_a_t_polys.a_pa_high.clone(), upper_b_t_polys.b_pa.clone(),
+        val_polys.val_pb.clone(), upper_a_t_polys.a_pb_low.clone(), upper_a_t_polys.a_pb_high.clone(), upper_b_t_polys.b_pb.clone(),
+        val_polys.val_pc.clone(), upper_a_t_polys.a_pc_low.clone(), upper_a_t_polys.a_pc_high.clone(), upper_b_t_polys.b_pc.clone(),
+        lower_a_b_polys.la_pa_low.clone(), lower_a_b_polys.la_pa_high.clone(), lower_a_b_polys.lb_pa.clone(),
+        lower_a_b_polys.la_pb_low.clone(), lower_a_b_polys.la_pb_high.clone(), lower_a_b_polys.lb_pb.clone(),
+        lower_a_b_polys.la_pc_low.clone(), lower_a_b_polys.la_pc_high.clone(), lower_a_b_polys.lb_pc.clone()
+    ];
+    let mut evals_slice: Vec<P::ScalarField> = upper_evals.clone();
+    evals_slice.pop();
+    evals_slice.extend(lower_evals);
+    assert_eq!(sub_polys.len(), evals_slice.len());
+
+    BivBatchKZG::<P>::de_open_lagrange(sub_prover_id, &m_powers, &sub_polys, &evals_slice, &(*delta, *zeta), &y_domain, gamma)
+}
+
+// include compute and send sub-evaluations
+pub fn open_f1 <P: Pairing> (
+    sub_prover_id: usize,
+    m_powers: &Vec<Vec<P::G1Affine>>,
+    sub_poly_f1: &UnivariatePolynomial<P::ScalarField>,
+    y_domain: &GeneralEvaluationDomain<P::ScalarField>,
+    gamma: &P::ScalarField,
+) -> (P::ScalarField, P::G1, P::G1) {
+    let sub_polys = vec![sub_poly_f1.clone()];
+    let evals_slice: Vec<P::ScalarField> = vec![sub_poly_f1.coeffs.to_vec()[0]];
+
+    let proof = BivBatchKZG::<P>::de_open_lagrange(sub_prover_id, &m_powers, &sub_polys, &evals_slice, &(P::ScalarField::zero(), P::ScalarField::zero()), &y_domain, gamma);
     
 }
 

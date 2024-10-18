@@ -217,18 +217,18 @@ impl<P: Pairing> DeSNARKLinear<P> {
             let evals_c_r = evals.par_iter().map(|(eval, _)| eval[9]).collect();
             let evals_r = evals.par_iter().map(|(eval, _)| eval[10]).collect();
 
-            let poly_pa_alpha = Self::interpolate_from_eval_domain(&evals_pa_alpha, y_domain);
-            let poly_pb_alpha = Self::interpolate_from_eval_domain(&evals_pb_alpha, y_domain);
-            let poly_pc_alpha = Self::interpolate_from_eval_domain(&evals_pc_alpha, y_domain);
-            let poly_w_alpha = Self::interpolate_from_eval_domain(&evals_w_alpha, y_domain);
-            let poly_a_r_alpha = Self::interpolate_from_eval_domain(&evals_a_r_alpha, y_domain);
-            let poly_a_r = Self::interpolate_from_eval_domain(&evals_a_r, y_domain);
-            let poly_b_alpha = Self::interpolate_from_eval_domain(&evals_b_alpha, y_domain);
-            let poly_b_r_inverse = Self::interpolate_from_eval_domain(&evals_b_r_inverse, y_domain);
-            let poly_b_0 = Self::interpolate_from_eval_domain(&evals_b_0, y_domain);
+            let poly_pa_alpha = interpolate_from_eval_domain::<P>(&evals_pa_alpha, y_domain);
+            let poly_pb_alpha = interpolate_from_eval_domain::<P>(&evals_pb_alpha, y_domain);
+            let poly_pc_alpha = interpolate_from_eval_domain::<P>(&evals_pc_alpha, y_domain);
+            let poly_w_alpha = interpolate_from_eval_domain::<P>(&evals_w_alpha, y_domain);
+            let poly_a_r_alpha = interpolate_from_eval_domain::<P>(&evals_a_r_alpha, y_domain);
+            let poly_a_r = interpolate_from_eval_domain::<P>(&evals_a_r, y_domain);
+            let poly_b_alpha = interpolate_from_eval_domain::<P>(&evals_b_alpha, y_domain);
+            let poly_b_r_inverse = interpolate_from_eval_domain::<P>(&evals_b_r_inverse, y_domain);
+            let poly_b_0 = interpolate_from_eval_domain::<P>(&evals_b_0, y_domain);
             let poly_b_r_virtual = &poly_b_r_inverse * r_pow_m + &poly_b_0 * (P::ScalarField::one() - r_pow_m);
-            let poly_c_r = Self::interpolate_from_eval_domain(&evals_c_r, y_domain);
-            let poly_r = Self::interpolate_from_eval_domain(&evals_r, y_domain);
+            let poly_c_r = interpolate_from_eval_domain::<P>(&evals_c_r, y_domain);
+            let poly_r = interpolate_from_eval_domain::<P>(&evals_r, y_domain);
 
             let poly_f1_alpha = &(&poly_pa_alpha * &poly_w_alpha) - &(&poly_r * &poly_a_r);
             let poly_f2_alpha = &(&poly_pb_alpha * &poly_w_alpha) - &(&poly_r * &poly_b_r_virtual);
@@ -467,14 +467,6 @@ impl<P: Pairing> DeSNARKLinear<P> {
         check1 & check2 & check3 & check4
     }
 
-    pub fn interpolate_from_eval_domain (
-        evals: &Vec<P::ScalarField>,
-        domain: &GeneralEvaluationDomain<P::ScalarField>,
-    ) -> UnivariatePolynomial<P::ScalarField> {
-        let eval_domain = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(evals.clone(), *domain);
-        eval_domain.interpolate()
-    }
-
     pub fn get_proof_size (
         proof: &SNARKProofLinear<P>
     ) -> usize {
@@ -495,5 +487,13 @@ impl<P: Pairing> DeSNARKLinear<P> {
         proof_len_fields + proof_len_groups + proof_len_wit_polys
     }
 
+}
+
+pub fn interpolate_from_eval_domain <P: Pairing> (
+    evals: &Vec<P::ScalarField>,
+    domain: &GeneralEvaluationDomain<P::ScalarField>,
+) -> UnivariatePolynomial<P::ScalarField> {
+    let eval_domain = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(evals.clone(), *domain);
+    eval_domain.interpolate()
 }
 

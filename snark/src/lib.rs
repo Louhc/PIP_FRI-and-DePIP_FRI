@@ -2,6 +2,6 @@
 
 pub mod snark_linear;
 // pub mod pre_helper;
-pub mod r1cs;
-pub mod snark_log;
-pub mod indexer;
+// pub mod r1cs;
+// pub mod snark_log;
+// pub mod indexer;
