@@ -15,7 +15,7 @@ use my_kzg::{
 use ark_ff::{Zero, Field};
 // use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use rayon::prelude::*;
-use crate::pre_helper::{DeValPolys, DeRowIndex, DeColIndex};
+use crate::prover_pre::{DeValPolys, DeRowIndex, DeColIndex};
 
 #[derive(Clone)]
 pub struct DeLowerAandBEvals<P: Pairing> {

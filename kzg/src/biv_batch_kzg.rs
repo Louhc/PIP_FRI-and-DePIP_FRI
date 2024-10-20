@@ -204,9 +204,9 @@ impl<P: Pairing> BivBatchKZG<P> {
             -x.clone(),
             P::ScalarField::one()
         ]);
-        let mut coeffs_q1 = polynomial_q1.coeffs.to_vec();
-        coeffs_q1.resize(sub_powers.len(), <P::ScalarField>::zero());
-        let sub_proof = P::G1::msm(&sub_powers, &coeffs_q1).unwrap();
+        let coeffs_q1 = polynomial_q1.coeffs.to_vec();
+        // coeffs_q1.resize(sub_powers.len(), <P::ScalarField>::zero());
+        let sub_proof = P::G1::msm_unchecked(&sub_powers, &coeffs_q1);
         let sub_proofs_and_evals = Net::send_to_master(&(sub_proof, evals_slice.clone()));
 
         // generate f(z1,z2)
@@ -238,12 +238,6 @@ impl<P: Pairing> BivBatchKZG<P> {
                 .map(|i| {
                     sub_proofs_and_evals.par_iter().zip(evals_lagrange.par_iter()).map(|(row, eval_lagrange)| row.1[i] * eval_lagrange).sum()
                 }).collect();
-
-            // let mut target_evals = Vec::new();
-            // for i in 0..sub_polynomials.len() {
-            //     let eval = sub_proofs_and_evals.iter().zip(evals_lagrange.iter()).map(|(eval_slice, eval_lagrange)| eval_slice.1[i] * eval_lagrange).sum();
-            //     target_evals.push(eval);
-            // }
             
             let evals_q2 = Evaluations::<P::ScalarField>::from_vec_and_domain(sub_poly_evals_sum, *domain);
             let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_q2, &y, &domain);

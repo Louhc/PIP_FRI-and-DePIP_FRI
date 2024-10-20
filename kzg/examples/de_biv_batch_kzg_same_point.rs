@@ -61,7 +61,7 @@ fn main() {
             let mut x_polynomials = Vec::new();
             for _ in 0..y_degree + 1 {
                 let mut x_polynomial_coeffs = vec![];
-                for _ in 0..x_degree + 1 {
+                for _ in 0..(x_degree + 1)/2 {
                     x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
                 }
                 x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(

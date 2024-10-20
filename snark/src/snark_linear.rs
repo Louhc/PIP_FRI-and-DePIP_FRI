@@ -1,4 +1,4 @@
-use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, EvaluationDomain, Evaluations, GeneralEvaluationDomain, Polynomial};
+use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, EvaluationDomain, GeneralEvaluationDomain, Polynomial};
 use std::marker::PhantomData;
 use ark_ec::pairing::Pairing;
 use my_kzg::{uni_batch_kzg::BatchKZG, biv_batch_kzg::BivBatchKZG, biv_trivial_kzg::VerifierSRS, helper::linear_combination_field, transcript::ProofTranscript, uni_trivial_kzg::UniVerifierSRS};
@@ -9,6 +9,8 @@ use ark_ff::{Zero, One, Field};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use std::time::Instant;
 use rayon::prelude::*;
+use crate::prover_nopre::NoPreProver;
+use my_kzg::par_join_3;
 
 #[macro_export] macro_rules! par_join_4 {
     ($task1:expr, $task2:expr, $task3:expr, $task4:expr) => {{
@@ -59,13 +61,12 @@ impl<P: Pairing> DeSNARKLinear<P> {
 
         // commit secret polynomials
         let time = Instant::now();
-        let sub_polynomials = vec![wit_polys.poly_w.clone(), wit_polys.poly_a.clone(), wit_polys.poly_b.clone(), wit_polys.poly_c.clone()];
-        let coms_wit_polys = BivBatchKZG::<P>::de_commit(sub_prover_id, &powers, &sub_polynomials);
+        let coms_wit_polys = NoPreProver::<P>::commit_wit_polys(sub_prover_id, &powers, &wit_polys);
         println!("Prover {:?} commit time: {:?}", sub_prover_id, time.elapsed());
 
         // generate challenges v and u1
         let (v, u1) = if Net::am_master() {
-            let slice: &[P::G1] = &coms_wit_polys.as_ref().unwrap();
+            let slice: &[P::G1] = &coms_wit_polys;
             <Transcript as ProofTranscript<P>>::append_points(transcript, b"v_and_u1", slice);
             let v = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"rlc");
             let u1 = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_ldt_padding");
@@ -75,57 +76,14 @@ impl<P: Pairing> DeSNARKLinear<P> {
             Net::recv_from_master(None)
         };
 
-        // R_i(X) = X^{i-1} and evals R_i(r^{m})
+        // compute polynomials evaluated at r: evals_r and the first-round target polynomial: polynomial_target
         let time = Instant::now();
+        // compute several auxiliary polys and evals about r 
+        // R_i(X) = X^{i-1} and evals R_i(r^{m})
         let eval_r  = r.pow([(m * sub_prover_id) as u64]);
         let r_pow_m = r.pow([m as u64]);
-
-        // f_a(rX)
-        // get (1, r, r^{2} ..., r^{m-1})
-        let mut r_m_powers = vec![P::ScalarField::one(); m];
-        r_m_powers.par_iter_mut().enumerate().for_each(|(i, val)| {
-            *val = r.pow([i as u64]);
-        });
-        let coeffs_a = wit_polys.poly_a.coeffs.to_vec();
-        let coeffs_ar: Vec<P::ScalarField> = coeffs_a.par_iter().zip(r_m_powers.par_iter()).map(|(left, right)| *left * *right).collect();
-        let poly_ar = UnivariatePolynomial::from_coefficients_vec(coeffs_ar);
-
-        // f1 - f4
-        let polys_r = vec![&wit_polys.poly_a, &wit_polys.poly_b, &wit_polys.poly_b, &wit_polys.poly_c];
-        let points_r = vec![*r, P::ScalarField::zero(), r.clone().inverse().unwrap(), *r];
-        let evals_r: Vec<P::ScalarField> = polys_r.par_iter().zip(points_r.par_iter()).map(|(poly, point)| poly.evaluate(&point)).collect();
-        let eval_b_virtual = evals_r[2] * r_pow_m + evals_r[1] * (P::ScalarField::one() - r_pow_m);
-
-        // let eval_a_r = wit_polys.poly_a.evaluate(r);
-        // let eval_b_0 = wit_polys.poly_b.evaluate(&P::ScalarField::zero());
-        // let eval_b_inverse = wit_polys.poly_b.evaluate(&r.clone().inverse().unwrap());
-        // let eval_b_virtual = eval_b_inverse * r_pow_m + eval_b_0 * (P::ScalarField::one() - r_pow_m);
-        // let eval_c_r = wit_polys.poly_c.evaluate(r);
-        // let eval_r_pow_m_mul_c_r = UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * eval_c_r]);
-
-        let domain_2x = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(2 * m).unwrap();
-        let polys_f = vec![&pub_polys.poly_pa, &pub_polys.poly_pb, &pub_polys.poly_pc, &wit_polys.poly_w, &poly_ar, &wit_polys.poly_b];
-        let evals_f: Vec<Vec<P::ScalarField>> = polys_f.par_iter().map(|&poly| poly.clone().evaluate_over_domain(domain_2x).evals).collect();
-        let evals_f1: Vec<P::ScalarField> = evals_f[0].par_iter().zip(evals_f[3].par_iter()).map(|(left, right)| *left * right - eval_r * evals_r[0]).collect();
-        let evals_f2: Vec<P::ScalarField> = evals_f[1].par_iter().zip(evals_f[3].par_iter()).map(|(left, right)| (*left * right - eval_r * eval_b_virtual) * v).collect();
-        let evals_f3: Vec<P::ScalarField> = evals_f[2].par_iter().zip(evals_f[3].par_iter()).map(|(left, right)| (*left * right - eval_r * evals_r[3]) * v.square()).collect();
-        let evals_f4: Vec<P::ScalarField> = evals_f[4].par_iter().zip(evals_f[5].par_iter()).map(|(left, right)| (*left * right - evals_r[3]) * v.pow([3 as u64]) * eval_r).collect();
-        let evals_target: Vec<P::ScalarField> = evals_f1.par_iter().zip(evals_f2.par_iter()).zip(evals_f3.par_iter()).zip(evals_f4.par_iter()).
-            map(|(((&a, &b), &c), &d)| a + b + c + d).collect();
-        let evals_domain_target = Evaluations::<P::ScalarField>::from_vec_and_domain(evals_target, domain_2x);
-        let polynomial_target = evals_domain_target.interpolate();
-
-        // let eval_r_pow_m_mul_c_r = UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * evals_r[3]]);
-        // let polynomial_f1 = &pub_polys.poly_pa * &wit_polys.poly_w + UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * evals_r[0]]);
-        // let polynomial_f2 = &pub_polys.poly_pb * &wit_polys.poly_w + UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * eval_b_virtual]);
-        // let polynomial_f3 = &(&pub_polys.poly_pc * &wit_polys.poly_w) + &eval_r_pow_m_mul_c_r;
-        // let polynomial_f4 = &(&(&poly_ar * &wit_polys.poly_b) * eval_r) + &eval_r_pow_m_mul_c_r;
-
-        // // target polynomial, rlc of f1-f4
-        // let mut polynomial_target = &polynomial_f1 + &(&polynomial_f2 * v);
-        // polynomial_target += (v * v, &polynomial_f3);
-        // polynomial_target += (v.pow([3 as u64]), &polynomial_f4);
-        println!("Prover {:?} compute target polynomial time: {:?}", sub_prover_id, time.elapsed());
+        let (evals_r, polynomial_target) = NoPreProver::<P>::compute_evals_r_and_1st_target_poly(m, &wit_polys, &pub_polys, &r, &eval_r, &r_pow_m, &v);
+        println!("Prover {:?} compute evals_r and target polynomial time: {:?}", sub_prover_id, time.elapsed());
 
         // get g1 and h1
         let time = Instant::now();
@@ -159,22 +117,8 @@ impl<P: Pairing> DeSNARKLinear<P> {
         // evaluate and send polynomial evaluations on alpha
         // also send g1(alpha) and h1(alpha)
         let time = Instant::now();
-        let polys_alpha = vec![pub_polys.poly_pa.clone(), pub_polys.poly_pb.clone(), pub_polys.poly_pc.clone(), wit_polys.poly_w.clone(), wit_polys.poly_a.clone(), wit_polys.poly_b.clone()];
-        let points_alpha = vec![alpha, alpha, alpha, alpha, *r * alpha, alpha];
-        let evals_alpha: Vec<P::ScalarField> = polys_alpha.par_iter().zip(points_alpha.par_iter()).map(|(poly, point)| poly.evaluate(&point)).collect();
-        // let eval_pa_alpha = pub_polys.poly_pa.evaluate(&alpha);
-        // let eval_pb_alpha = pub_polys.poly_pb.evaluate(&alpha);
-        // let eval_pc_alpha = pub_polys.poly_pc.evaluate(&alpha);
-        // let eval_w_alpha = wit_polys.poly_w.evaluate(&alpha);
-        // let eval_ar_alpha = wit_polys.poly_a.evaluate(&(*r * alpha));
-        // assert_eq!(eval_ar_alpha, poly_ar.evaluate(&alpha));
-        // let eval_a_r = eval_a_r;
-        // let eval_b_alpha = wit_polys.poly_b.evaluate(&alpha);
-        // let eval_b_r_inverse = eval_b_inverse;
-        // let eval_b_0 = eval_b_0;
-        // let eval_c_r = eval_c_r;
         let eval_r = eval_r;
-
+        let evals_alpha = NoPreProver::<P>::compute_evals_alpha(&wit_polys, &pub_polys, &r, &alpha);
         // slices of g1(alpha) and h1(alpha)
         let eval_g1 = poly_g1.evaluate(&alpha);
         let eval_h1 = poly_h1.evaluate(&alpha);
@@ -194,58 +138,11 @@ impl<P: Pairing> DeSNARKLinear<P> {
         let time = Instant::now();
         let (evals_g1_h1, proof_g1_h1, coms_g2_h2, evals_domain_g2_h2, polynomials_y, polys_g2_h2) = if Net::am_master() {
             // g1(alpha) and h1(alpha)
-            let eval_g1: P::ScalarField = evals.par_iter().map(|(eval, _)| eval[11]).sum();
-            let eval_h1: P::ScalarField = evals.par_iter().map(|(eval, _)| eval[12]).sum();
-            let evals_g1_h1 = vec![eval_g1, eval_h1];
-
             // get proof of g1 and h1
-            let proof_g1_h1 = evals.par_iter().map(|(_, proof)| proof).sum();
+            let (evals_g1_h1, proof_g1_h1) = NoPreProver::<P>::open_g1_h1(&evals);
 
-            // compute univariate polynomials over Y with X = alpha
-            // using ifft, from evaluations to polynomials
-            // Require g2 and h2, so have to convert to coefficient terms
-
-            let evals_pa_alpha = evals.par_iter().map(|(eval, _)| eval[0]).collect();
-            let evals_pb_alpha = evals.par_iter().map(|(eval, _)| eval[1]).collect();
-            let evals_pc_alpha = evals.par_iter().map(|(eval, _)| eval[2]).collect();
-            let evals_w_alpha = evals.par_iter().map(|(eval, _)| eval[3]).collect();
-            let evals_a_r_alpha = evals.par_iter().map(|(eval, _)| eval[4]).collect();
-            let evals_a_r = evals.par_iter().map(|(eval, _)| eval[5]).collect();
-            let evals_b_alpha = evals.par_iter().map(|(eval, _)| eval[6]).collect();
-            let evals_b_r_inverse: Vec<P::ScalarField> = evals.par_iter().map(|(eval, _)| eval[7]).collect();
-            let evals_b_0: Vec<P::ScalarField> = evals.par_iter().map(|(eval, _)| eval[8]).collect();
-            let evals_c_r = evals.par_iter().map(|(eval, _)| eval[9]).collect();
-            let evals_r = evals.par_iter().map(|(eval, _)| eval[10]).collect();
-
-            let poly_pa_alpha = interpolate_from_eval_domain::<P>(&evals_pa_alpha, y_domain);
-            let poly_pb_alpha = interpolate_from_eval_domain::<P>(&evals_pb_alpha, y_domain);
-            let poly_pc_alpha = interpolate_from_eval_domain::<P>(&evals_pc_alpha, y_domain);
-            let poly_w_alpha = interpolate_from_eval_domain::<P>(&evals_w_alpha, y_domain);
-            let poly_a_r_alpha = interpolate_from_eval_domain::<P>(&evals_a_r_alpha, y_domain);
-            let poly_a_r = interpolate_from_eval_domain::<P>(&evals_a_r, y_domain);
-            let poly_b_alpha = interpolate_from_eval_domain::<P>(&evals_b_alpha, y_domain);
-            let poly_b_r_inverse = interpolate_from_eval_domain::<P>(&evals_b_r_inverse, y_domain);
-            let poly_b_0 = interpolate_from_eval_domain::<P>(&evals_b_0, y_domain);
-            let poly_b_r_virtual = &poly_b_r_inverse * r_pow_m + &poly_b_0 * (P::ScalarField::one() - r_pow_m);
-            let poly_c_r = interpolate_from_eval_domain::<P>(&evals_c_r, y_domain);
-            let poly_r = interpolate_from_eval_domain::<P>(&evals_r, y_domain);
-
-            let poly_f1_alpha = &(&poly_pa_alpha * &poly_w_alpha) - &(&poly_r * &poly_a_r);
-            let poly_f2_alpha = &(&poly_pb_alpha * &poly_w_alpha) - &(&poly_r * &poly_b_r_virtual);
-            let poly_f3_alpha = &(&poly_pc_alpha * &poly_w_alpha) - &(&poly_r * &poly_c_r);
-            let poly_f4_alpha = &(&(&poly_r * &poly_a_r_alpha) * &poly_b_alpha) - &(&poly_r * &poly_c_r);
-
-            let polynomials_y = vec![poly_pa_alpha, poly_pb_alpha, poly_pc_alpha, poly_w_alpha,
-                                                                                poly_a_r_alpha, poly_a_r, poly_b_alpha, poly_b_r_inverse, poly_b_0, poly_c_r, poly_r];
-            // get the target polynomial over Y via rlc
-            let mut alpha_minus_u1 = alpha - u1;
-            let mut polynomial_target_y = &poly_f1_alpha * alpha_minus_u1;
-            alpha_minus_u1 *= v;
-            polynomial_target_y += (alpha_minus_u1, &poly_f2_alpha);
-            alpha_minus_u1 *= v;
-            polynomial_target_y += (alpha_minus_u1, &poly_f3_alpha);
-            alpha_minus_u1 *= v;
-            polynomial_target_y += (alpha_minus_u1, &poly_f4_alpha);
+            // compute univariate polynomials evaluations at alpha and the target poly over Y for univariate sum-check
+            let (polynomials_y, polynomial_target_y) = NoPreProver::<P>::compute_y_polys_and_2nd_target_poly(l, &evals, &y_domain, &r_pow_m, &alpha, &u1, &v);
 
             // get g2, h2low, h2high
             let (poly_g2, poly_h2) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target_y, &u2, &y_domain);
@@ -257,18 +154,16 @@ impl<P: Pairing> DeSNARKLinear<P> {
             let poly_h2_high = UnivariatePolynomial::from_coefficients_vec(coeffs_h2_high);
 
             // get lagrange evaluations of g2, h2low, h2high
-            let evals_g2 = poly_g2.evaluate_over_domain_by_ref(*y_domain);
-            let evals_h2_low = poly_h2_low.evaluate_over_domain_by_ref(*y_domain);
-            let evals_h2_high = poly_h2_high.evaluate_over_domain_by_ref(*y_domain);
+            let (evals_g2, evals_h2_low, evals_h2_high) = par_join_3!(
+                || poly_g2.evaluate_over_domain_by_ref(*y_domain),
+                || poly_h2_low.evaluate_over_domain_by_ref(*y_domain),
+                || poly_h2_high.evaluate_over_domain_by_ref(*y_domain)
+            );
             let polys_g2_h2 = vec![poly_g2, poly_h2_low, poly_h2_high];
 
             // compute commitments to g2, h2low, h2high
             let evals_domain_g2_h2 = vec![evals_g2, evals_h2_low, evals_h2_high];
             let coms_g2_h2 = BatchKZG::<P>::commit_lagrange(&y_srs, &evals_domain_g2_h2).unwrap();
-            // let com_g2 = KZG::<P>::commit_lagrange(&y_srs, &evals_g2).unwrap();
-            // let com_h2_low = KZG::<P>::commit_lagrange(&y_srs, &evals_h2_low).unwrap();
-            // let com_h2_high = KZG::<P>::commit_lagrange(&y_srs, &evals_h2_high).unwrap();
-            // let coms_g2_h2 = vec![com_g2, com_h2_low, com_h2_high];
 
             (evals_g1_h1, proof_g1_h1, coms_g2_h2, evals_domain_g2_h2, polynomials_y, polys_g2_h2)
         } else {
@@ -290,6 +185,7 @@ impl<P: Pairing> DeSNARKLinear<P> {
         // generate proof to alpha, beta
         let time = Instant::now();
         let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r]];
+        let sub_polynomials = vec![wit_polys.poly_w.clone(), wit_polys.poly_a.clone(), wit_polys.poly_b.clone(), wit_polys.poly_c.clone()];
         let proofs_wit_polys= BivBatchKZG::<P>::de_open_lagrange_at_same_y(sub_prover_id, &powers, &x_srs, &sub_polynomials, &x_points, &beta, &y_domain, transcript, &gamma);
         println!("Prover {:?} computs proofs of bivariate polynomials time: {:?}", sub_prover_id, time.elapsed());
 
@@ -301,9 +197,6 @@ impl<P: Pairing> DeSNARKLinear<P> {
             let eval_h2_low = polys_g2_h2[1].evaluate(&beta);
             let eval_h2_high = polys_g2_h2[2].evaluate(&beta);
             
-            // let eval_pa_alpha_beta = polynomials_y[0].evaluate(&beta);
-            // let eval_pb_alpha_beta = polynomials_y[1].evaluate(&beta);
-            // let eval_pc_alpha_beta = polynomials_y[2].evaluate(&beta);
             let eval_w_alpha_beta = polynomials_y[3].evaluate(&beta);
             let eval_ar_alpha_beta = polynomials_y[4].evaluate(&beta);
             let eval_a_r_beta = polynomials_y[5].evaluate(&beta);
@@ -325,7 +218,7 @@ impl<P: Pairing> DeSNARKLinear<P> {
             Some(SNARKProofLinear {
                 coms_g1_h1,
                 coms_g2_h2,
-                coms_wit_polys: coms_wit_polys.unwrap(),
+                coms_wit_polys,
                 evals_wit_polys,
                 evals_g1_h1,
                 evals_g2_h2,
@@ -489,11 +382,4 @@ impl<P: Pairing> DeSNARKLinear<P> {
 
 }
 
-pub fn interpolate_from_eval_domain <P: Pairing> (
-    evals: &Vec<P::ScalarField>,
-    domain: &GeneralEvaluationDomain<P::ScalarField>,
-) -> UnivariatePolynomial<P::ScalarField> {
-    let eval_domain = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(evals.clone(), *domain);
-    eval_domain.interpolate()
-}
 
