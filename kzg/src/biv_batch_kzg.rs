@@ -179,7 +179,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         point: &(P::ScalarField, P::ScalarField),
         domain: &GeneralEvaluationDomain<P::ScalarField>,
         challenge: &P::ScalarField,
-    ) -> Option<(Vec<P::ScalarField>, P::G1, P::G1)> {
+    ) -> Option<(Vec<P::ScalarField>, (P::G1, P::G1))> {
         // generate q1(x,y) and q2(y)
         // see f(x,y) - f(z1,z2) = f(x,y) - f(z1,y) + f(z1,y) - f(z1,z2)
         // q1(x,y) = f(x,y)-f(z1,y)/(x-z1) = \sum_i [(f_{i}(x)-f_{i}(z1))/(x-z1)] \cdot L_i(Y)
@@ -243,7 +243,7 @@ impl<P: Pairing> BivBatchKZG<P> {
             let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_q2, &y, &domain);
             let proof_2 = P::G1::msm(&y_srs, &coeffs_q2).unwrap();
 
-            Some((target_evals, proof_1, proof_2))
+            Some((target_evals, (proof_1, proof_2)))
         }
         else {
             None

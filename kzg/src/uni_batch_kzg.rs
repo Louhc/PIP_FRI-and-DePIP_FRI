@@ -132,7 +132,7 @@ impl<P: Pairing> BatchKZG<P> {
         points: &Vec<Vec<P::ScalarField>>,
         challenge: &P::ScalarField,
         transcript: &mut Transcript,
-    ) -> Result<(Vec<Vec<P::ScalarField>>, P::G1, P::G1), Error> {
+    ) -> Result<(Vec<Vec<P::ScalarField>>, (P::G1, P::G1)), Error> {
         assert_eq!(polynomials.len(), points.len());
         let gamma = *challenge;
         let point_vec = points.par_iter().flatten().cloned().collect();
@@ -197,7 +197,7 @@ impl<P: Pairing> BatchKZG<P> {
                                     &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);
         let com_l = KZG::<P>::commit(&powers, &poly_l).unwrap();
 
-        Ok((evals, com_h, com_l))
+        Ok((evals, (com_h, com_l)))
     }
 
 
@@ -205,11 +205,11 @@ impl<P: Pairing> BatchKZG<P> {
         v_srs: &UniVerifierSRS<P>,
         coms: &Vec<P::G1>,
         points: &Vec<Vec<P::ScalarField>>,
-        proof: &(Vec<Vec<P::ScalarField>>, P::G1, P::G1),
+        proof: &(Vec<Vec<P::ScalarField>>, (P::G1, P::G1)),
         challenge: &P::ScalarField,
         transcript: &mut Transcript
     ) -> Result<bool, Error> {
-        let (evals, com_h, com_l) = proof;
+        let (evals, (com_h, com_l)) = proof;
         assert_eq!(coms.len(), points.len());
         assert!(coms.len() == evals.len());
 
@@ -577,7 +577,7 @@ mod tests {
         println!("KZG open  time, {:} log_degree: {:?} ms", log_degree, open_start.elapsed().as_millis());
 
         // Proof size
-        let proof_size = size_of_val(&proof.1) + size_of_val(&proof.2) + proof.0.len() * (size_of_val(&proof.0[0][0]) * proof.0[0].len());
+        let proof_size = size_of_val(&proof.1) + proof.0.len() * (size_of_val(&proof.0[0][0]) * proof.0[0].len());
         println!("KZG proof size, {:} log_degree: {:?} bytes", log_degree, proof_size);
 
         // Verify

@@ -6,14 +6,13 @@ use ark_ec::pairing::Pairing;
 use merlin::Transcript;
 use my_ipa::ipa::IPA;
 use my_kzg::{biv_batch_kzg::BivBatchKZG, par_join_3, uni_batch_kzg::BatchKZG, uni_trivial_kzg::KZG};
-// use my_ipa::helper::{R1CSPublicPolys, R1CSWitnessPolys, R1CSDePublicPolys};
 use ark_ff::{Zero, One, Field};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
-// use std::time::Instant;
 use rayon::prelude::*;
 use crate::indexer::{DeLowerAandBEvals, DeLowerAandBPolys};
 use crate::prover_nopre::NoPreProver;
 use crate::par_join_4;
+use my_ipa::de_ipa::DeIPA;
 
 #[derive(Clone)]
 // The original data of row index vectors for pa, pb, pc
@@ -107,6 +106,7 @@ pub struct PreProver<P: Pairing> {
 }
 
 impl<P: Pairing> PreProver<P> {
+
     pub fn compute_upper_a_t_polys_from_rows (
         // use x_domain for m, use m_domain for m prime
         m: usize,
@@ -115,7 +115,7 @@ impl<P: Pairing> PreProver<P> {
         m_domain: &GeneralEvaluationDomain<P::ScalarField>,
         row_index_vec: &DeRowIndex,
         r: &P::ScalarField,
-    ) -> DeAandTPolys<P> {
+    ) -> (DeAandTPolys<P>, DeAandTEvals<P>) {
 
         assert!(m.is_power_of_two());
         assert!(m_domain.size().is_power_of_two());
@@ -125,66 +125,68 @@ impl<P: Pairing> PreProver<P> {
         let r_pow = r.pow([sqrt_ml as u64]);
 
         // compute A_pa_low and A_pa_high
-        let (a_pa_low, a_pa_high) = rayon::join(
+        let ((a_pa_low, eval_a_pa_low), (a_pa_high, eval_a_pa_high)) = rayon::join(
             || {
                 let evals_a_pa_low = row_index_vec.row_pa_low.par_iter().map(|eval| r.pow([*eval as u64])).collect();
-                let evals_a_pa_low = Evaluations::from_vec_and_domain(evals_a_pa_low, *m_domain);
-                evals_a_pa_low.interpolate()
+                let a_pa_low = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pa_low, m_domain);
+                (a_pa_low, evals_a_pa_low)
             }, 
             || {
                 let evals_a_pa_high = row_index_vec.row_pa_high.par_iter().map(|eval| r_pow.pow([*eval as u64])).collect();
-                let evals_a_pa_high = Evaluations::from_vec_and_domain(evals_a_pa_high, *m_domain);
-                evals_a_pa_high.interpolate()
+                let a_pa_high = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pa_high, m_domain);
+                (a_pa_high, evals_a_pa_high)
         });
 
         // compute A_pb_low and A_pb_high
-        let (a_pb_low, a_pb_high) = rayon::join(
+        let ((a_pb_low, eval_a_pb_low), (a_pb_high, eval_a_pb_high)) = rayon::join(
             || {
                 let evals_a_pb_low = row_index_vec.row_pb_low.par_iter().map(|eval| r.pow([*eval as u64])).collect();
-                let evals_a_pb_low = Evaluations::from_vec_and_domain(evals_a_pb_low, *m_domain);
-                evals_a_pb_low.interpolate()
+                let a_pb_low = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pb_low, m_domain);
+                (a_pb_low, evals_a_pb_low)
             }, 
             || {
                 let evals_a_pb_high = row_index_vec.row_pb_high.par_iter().map(|eval| r_pow.pow([*eval as u64])).collect();
-                let evals_a_pb_high = Evaluations::from_vec_and_domain(evals_a_pb_high, *m_domain);
-                evals_a_pb_high.interpolate()
+                let a_pb_high = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pb_high, m_domain);
+                (a_pb_high, evals_a_pb_high)
         });
 
         // compute A_pc_low and A_pc_high
-        let (a_pc_low, a_pc_high) = rayon::join(
+        let ((a_pc_low, eval_a_pc_low), (a_pc_high, eval_a_pc_high)) = rayon::join(
             || {
                 let evals_a_pc_low = row_index_vec.row_pc_low.par_iter().map(|eval| r.pow([*eval as u64])).collect();
-                let evals_a_pc_low = Evaluations::from_vec_and_domain(evals_a_pc_low, *m_domain);
-                evals_a_pc_low.interpolate()
+                let a_pc_low = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pc_low, m_domain);
+                (a_pc_low, evals_a_pc_low)
             }, 
             || {
                 let evals_a_pc_high = row_index_vec.row_pc_high.par_iter().map(|eval| r_pow.pow([*eval as u64])).collect();
-                let evals_a_pc_high = Evaluations::from_vec_and_domain(evals_a_pc_high, *m_domain);
-                evals_a_pc_high.interpolate()
+                let a_pc_high = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pc_high, m_domain);
+                (a_pc_high, evals_a_pc_high)
         });
 
         // compute T_low and T_high
-        let (t_row_low, t_row_high) = if Net::am_master() {
+        let ((t_row_low, eval_t_row_low), (t_row_high, eval_t_row_high)) = if Net::am_master() {
             rayon::join(
                 || {
                     let t_low_evals = (0..m).into_par_iter().map(|i| r.pow([i as u64])).collect();
-                    let t_low_evals = Evaluations::from_vec_and_domain(t_low_evals, *x_domain);
-                    t_low_evals.interpolate()
+                    let t_row_low = DeIPA::<P>::interpolate_from_eval_domain(&t_low_evals, x_domain);
+                    (t_row_low, t_low_evals)
                 },
                 || {
                     let t_high_evals = (0..m).into_par_iter().map(|i| r_pow.pow([i as u64])).collect();
-                    let t_high_evals = Evaluations::from_vec_and_domain(t_high_evals, *x_domain);
-                    t_high_evals.interpolate()
+                    let t_row_high = DeIPA::<P>::interpolate_from_eval_domain(&t_high_evals, x_domain);
+                    (t_row_high, t_high_evals)
                 })
         } else {
-            (UnivariatePolynomial::zero(), UnivariatePolynomial::zero())
+            ((UnivariatePolynomial::zero(), Vec::new()), (UnivariatePolynomial::zero(), Vec::new()))
         };
         
-        DeAandTPolys {a_pa_low, a_pa_high, a_pb_low, a_pb_high, a_pc_low, a_pc_high, t_row_low, t_row_high}
+        (DeAandTPolys {a_pa_low, a_pa_high, a_pb_low, a_pb_high, a_pc_low, a_pc_high, t_row_low, t_row_high},
+            DeAandTEvals {eval_a_pa_low, eval_a_pa_high, eval_a_pb_low, eval_a_pb_high, eval_a_pc_low, eval_a_pc_high, eval_t_row_low, eval_t_row_high})
     }
 
     pub fn commit_g1_h1_upper_a_t_polys (
-        m_srs: &Vec<P::G1Affine>,
+        sub_prover_id: usize,
+        m_powers: &Vec<Vec<P::G1Affine>>,
         x_srs: &Vec<P::G1Affine>,
         g1: &UnivariatePolynomial<P::ScalarField>, 
         h1: &UnivariatePolynomial<P::ScalarField>,
@@ -192,27 +194,20 @@ impl<P: Pairing> PreProver<P> {
     ) -> (Vec<P::G1>, Vec<P::G1>) {
         let set = upper_a_t_polys;
 
-        let (coms_upper_a_first, coms_upper_a_second, coms_g1_h1_t_polys) = par_join_3!(
-            || {
-                let upper_a_polys_first = vec![set.a_pa_low.clone(), set.a_pa_high.clone(), set.a_pb_low.clone()];
-                BatchKZG::<P>::commit(&m_srs, &upper_a_polys_first).unwrap()
-            }, 
-            || {
-                let upper_a_polys_second = vec![set.a_pb_high.clone(), set.a_pc_low.clone(), set.a_pc_high.clone()];
-                BatchKZG::<P>::commit(&m_srs, &upper_a_polys_second).unwrap()
-            }, 
-            || {
-                let g1_h1_t_polys = if Net::am_master() {
-                    vec![g1.clone(), h1.clone(), set.t_row_low.clone(), set.t_row_high.clone()]
-                } else {
-                    vec![g1.clone(), h1.clone()]
-                };
-                BatchKZG::<P>::commit(&x_srs, &g1_h1_t_polys).unwrap()
-            }
-        );
-        coms_upper_a_first.clone().extend(&coms_upper_a_second);
+        let polys_upper_a = vec![set.a_pa_low.clone(), set.a_pa_high.clone(), set.a_pb_low.clone(), 
+            set.a_pb_high.clone(), set.a_pc_low.clone(), set.a_pc_high.clone()];
+        let coms_upper_a = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &polys_upper_a).unwrap();
 
-        (coms_upper_a_first, coms_g1_h1_t_polys)
+        let coms_g1_h1_t_polys = {
+            let g1_h1_t_polys = if Net::am_master() {
+                vec![g1.clone(), h1.clone(), set.t_row_low.clone(), set.t_row_high.clone()]
+            } else {
+                vec![g1.clone(), h1.clone()]
+            };
+            BatchKZG::<P>::commit(&x_srs, &g1_h1_t_polys).unwrap()
+        };
+
+        (coms_upper_a, coms_g1_h1_t_polys)
     }
 
     pub fn compute_upper_b_t_polys_from_cols (
@@ -222,7 +217,7 @@ impl<P: Pairing> PreProver<P> {
         m_domain: &GeneralEvaluationDomain<P::ScalarField>,
         sub_col: &DeColIndex,
         alpha: &P::ScalarField,
-    ) -> DeBandTPolys<P> {
+    ) -> (DeBandTPolys<P>, DeBandTEvals<P>) {
 
         assert!(m.is_power_of_two());
         assert!(m_domain.size().is_power_of_two());
@@ -230,49 +225,112 @@ impl<P: Pairing> PreProver<P> {
         assert_eq!(sub_col.col_pa.len(), m_domain.size());
 
         // compute B_pa, B_pb, B_pc
-        let (b_pa, b_pb, b_pc) = par_join_3!(
+        let ((b_pa, eval_b_pa), (b_pb, eval_b_pb), (b_pc, eval_b_pc)) = par_join_3!(
             || {
                 let evals_b_pa = sub_col.col_pa.par_iter().map(|eval| alpha.pow([*eval as u64])).collect();
-                let evals_b_pa = Evaluations::from_vec_and_domain(evals_b_pa, *m_domain);
-                evals_b_pa.interpolate()
+                let b_pa = DeIPA::<P>::interpolate_from_eval_domain(&evals_b_pa, m_domain);
+                (b_pa, evals_b_pa)
             }, 
             || {
                 let evals_b_pb = sub_col.col_pb.par_iter().map(|eval| alpha.pow([*eval as u64])).collect();
-                let evals_b_pb = Evaluations::from_vec_and_domain(evals_b_pb, *m_domain);
-                evals_b_pb.interpolate()
+                let b_pb = DeIPA::<P>::interpolate_from_eval_domain(&evals_b_pb, m_domain);
+                (b_pb, evals_b_pb)
             }, 
             || {
                 let evals_b_pc = sub_col.col_pc.par_iter().map(|eval| alpha.pow([*eval as u64])).collect();
-                let evals_b_pc = Evaluations::from_vec_and_domain(evals_b_pc, *m_domain);
-                evals_b_pc.interpolate()
+                let b_pc = DeIPA::<P>::interpolate_from_eval_domain(&evals_b_pc, m_domain);
+                (b_pc, evals_b_pc)
             }
         );
 
         // compute T_col
-        let t_col = if Net::am_master() {
+        let (t_col, eval_t_col) = if Net::am_master() {
             let t_col_evals = (0..m).into_par_iter().map(|i| alpha.pow([i as u64])).collect();
-            let t_col_evals = Evaluations::from_vec_and_domain(t_col_evals, *x_domain);
-            t_col_evals.interpolate()
+            let t_col = DeIPA::<P>::interpolate_from_eval_domain(&t_col_evals, x_domain);
+            (t_col, t_col_evals)
         } else {
-            UnivariatePolynomial::zero()
+            (UnivariatePolynomial::zero(), Vec::new())
         };
 
-        DeBandTPolys {b_pa, b_pb, b_pc, t_col}
+        (DeBandTPolys {b_pa, b_pb, b_pc, t_col},
+            DeBandTEvals {eval_b_pa, eval_b_pb, eval_b_pc, eval_t_col})
     }
 
-    pub fn commit_upper_b_t_polys (
-        m_srs: &Vec<P::G1Affine>,
-        x_srs: &Vec<P::G1Affine>,
+    pub fn commit_upper_b_polys (
+        sub_prover_id: usize,
+        m_powers: &Vec<Vec<P::G1Affine>>,
         upper_b_t_polys: &DeBandTPolys<P>,
-    ) -> (Vec<P::G1>, P::G1) {
+    ) -> Vec<P::G1> {
         let set = upper_b_t_polys.clone();
         let polys_m_srs = vec![set.b_pa, set.b_pb, set.b_pc];
-        let poly_x_srs = set.t_col;
+        let coms_upper_b = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &polys_m_srs).unwrap();
 
-        let coms_m_srs = BatchKZG::<P>::commit(&m_srs, &polys_m_srs).unwrap();
-        let com_x_srs = KZG::<P>::commit(&x_srs, &poly_x_srs).unwrap();
+        coms_upper_b
+    }
 
-        (coms_m_srs, com_x_srs)
+    // need self-check of the validity
+    pub fn compute_pub_evals_alpha_beta (
+        upper_a_t_polys: &DeAandTPolys<P>,
+        upper_b_t_polys: &DeBandTPolys<P>,
+        val_polys: &DeValPolys<P>,
+        m_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        eval_beta: &P::ScalarField,
+    ) -> Vec<P::ScalarField> {
+
+        let (sum_pa, sum_pb, sum_pc): (P::ScalarField, P::ScalarField, P::ScalarField) = par_join_3!(
+            || {
+                let eval_val = val_polys.val_pa.evaluate_over_domain_by_ref(*m_domain).evals;
+                let eval_row_low = upper_a_t_polys.a_pa_low.evaluate_over_domain_by_ref(*m_domain).evals;
+                let eval_row_high = upper_a_t_polys.a_pa_high.evaluate_over_domain_by_ref(*m_domain).evals;
+                let eval_col = upper_b_t_polys.b_pa.evaluate_over_domain_by_ref(*m_domain).evals;
+
+                let sum_pa: P::ScalarField = eval_val.par_iter().zip(eval_row_low.par_iter())
+                    .zip(eval_row_high.par_iter()).zip(eval_col.par_iter())
+                    .map(|(((a, b), c), d)| *a * *b * *c * *d).sum();
+                let sum_pa = sum_pa * eval_beta;
+                sum_pa
+            }, 
+            || {
+                let eval_val = val_polys.val_pb.evaluate_over_domain_by_ref(*m_domain).evals;
+                let eval_row_low = upper_a_t_polys.a_pb_low.evaluate_over_domain_by_ref(*m_domain).evals;
+                let eval_row_high = upper_a_t_polys.a_pb_high.evaluate_over_domain_by_ref(*m_domain).evals;
+                let eval_col = upper_b_t_polys.b_pb.evaluate_over_domain_by_ref(*m_domain).evals;
+
+                let sum_pb: P::ScalarField = eval_val.par_iter().zip(eval_row_low.par_iter())
+                    .zip(eval_row_high.par_iter()).zip(eval_col.par_iter())
+                    .map(|(((a, b), c), d)| *a * *b * *c * *d).sum();
+                let sum_pb = sum_pb * eval_beta;
+                sum_pb
+            }, 
+            || {
+                let eval_val = val_polys.val_pc.evaluate_over_domain_by_ref(*m_domain).evals;
+                let eval_row_low = upper_a_t_polys.a_pc_low.evaluate_over_domain_by_ref(*m_domain).evals;
+                let eval_row_high = upper_a_t_polys.a_pc_high.evaluate_over_domain_by_ref(*m_domain).evals;
+                let eval_col = upper_b_t_polys.b_pc.evaluate_over_domain_by_ref(*m_domain).evals;
+
+                let sum_pc: P::ScalarField = eval_val.par_iter().zip(eval_row_low.par_iter())
+                    .zip(eval_row_high.par_iter()).zip(eval_col.par_iter())
+                    .map(|(((a, b), c), d)| *a * *b * *c * *d).sum();
+                let sum_pc = sum_pc * eval_beta;
+                sum_pc
+            }
+        );
+
+        // send sum to P0
+        let sums_slice = Net::send_to_master(&(sum_pa, sum_pb, sum_pc));
+        let (eval_pa_alpha_beta, eval_pb_alpha_beta, eval_pc_alpha_beta) = if Net::am_master() {
+            let sums = sums_slice.unwrap();
+            let (eval_pa_alpha_beta, eval_pb_alpha_beta, eval_pc_alpha_beta) = par_join_3!(
+                || sums.par_iter().map(|slice| slice.0).sum(), 
+                || sums.par_iter().map(|slice| slice.1).sum(), 
+                || sums.par_iter().map(|slice| slice.2).sum()
+            );
+            (eval_pa_alpha_beta, eval_pb_alpha_beta, eval_pc_alpha_beta)
+        } else {
+            (P::ScalarField::zero(), P::ScalarField::zero(), P::ScalarField::zero())
+        };
+
+        vec![eval_pa_alpha_beta, eval_pb_alpha_beta, eval_pc_alpha_beta]
     }
 
     pub fn compute_sub_f1_and_f2 (
@@ -412,7 +470,10 @@ impl<P: Pairing> PreProver<P> {
         let com_f1 = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &sub_polynomials);
 
         let (com_f1, com_f2) = if Net::am_master() {
-            let com_f1 = com_f1.unwrap()[0];
+            // can get [0] as there is only one element in the vec
+            let com_f1 = com_f1.unwrap();
+            assert_eq!(com_f1.len(), 1);
+            let com_f1 = com_f1[0];
             let com_f2 = KZG::<P>::commit(&x_srs, poly_f2).unwrap();
             (com_f1, com_f2)
         } else {
@@ -512,8 +573,9 @@ impl<P: Pairing> PreProver<P> {
     }
 
     // compute de-evals of upper and lower polys at delta
+    // keep the order 
     pub fn compute_evals_at_delta_beta_and_g3_h3_proofs (
-        x_srs: &[P::G1Affine],
+        m_srs: &[P::G1Affine],
         val_polys: &DeValPolys<P>,
         upper_a_t_polys: &DeAandTPolys<P>,
         upper_b_t_polys: &DeBandTPolys<P>,
@@ -527,35 +589,35 @@ impl<P: Pairing> PreProver<P> {
         // evaluate upper polys Alow, Ahigh, B plus L(beta) evaluations on delta and beta
         let (evals_first, evals_second, evals_third): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = par_join_3!(
             || {
-                let polys = vec![&val_polys.val_pa, &upper_a_t_polys.a_pa_low, &upper_a_t_polys.a_pa_high, &upper_b_t_polys.b_pa];
+                let polys = vec![&val_polys.val_pa, &val_polys.val_pb, &val_polys.val_pc, &upper_a_t_polys.a_pa_low];
                 polys.par_iter().map(|&poly| poly.clone().evaluate(&delta)).collect()
             }, 
             || {
-                let polys = vec![&val_polys.val_pb, &upper_a_t_polys.a_pb_low, &upper_a_t_polys.a_pb_high, &upper_b_t_polys.b_pb];
+                let polys = vec![&upper_a_t_polys.a_pa_high, &upper_a_t_polys.a_pb_low, &upper_a_t_polys.a_pb_high, &upper_a_t_polys.a_pc_low];
                 polys.par_iter().map(|&poly| poly.clone().evaluate(&delta)).collect()
             }, 
             || {
-                let polys = vec![&val_polys.val_pc, &upper_a_t_polys.a_pc_low, &upper_a_t_polys.a_pc_high, &upper_b_t_polys.b_pc];
+                let polys = vec![&upper_a_t_polys.a_pc_high, &upper_b_t_polys.b_pa, &upper_b_t_polys.b_pb, &upper_b_t_polys.b_pc];
                 polys.par_iter().map(|&poly| poly.clone().evaluate(&delta)).collect()
             }
         );
-        let mut upper_evals = evals_first;
-        upper_evals.extend(evals_second);
-        upper_evals.extend(evals_third);
-        upper_evals.extend(vec![eval_beta]);
+        let mut val_upper_evals = evals_first;
+        val_upper_evals.extend(evals_second);
+        val_upper_evals.extend(evals_third);
+        val_upper_evals.extend(vec![eval_beta]);
 
         // evaluate lower polys alow ahigh b evaluations on delta, used only for lookup
         let (lower_evals_first, lower_evals_second, lower_evals_third): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = par_join_3!(
             || {
-                let polys = vec![&lower_a_b_polys.la_pa_low, &lower_a_b_polys.la_pa_high, &lower_a_b_polys.lb_pa];
+                let polys = vec![&lower_a_b_polys.la_pa_low, &lower_a_b_polys.la_pa_high, &lower_a_b_polys.la_pb_low ];
                 polys.par_iter().map(|&poly| poly.clone().evaluate(&delta)).collect()
             }, 
             || {
-                let polys = vec![&lower_a_b_polys.la_pb_low, &lower_a_b_polys.la_pb_high, &lower_a_b_polys.lb_pb];
+                let polys = vec![ &lower_a_b_polys.la_pb_high, &lower_a_b_polys.la_pc_low, &lower_a_b_polys.la_pc_high];
                 polys.par_iter().map(|&poly| poly.clone().evaluate(&delta)).collect()
             }, 
             || {
-                let polys = vec![&lower_a_b_polys.la_pc_low, &lower_a_b_polys.la_pc_high, &lower_a_b_polys.lb_pc];
+                let polys = vec![&lower_a_b_polys.lb_pa, &lower_a_b_polys.lb_pb, &lower_a_b_polys.lb_pc];
                 polys.par_iter().map(|&poly| poly.clone().evaluate(&delta)).collect()
             }
         );
@@ -568,31 +630,36 @@ impl<P: Pairing> PreProver<P> {
                 polys_g3_h3[0].evaluate(&delta), polys_g3_h3[1].evaluate(&delta), polys_g3_h3[2].evaluate(&delta), polys_g3_h3[3].evaluate(&delta)
             );
         let g3_h3_evals = vec![eval_g3, eval_h3_low, eval_h3_mid, eval_h3_high];
-        let proof_g3_h3 = BatchKZG::<P>::open(&x_srs, polys_g3_h3, &delta, &gamma).unwrap();
+        let proof_g3_h3 = BatchKZG::<P>::open(&m_srs, polys_g3_h3, &delta, &gamma).unwrap();
 
-        (upper_evals, lower_evals, g3_h3_evals, proof_g3_h3)
+        (val_upper_evals, lower_evals, g3_h3_evals, proof_g3_h3)
     }
 
     pub fn send_evals_at_delta_beta_and_g3_h3_proofs (
         upper_evals: &Vec<P::ScalarField>, 
-        lower_evals: &Vec<P::ScalarField>,
         g3_h3_evals: &Vec<P::ScalarField>,
         proof_g3_h3: &P::G1,
-    ) -> (Vec<Vec<P::ScalarField>>, Vec<Vec<P::ScalarField>>, Vec<Vec<P::ScalarField>>, Vec<P::G1>) {
+    ) -> (Vec<Vec<P::ScalarField>>, Vec<P::ScalarField>, P::G1) {
         // total evals
-        let evals = Net::send_to_master(&(upper_evals.clone(), lower_evals.clone(), g3_h3_evals.clone(), proof_g3_h3.clone()));
+        let evals = Net::send_to_master(&(upper_evals.clone(), g3_h3_evals.clone(), proof_g3_h3.clone()));
 
-        let (upper_total_evals, lower_total_evals, g3_h3_evals, proofs_g3_h3) = if Net::am_master() {
+        let (upper_total_evals, evals_g3_h3, proof_g3_h3) = if Net::am_master() {
             let evals = evals.unwrap();
-            let upper_evals = evals.par_iter().map(|(a, _, _, _)| a.clone()).collect();
-            let lower_evals = evals.par_iter().map(|(_, b, _, _)| b.clone()).collect();
-            let g3_h3_evals = evals.par_iter().map(|(_, _, c, _)| c.clone()).collect();
-            let proofs_g3_h3 = evals.par_iter().map(|(_, _, _, d)| d.clone()).collect();
-            (upper_evals, lower_evals, g3_h3_evals, proofs_g3_h3)
+            let upper_evals = evals.par_iter().map(|(a, _, _)| a.clone()).collect();
+            let g3_h3_evals: Vec<Vec<P::ScalarField>> = evals.par_iter().map(|(_, b, _)| b.clone()).collect();
+            let (eval_g3, eval_h3_low, eval_h3_mid, eval_h3_high): (P::ScalarField, P::ScalarField, P::ScalarField, P::ScalarField) = par_join_4!(
+                || g3_h3_evals.par_iter().map(|eval| eval[0]).sum(),
+                || g3_h3_evals.par_iter().map(|eval| eval[1]).sum(),
+                || g3_h3_evals.par_iter().map(|eval| eval[2]).sum(),
+                || g3_h3_evals.par_iter().map(|eval| eval[3]).sum()
+            );
+            let evals_g3_h3 = vec![eval_g3, eval_h3_low, eval_h3_mid, eval_h3_high];
+            let proof_g3_h3 = evals.par_iter().map(|(_, _, c)| c.clone()).sum();
+            (upper_evals, evals_g3_h3, proof_g3_h3)
         } else {
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), P::G1::zero())
         };
-        (upper_total_evals, lower_total_evals, g3_h3_evals, proofs_g3_h3)
+        (upper_total_evals, evals_g3_h3, proof_g3_h3)
     }
 
     pub fn compute_g4_h4 (
@@ -715,26 +782,32 @@ impl<P: Pairing> PreProver<P> {
     // only work for P0
     pub fn open_t_and_f2 (
         x_srs: &[P::G1Affine],
-        t_row_low: &UnivariatePolynomial<P::ScalarField>,
-        t_row_high: &UnivariatePolynomial<P::ScalarField>,
-        t_col: &UnivariatePolynomial<P::ScalarField>,
+        upper_a_t_polys: &DeAandTPolys<P>,
+        upper_b_t_polys: &DeBandTPolys<P>,
         poly_f2: &UnivariatePolynomial<P::ScalarField>,
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         delta: &P::ScalarField,
         // gamma is usually used for batch open
         gamma: &P::ScalarField,
         transcript: &mut Transcript,
-    ) -> (Vec<Vec<P::ScalarField>>, P::G1, P::G1) {
+    ) -> (Vec<Vec<P::ScalarField>>, (P::G1, P::G1)) {
 
-        let w = x_domain.group_gen();
-        let t_points = vec![P::ScalarField::one(), *delta, w * delta];
-        let f2_points = vec![P::ScalarField::zero()];
+        if Net::am_master() {
+            let w = x_domain.group_gen();
+            let t_points = vec![P::ScalarField::one(), *delta, w * delta];
+            let f2_points = vec![P::ScalarField::zero()];
+            let t_row_low = upper_a_t_polys.t_row_low.clone();
+            let t_row_high = upper_a_t_polys.t_row_high.clone();
+            let t_col = upper_b_t_polys.t_col.clone();
 
-        let polys = vec![t_row_low.clone(), t_row_high.clone(), t_col.clone(), poly_f2.clone()];
-        let points = vec![t_points.clone(), t_points.clone(), t_points, f2_points];
-        
-        let proof = BatchKZG::<P>::open_multiple_polys_and_points(&x_srs, &polys, &points, &gamma, transcript).unwrap();
-        proof
+            let polys = vec![t_row_low, t_row_high, t_col, poly_f2.clone()];
+            let points = vec![t_points.clone(), t_points.clone(), t_points, f2_points];
+            
+            let proof = BatchKZG::<P>::open_multiple_polys_and_points(&x_srs, &polys, &points, &gamma, transcript).unwrap();
+            proof
+        } else {
+            (Vec::new(), (P::G1::zero(), P::G1::zero()))
+        }
     }
 
     // TODO: here the evals are sent again
@@ -745,22 +818,25 @@ impl<P: Pairing> PreProver<P> {
         upper_a_t_polys: &DeAandTPolys<P>,
         upper_b_t_polys: &DeBandTPolys<P>,
         lower_a_b_polys: &DeLowerAandBPolys<P>,
-        upper_evals: &Vec<P::ScalarField>,
+        val_upper_evals: &Vec<P::ScalarField>,
         lower_evals: &Vec<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         delta: &P::ScalarField,
         zeta: &P::ScalarField,
         gamma: &P::ScalarField,
-    ) -> (Vec<P::ScalarField>, P::G1, P::G1) {
+    ) -> (Vec<P::ScalarField>, (P::G1, P::G1)) {
         let sub_polys = vec![
-            val_polys.val_pa.clone(), upper_a_t_polys.a_pa_low.clone(), upper_a_t_polys.a_pa_high.clone(), upper_b_t_polys.b_pa.clone(),
-            val_polys.val_pb.clone(), upper_a_t_polys.a_pb_low.clone(), upper_a_t_polys.a_pb_high.clone(), upper_b_t_polys.b_pb.clone(),
-            val_polys.val_pc.clone(), upper_a_t_polys.a_pc_low.clone(), upper_a_t_polys.a_pc_high.clone(), upper_b_t_polys.b_pc.clone(),
-            lower_a_b_polys.la_pa_low.clone(), lower_a_b_polys.la_pa_high.clone(), lower_a_b_polys.lb_pa.clone(),
-            lower_a_b_polys.la_pb_low.clone(), lower_a_b_polys.la_pb_high.clone(), lower_a_b_polys.lb_pb.clone(),
-            lower_a_b_polys.la_pc_low.clone(), lower_a_b_polys.la_pc_high.clone(), lower_a_b_polys.lb_pc.clone()
+            val_polys.val_pa.clone(), val_polys.val_pb.clone(), val_polys.val_pc.clone(),
+            upper_a_t_polys.a_pa_low.clone(), upper_a_t_polys.a_pa_high.clone(), 
+            upper_a_t_polys.a_pb_low.clone(), upper_a_t_polys.a_pb_high.clone(), 
+            upper_a_t_polys.a_pc_low.clone(), upper_a_t_polys.a_pc_high.clone(),
+            upper_b_t_polys.b_pa.clone(), upper_b_t_polys.b_pb.clone(), upper_b_t_polys.b_pc.clone(),
+            lower_a_b_polys.la_pa_low.clone(), lower_a_b_polys.la_pa_high.clone(), 
+            lower_a_b_polys.la_pb_low.clone(), lower_a_b_polys.la_pb_high.clone(), 
+            lower_a_b_polys.la_pc_low.clone(), lower_a_b_polys.la_pc_high.clone(), 
+            lower_a_b_polys.lb_pa.clone(), lower_a_b_polys.lb_pb.clone(), lower_a_b_polys.lb_pc.clone()
         ];
-        let mut evals_slice: Vec<P::ScalarField> = upper_evals.clone();
+        let mut evals_slice: Vec<P::ScalarField> = val_upper_evals.clone();
         evals_slice.pop();
         evals_slice.extend(lower_evals);
         assert_eq!(sub_polys.len(), evals_slice.len());
@@ -769,7 +845,7 @@ impl<P: Pairing> PreProver<P> {
         if Net::am_master() {
             proof.unwrap()
         } else {
-            (Vec::new(), P::G1::zero(), P::G1::zero())
+            (Vec::new(), (P::G1::zero(), P::G1::zero()))
         }
     }
 
@@ -780,7 +856,7 @@ impl<P: Pairing> PreProver<P> {
         sub_poly_f1: &UnivariatePolynomial<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         gamma: &P::ScalarField,
-    ) -> (Vec<P::ScalarField>, P::G1, P::G1) {
+    ) -> (Vec<P::ScalarField>, (P::G1, P::G1)) {
         let sub_polys = vec![sub_poly_f1.clone()];
         let evals_slice: Vec<P::ScalarField> = vec![sub_poly_f1.coeffs.to_vec()[0]];
 
@@ -790,7 +866,7 @@ impl<P: Pairing> PreProver<P> {
             assert_eq!(proof.0.len(), 1);
             proof
         } else {
-            (Vec::new(), P::G1::zero(), P::G1::zero())
+            (Vec::new(), (P::G1::zero(), P::G1::zero()))
         }
     }
 
@@ -813,17 +889,18 @@ impl<P: Pairing> PreProver<P> {
         (evals_g3_h3, proof_g3_h3)
     }
 
-    // the polynomial L(beta, Y) has degree (l, l), but we only have (m_prime, l) srs
+    // the polynomial L(beta, Y) has degree (l, l), but we only have (m, l) srs
+    // so here use unchecked msm
     pub fn open_l_beta_zeta (
         sub_prover_id: usize,
         l: usize,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
-        m_powers: &Vec<Vec<P::G1Affine>>,
+        powers: &Vec<Vec<P::G1Affine>>,
         eval_beta: &P::ScalarField,
         beta: &P::ScalarField,
         zeta: &P::ScalarField,
         gamma: &P::ScalarField,
-    ) -> (Vec<P::ScalarField>, P::G1, P::G1) {
+    ) -> (Vec<P::ScalarField>, (P::G1, P::G1)) {
 
         // compute L_i(X)
         let mut evals = vec![P::ScalarField::zero(); l];
@@ -831,13 +908,13 @@ impl<P: Pairing> PreProver<P> {
         let poly_l = NoPreProver::<P>::interpolate_from_eval_domain(&evals, &y_domain);
 
         // invoke the de-open
-        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &m_powers, &vec![poly_l], &vec![*eval_beta], &(*beta, *zeta), &y_domain, &gamma);
+        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &powers, &vec![poly_l], &vec![*eval_beta], &(*beta, *zeta), &y_domain, &gamma);
         if Net::am_master() {
             let proof = proof.unwrap();
             assert_eq!(proof.0.len(), 1);
             proof
         } else {
-            (Vec::new(), P::G1::zero(), P::G1::zero())
+            (Vec::new(), (P::G1::zero(), P::G1::zero()))
         }
     }
 
@@ -849,12 +926,16 @@ impl<P: Pairing> PreProver<P> {
         zeta: &P::ScalarField,
         gamma: &P::ScalarField,
     ) -> (Vec<P::ScalarField>, P::G1) {
-        let evals: Vec<P::ScalarField> = polys_g4_h4.par_iter().map(|poly| poly.evaluate(&zeta)).collect();
+        if Net::am_master(){
+            let evals: Vec<P::ScalarField> = polys_g4_h4.par_iter().map(|poly| poly.evaluate(&zeta)).collect();
 
-        let evals_on_domain: Vec<Evaluations<P::ScalarField>> = polys_g4_h4.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(*y_domain)).collect();
-        let proof = BatchKZG::<P>::open_lagrange(&y_srs, &evals_on_domain, &zeta, &y_domain, &gamma).unwrap();
+            let evals_on_domain: Vec<Evaluations<P::ScalarField>> = polys_g4_h4.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(*y_domain)).collect();
+            let proof = BatchKZG::<P>::open_lagrange(&y_srs, &evals_on_domain, &zeta, &y_domain, &gamma).unwrap();
 
-        (evals, proof)
+            (evals, proof)
+        } else {
+            (Vec::new(), P::G1::zero())
+        }
     }
 
     // // to prove T_col (omega x) = alpha T_col (x) for x \in {omega^j}, j \in [0, m-2]

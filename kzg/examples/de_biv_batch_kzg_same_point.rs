@@ -126,8 +126,7 @@ fn main() {
     // verify
     if Net::am_master() {
         let time = Instant::now();
-        let (evals, proof1, proof2) = proof.unwrap();
-        let proof = (proof1, proof2);
+        let (evals, proof) = proof.unwrap();
         for _ in 0..50 {
             let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
             let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
