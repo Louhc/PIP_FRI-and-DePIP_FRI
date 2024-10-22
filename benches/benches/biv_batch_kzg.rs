@@ -1,3 +1,7 @@
+// usage: 
+// RAYON_NUM_THREADS=N cargo bench --no-default-features --features "std parallel" -- --nocapture
+// cargo bench --bench biv_batch_kzg
+
 use ark_ec::pairing::Pairing;
 use ark_bls12_381::Bls12_381;
 use ark_ff::{UniformRand, One};
@@ -18,30 +22,30 @@ fn configure_criterion() -> Criterion {
         .sample_size(10) 
 }
 
-const POLYNOMIAL_NUMBER: usize = 5;
-const X_POINT_NUMBER: usize = 2;
+const POLYNOMIAL_NUMBER: usize = 10;
+const X_POINT_NUMBER: usize = 3;
 const BIVARIATE_Y_LOG_DEGREE: usize = 3;
 
 fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
     let log_sizes = vec![12, 14, 16, 18, 20, 22, 24];
     let mut rng = StdRng::seed_from_u64(0u64);
 
-    let log_y_degree = (1 << BIVARIATE_Y_LOG_DEGREE) - 1;
+    let y_degree = (1 << BIVARIATE_Y_LOG_DEGREE) - 1;
     let total_point_number = POLYNOMIAL_NUMBER * X_POINT_NUMBER;
 
     for &log_size in &log_sizes {
-        let log_x_degree = (1 << log_size) - 1;
+        let x_degree = (1 << log_size) - 1;
         
         // Setup
-        let srs = BivBatchKZG::<Bls12_381>::setup(&mut rng, log_x_degree, log_y_degree).unwrap();
+        let srs = BivBatchKZG::<Bls12_381>::setup(&mut rng, x_degree, y_degree).unwrap();
 
         // generate bivariate polynomials
         let mut bivariate_polynomials = Vec::new();
         for _ in 0..POLYNOMIAL_NUMBER {
             let mut x_polynomials = Vec::new();
-            for _ in 0..log_y_degree + 1 {
+            for _ in 0..y_degree + 1 {
                 let mut x_polynomial_coeffs = vec![];
-                for _ in 0..log_x_degree + 1 {
+                for _ in 0..x_degree + 1 {
                     x_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
                 }
                 x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
