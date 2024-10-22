@@ -2,7 +2,7 @@ use ark_ec::pairing::Pairing;
 use ark_ff::{One, Zero, UniformRand};
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial};
-
+use super::r1cs::{R1CSVectors, R1CSPubVectors};
 // This is a self-test of r1cs inner product piops
 // We first generate a random r1cs instance inner products
 
@@ -26,24 +26,6 @@ pub struct R1CSDePublicPolys<P: Pairing> {
     pub polys_pa: Vec<UnivariatePolynomial<P::ScalarField>>,
     pub polys_pb: Vec<UnivariatePolynomial<P::ScalarField>>,
     pub polys_pc: Vec<UnivariatePolynomial<P::ScalarField>>,
-}
-
-#[derive(Clone)]
-pub struct R1CSVectors<P: Pairing> {
-    pub vec_x: Vec<P::ScalarField>,
-    pub vec_y: Vec<P::ScalarField>,
-    pub vec_z: Vec<P::ScalarField>,
-    pub vec_w: Vec<P::ScalarField>,
-    pub vec_a: Vec<P::ScalarField>,
-    pub vec_b: Vec<P::ScalarField>,
-    pub vec_c: Vec<P::ScalarField>,
-}
-
-#[derive(Clone)]
-pub struct R1CSPubVectors<P: Pairing> {
-    pub vec_x: Vec<P::ScalarField>,
-    pub vec_y: Vec<P::ScalarField>,
-    pub vec_z: Vec<P::ScalarField>,
 }
 
 // generate vectors x, y, z, w, a, b, r such that 

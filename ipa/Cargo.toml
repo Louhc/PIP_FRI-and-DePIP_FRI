@@ -17,14 +17,12 @@ merlin = "3.0.0"
 my_kzg = { path = "../kzg" }
 de_network = { version = "0.1.0", path = "../de_network"}
 structopt = "0.3"
-
+ark-relations = "0.4"
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.4", features = [ "curve" ] }
 ark-ed-on-bls12-381 = "0.4"
 
-
-ark-relations = "0.4"
 ark-r1cs-std = "0.4"
 blake2 = "0.10.6"
 
