@@ -48,19 +48,14 @@ name = "biv_trivial_kzg"
 path = "benches/biv_trivial_kzg.rs"
 harness = false
 
-# [[bench]]
-# name = "biv_batch_kzg"
-# path = "benches/biv_batch_kzg.rs"
-# harness = false
+[[bench]]
+name = "biv_batch_kzg"
+path = "benches/biv_batch_kzg.rs"
+harness = false
 
 [[bench]]
 name = "my_ipa"
 path = "benches/ipa.rs"
-harness = false
-
-[[bench]]
-name = "de_ipa"
-path = "benches/de_ipa_test.rs"
 harness = false
 
 [features]

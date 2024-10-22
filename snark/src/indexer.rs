@@ -4,12 +4,12 @@ use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolyn
 use std::marker::PhantomData;
 use ark_ec::{pairing::Pairing, VariableBaseMSM};
 use my_kzg::{
-    biv_batch_kzg::BivBatchKZG, biv_trivial_kzg::{BivariateKZG, BivariatePolynomial}, par_join_3 
+    biv_batch_kzg::BivBatchKZG, biv_trivial_kzg::{BivariateKZG, BivariatePolynomial}, par_join_3, uni_batch_kzg::BatchKZG 
     // transcript::ProofTranscript, trivial_kzg::{UniVerifierSRS, KZG}, uni_batch_kzg::BatchKZG, uni_trivial_kzg::KZG
 };
 use ark_ff::{Zero, Field, One};
 use rayon::prelude::*;
-use crate::prover_pre::{DeValPolys, DeRowIndex, DeColIndex};
+use crate::prover_pre::{DeValPolys, DeRowIndex, DeColIndex, NEvals, NPolys};
 use my_ipa::de_ipa::DeIPA;
 
 #[derive(Clone)]
@@ -100,6 +100,46 @@ impl<P: Pairing> Indexer<P> {
         let coms_val = BivBatchKZG::<P>::commit(&m_powers, &bivariate_polynomials).unwrap();
 
         coms_val
+    }
+
+    pub fn compute_n_polys (
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        n_evals: &NEvals<P>,
+    ) -> NPolys<P> {
+
+        let ((row_pa_low, row_pa_high, row_pb_low), (row_pb_high, row_pc_low, row_pc_high), (col_pa, col_pb, col_pc)) = par_join_3!(
+            || {
+                let row_pa_low = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.row_pa_low, &x_domain);
+                let row_pa_high = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.row_pa_high, &x_domain);
+                let row_pb_low = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.row_pb_low, &x_domain);
+                (row_pa_low, row_pa_high, row_pb_low)
+            },
+            || {
+                let row_pb_high = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.row_pb_high, &x_domain);
+                let row_pc_low = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.row_pc_low, &x_domain);
+                let row_pc_high = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.row_pc_high, &x_domain);
+                (row_pb_high, row_pc_low, row_pc_high)
+            }, 
+            || {
+                let col_pa = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.col_pa, &x_domain);
+                let col_pb = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.col_pb, &x_domain);
+                let col_pc = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.col_pc, &x_domain);
+                (col_pa, col_pb, col_pc)
+            }
+        );
+        NPolys { row_pa_low, row_pa_high, row_pb_low, row_pb_high, row_pc_low, row_pc_high, col_pa, col_pb, col_pc}
+    }
+
+    pub fn commit_n_polys (
+        x_srs: &Vec<P::G1Affine>,
+        n_polys: &NPolys<P>,
+    ) -> Vec<P::G1> {
+        let polys = vec![n_polys.row_pa_low.clone(), n_polys.row_pa_high.clone(), n_polys.row_pb_low.clone(),
+            n_polys.row_pb_high.clone(), n_polys.row_pc_low.clone(), n_polys.row_pc_high.clone(), 
+            n_polys.col_pa.clone(), n_polys.col_pb.clone(), n_polys.col_pc.clone()];
+        
+        let coms_n = BatchKZG::<P>::commit(&x_srs, &polys).unwrap();
+        coms_n
     }
 
     pub fn compute_lower_a_b_evals_and_polys (

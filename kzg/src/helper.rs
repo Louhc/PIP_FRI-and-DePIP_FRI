@@ -65,10 +65,9 @@ pub fn interpolate_on_trivial_domain<P: Pairing> (
             ]);
         let quotient_polynomial = &numerator_polynomial / &divider_polynomial;
         &quotient_polynomial * constant_term
-    }).reduce(
-        || UnivariatePolynomial::zero(),
-        |acc, poly| acc + poly
-    )
+    }).reduce_with(|acc, poly| acc + poly)
+        .unwrap_or(UnivariatePolynomial::zero())
+    
 }
 
 // evaluate one evaluation of the id-th lagrange polynomial at the given point

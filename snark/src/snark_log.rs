@@ -9,7 +9,7 @@ use ark_ff::{Zero, One, Field};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use std::time::Instant;
 use rayon::prelude::*;
-use crate::{indexer::{DeLowerAandBEvals, DeLowerAandBPolys}, prover_nopre::NoPreProver, prover_pre::{DeValPolys, NEvals}};
+use crate::{indexer::{DeLowerAandBEvals, DeLowerAandBPolys}, prover_nopre::NoPreProver, prover_pre::{DeValPolys, NEvals, NPolys}};
 use my_kzg::par_join_3;
 use crate::prover_pre::{DeColIndex, DeRowIndex, PreProver};
 use crate::par_join_4;
@@ -35,8 +35,8 @@ pub struct SNARKProofLog<P: Pairing> {
     evals_g2_h2: Vec<P::ScalarField>,
     evals_g3_h3: Vec<P::ScalarField>,
     evals_g4_h4: Vec<P::ScalarField>,
-    evals_t_f2: Vec<Vec<P::ScalarField>>,
-    evals_val_upper_lower_a_b: Vec<P::ScalarField>,
+    evals_t_f2_n: Vec<Vec<P::ScalarField>>,
+    evals_val_upper_lower_a_b_f1: Vec<P::ScalarField>,
     eval_f1: Vec<P::ScalarField>,
     eval_l: Vec<P::ScalarField>,
     proofs_wit_upper_r_polys: (P::G1, Vec<P::ScalarField>, P::ScalarField, (P::G1, P::G1), P::G1),
@@ -44,8 +44,8 @@ pub struct SNARKProofLog<P: Pairing> {
     proof_g2_h2: P::G1,
     proof_g3_h3: P::G1,
     proof_g4_h4: P::G1,
-    proof_t_f2: (P::G1, P::G1),
-    proof_val_upper_lower_a_b: (P::G1, P::G1),
+    proof_t_f2_n: (P::G1, P::G1),
+    proof_val_upper_lower_a_b_f1: (P::G1, P::G1),
     proof_f1: (P::G1, P::G1),
     proof_l: (P::G1, P::G1),
 }
@@ -68,6 +68,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         lower_a_b_evals: &DeLowerAandBEvals<P>,
         lower_a_b_polys: &DeLowerAandBPolys<P>,
         n_evals: &NEvals<P>,
+        n_polys: &NPolys<P>,
         r: &P::ScalarField,
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
@@ -347,14 +348,14 @@ impl<P: Pairing> DeSNARKLog<P> {
         let mut coms_t_f2 = coms_a_t;
         coms_t_f2.push(com_b_t);
         coms_t_f2.push(com_f2);
-        let (evals_t_f2, proof_t_f2) = PreProver::<P>::open_t_and_f2(&x_srs, &upper_a_t_polys, &upper_b_t_polys, &poly_f2, &x_domain, &delta, &gamma, transcript);
-        assert_eq!(evals_t_f2[0].len(), 3);
-        assert_eq!(evals_t_f2[3].len(), 1);
+        let (evals_t_f2_n, proof_t_f2_n) = PreProver::<P>::open_t_f2_n(&x_srs, &upper_a_t_polys, &upper_b_t_polys, &poly_f2, &n_polys, &x_domain, &delta, &gamma, transcript);
+        assert_eq!(evals_t_f2_n[0].len(), 3);
+        assert_eq!(evals_t_f2_n[3].len(), 2);
         println!("Prover {:?} open t, f2 time: {:?}", sub_prover_id, time.elapsed());
 
         // open val_upper_lower_a_b at (delta, zeta)
         let time = Instant::now();
-        let (evals_val_upper_lower_a_b, proof_val_upper_lower_a_b) = PreProver::<P>::open_val_upper_lower_a_b(sub_prover_id, &m_powers, &val_polys, &upper_a_t_polys, &upper_b_t_polys, &lower_a_b_polys, &val_upper_and_l_evals, &lower_evals, &y_domain, &delta, &zeta, &gamma);
+        let (evals_val_upper_lower_a_b_f1, proof_val_upper_lower_a_b_f1) = PreProver::<P>::open_val_upper_lower_a_b_f1(sub_prover_id, &m_powers, &val_polys, &upper_a_t_polys, &upper_b_t_polys, &lower_a_b_polys, &val_upper_and_l_evals, &lower_evals, &de_poly_f1, &y_domain, &delta, &zeta, &gamma);
         println!("Prover {:?} open val, A, B, a, b at (delta, zeta) time: {:?}", sub_prover_id, time.elapsed());
 
         // open f1 at (0, 0)
@@ -387,8 +388,8 @@ impl<P: Pairing> DeSNARKLog<P> {
                 evals_g2_h2,
                 evals_g3_h3,
                 evals_g4_h4,
-                evals_t_f2,
-                evals_val_upper_lower_a_b,
+                evals_t_f2_n,
+                evals_val_upper_lower_a_b_f1,
                 eval_f1,
                 eval_l,
                 proofs_wit_upper_r_polys: proofs_wit_upper_r_polys.unwrap(),
@@ -396,8 +397,8 @@ impl<P: Pairing> DeSNARKLog<P> {
                 proof_g2_h2,
                 proof_g3_h3,
                 proof_g4_h4,
-                proof_t_f2,
-                proof_val_upper_lower_a_b,
+                proof_t_f2_n,
+                proof_val_upper_lower_a_b_f1,
                 proof_f1,
                 proof_l, 
             })
@@ -413,6 +414,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         coms_val: &Vec<P::G1>,
         coms_lower_a_b: &Vec<P::G1>,
         com_l: &P::G1,
+        coms_n: &Vec<P::G1>,
         proof: &SNARKProofLog<P>,
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
@@ -464,8 +466,8 @@ impl<P: Pairing> DeSNARKLog<P> {
             evals_g2_h2,
             evals_g3_h3,
             evals_g4_h4,
-            evals_t_f2,
-            evals_val_upper_lower_a_b,
+            evals_t_f2_n,
+            evals_val_upper_lower_a_b_f1,
             eval_f1,
             eval_l,
             proofs_wit_upper_r_polys,
@@ -473,8 +475,8 @@ impl<P: Pairing> DeSNARKLog<P> {
             proof_g2_h2,
             proof_g3_h3,
             proof_g4_h4,
-            proof_t_f2,
-            proof_val_upper_lower_a_b,
+            proof_t_f2_n,
+            proof_val_upper_lower_a_b_f1,
             proof_f1,
             proof_l, 
         } = proof;
@@ -586,20 +588,26 @@ impl<P: Pairing> DeSNARKLog<P> {
 
         // check the validity of upper_a_polys, upper_b_polys, lower_a_polys, lower_b_polys, val_polys
         let time = Instant::now();
-        let mut coms_val_upper_lower = coms_val.clone();
-        coms_val_upper_lower.extend(&coms_upper_a.clone());
-        coms_val_upper_lower.extend(&coms_upper_b.clone());
-        coms_val_upper_lower.extend(&coms_lower_a_b.clone());
-        let check7 = BivBatchKZG::<P>::verify(&m_v_srs, &coms_val_upper_lower, &(delta, zeta), &evals_val_upper_lower_a_b, &proof_val_upper_lower_a_b, &gamma).unwrap();
+        let mut coms_val_upper_lower_f1 = coms_val.clone();
+        coms_val_upper_lower_f1.extend(&coms_upper_a.clone());
+        coms_val_upper_lower_f1.extend(&coms_upper_b.clone());
+        coms_val_upper_lower_f1.extend(&coms_lower_a_b.clone());
+        coms_val_upper_lower_f1.push(com_f1.clone());
+        let check7 = BivBatchKZG::<P>::verify(&m_v_srs, &coms_val_upper_lower_f1, &(delta, zeta), &evals_val_upper_lower_a_b_f1, &proof_val_upper_lower_a_b_f1, &gamma).unwrap();
         assert!(check7);
         println!("Verifier val, upper, lower, pa, pb, pc open check: {:?}", time.elapsed());
 
-        // check the validity of t and f2
+        // check the validity of t, f2, and n
         let time = Instant::now();
         let t_points = vec![P::ScalarField::one(), delta, w * delta];
-        let f2_points = vec![P::ScalarField::zero()];
-        let points = vec![t_points.clone(), t_points.clone(), t_points, f2_points];
-        let check8 = BatchKZG::<P>::verify_multiple_polys_and_points(&uni_v_srs_for_x, &coms_t_f2, &points, &(evals_t_f2.clone(), proof_t_f2.clone()), &gamma, transcript).unwrap();
+        let f2_points = vec![P::ScalarField::zero(), delta];
+        let n_points = vec![delta];
+        let points = vec![t_points.clone(), t_points.clone(), t_points, f2_points, 
+            n_points.clone(), n_points.clone(), n_points.clone(), n_points.clone(), 
+            n_points.clone(), n_points.clone(), n_points.clone(), n_points.clone(), n_points];
+        let mut coms_t_f2_n = coms_t_f2.clone();
+        coms_t_f2_n.extend(coms_n);
+        let check8 = BatchKZG::<P>::verify_multiple_polys_and_points(&uni_v_srs_for_x, &coms_t_f2_n, &points, &(evals_t_f2_n.clone(), proof_t_f2_n.clone()), &gamma, transcript).unwrap();
         assert!(check8);
         println!("Verifier t_f2 open check: {:?}", time.elapsed());
 
@@ -626,21 +634,71 @@ impl<P: Pairing> DeSNARKLog<P> {
             zeta_minus_u4 * y_domain.evaluate_vanishing_polynomial(zeta) * 
             (evals_g4_h4[1] + zeta.pow([l as u64]) * evals_g4_h4[2] + 
             zeta.pow([2 * l as u64]) * evals_g4_h4[3] + zeta.pow([3 * l as u64]) * evals_g4_h4[4]);
-
         // compute left_hand
         let (f1, f2, f3) = par_join_3!(
-            || evals_val_upper_lower_a_b[0] * evals_val_upper_lower_a_b[3] * evals_val_upper_lower_a_b[4] * evals_val_upper_lower_a_b[9],
-            || evals_val_upper_lower_a_b[1] * evals_val_upper_lower_a_b[5] * evals_val_upper_lower_a_b[6] * evals_val_upper_lower_a_b[10],
-            || evals_val_upper_lower_a_b[2] * evals_val_upper_lower_a_b[7] * evals_val_upper_lower_a_b[8] * evals_val_upper_lower_a_b[11]
+            || evals_val_upper_lower_a_b_f1[0] * evals_val_upper_lower_a_b_f1[3] * evals_val_upper_lower_a_b_f1[4] * evals_val_upper_lower_a_b_f1[9],
+            || evals_val_upper_lower_a_b_f1[1] * evals_val_upper_lower_a_b_f1[5] * evals_val_upper_lower_a_b_f1[6] * evals_val_upper_lower_a_b_f1[10],
+            || evals_val_upper_lower_a_b_f1[2] * evals_val_upper_lower_a_b_f1[7] * evals_val_upper_lower_a_b_f1[8] * evals_val_upper_lower_a_b_f1[11]
         );
         let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3], &w);
         let left_hand = eval_rlc * eval_l[0] * zeta_minus_u4 * delta_minus_u3;
         let check11 = left_hand == right_hand;
         assert!(check11);
 
+        // verify lookup evaluation validity
+        // check T's evaluation validity
+        // T_col
+        // Note: id starts from zero
+        let evals_t_col = evals_t_f2_n[2].clone();
+        let l_h_m_minums_1 = evaluate_one_lagrange::<P>(m-2, &x_domain, &delta);
+        assert!(evals_t_col[0] == P::ScalarField::one());
+        assert!(evals_t_col[2] == alpha * evals_t_col[1] + l_h_m_minums_1 * (P::ScalarField::one() - alpha.pow([m as u64])));
+        // T_row_low
+        let evals_t_row_low = evals_t_f2_n[0].clone();
+        assert!(evals_t_row_low[0] == P::ScalarField::one());
+        assert!(evals_t_row_low[0] == *r * evals_t_row_low[1] + l_h_m_minums_1 * (P::ScalarField::one() - r.pow([m as u64])));
+        // T_row_high
+        let evals_t_row_high = evals_t_f2_n[1].clone();
+        assert_eq!(evals_t_row_high[0], P::ScalarField::one());
+        let power = ((m * l) as f64).sqrt().floor() as usize;
+        let r_sqrt = r.pow([power as u64]);
+        assert!(evals_t_row_high[0] == r_sqrt * evals_t_row_high[1] + l_h_m_minums_1 * (P::ScalarField::one() - r_sqrt.pow([m as u64])));
 
+        // check f1 f2 evaluation validity
+        let left_eval_1 = (gamma + beta * evals_val_upper_lower_a_b_f1[12] + evals_val_upper_lower_a_b_f1[3]).inverse().unwrap();
+        let left_eval_2 = (gamma + beta * evals_val_upper_lower_a_b_f1[13] + evals_val_upper_lower_a_b_f1[4]).inverse().unwrap();
+        let left_eval_3 = (gamma + beta * evals_val_upper_lower_a_b_f1[14] + evals_val_upper_lower_a_b_f1[5]).inverse().unwrap();
+        let left_eval_4 = (gamma + beta * evals_val_upper_lower_a_b_f1[15] + evals_val_upper_lower_a_b_f1[6]).inverse().unwrap();
+        let left_eval_5 = (gamma + beta * evals_val_upper_lower_a_b_f1[16] + evals_val_upper_lower_a_b_f1[7]).inverse().unwrap();
+        let left_eval_6 = (gamma + beta * evals_val_upper_lower_a_b_f1[17] + evals_val_upper_lower_a_b_f1[8]).inverse().unwrap();
+        let left_eval_7 = (gamma + beta * evals_val_upper_lower_a_b_f1[18] + evals_val_upper_lower_a_b_f1[9]).inverse().unwrap();
+        let left_eval_8 = (gamma + beta * evals_val_upper_lower_a_b_f1[19] + evals_val_upper_lower_a_b_f1[10]).inverse().unwrap();
+        let left_eval_9 = (gamma + beta * evals_val_upper_lower_a_b_f1[20] + evals_val_upper_lower_a_b_f1[11]).inverse().unwrap();
 
-        check1 & check2 & check3 & check4
+        let left_evals = vec![left_eval_1, left_eval_2, left_eval_3, left_eval_4, left_eval_5,
+                                             left_eval_6, left_eval_7, left_eval_8, left_eval_9];
+        let left_eval_rlc = linear_combination_field::<P>(&left_evals, &v);
+        assert_eq!(left_eval_rlc, evals_val_upper_lower_a_b_f1[21]);
+
+        // check f2 evaluation validity
+        let right_eval_1 = evals_t_f2_n[4][0] * (gamma + beta * delta + evals_t_f2_n[0][1]).inverse().unwrap();
+        let right_eval_2 = evals_t_f2_n[5][0] * (gamma + beta * delta + evals_t_f2_n[1][1]).inverse().unwrap();
+        let right_eval_3 = evals_t_f2_n[6][0] * (gamma + beta * delta + evals_t_f2_n[0][1]).inverse().unwrap();
+        let right_eval_4 = evals_t_f2_n[7][0] * (gamma + beta * delta + evals_t_f2_n[1][1]).inverse().unwrap();
+        let right_eval_5 = evals_t_f2_n[8][0] * (gamma + beta * delta + evals_t_f2_n[0][1]).inverse().unwrap();
+        let right_eval_6 = evals_t_f2_n[9][0] * (gamma + beta * delta + evals_t_f2_n[1][1]).inverse().unwrap();
+        let right_eval_7 = evals_t_f2_n[10][0] * (gamma + beta * delta + evals_t_f2_n[2][1]).inverse().unwrap();
+        let right_eval_8 = evals_t_f2_n[11][0] * (gamma + beta * delta + evals_t_f2_n[2][1]).inverse().unwrap();
+        let right_eval_9 = evals_t_f2_n[12][0] * (gamma + beta * delta + evals_t_f2_n[2][1]).inverse().unwrap();
+        let right_evals = vec![right_eval_1, right_eval_2, right_eval_3, right_eval_4, 
+            right_eval_5, right_eval_6, right_eval_7, right_eval_8, right_eval_9];
+        let right_eval_rlc = linear_combination_field::<P>(&right_evals, &v);
+        assert_eq!(right_eval_rlc, evals_t_f2_n[3][1]);
+
+        // check f1 f2 relation
+        assert_eq!(eval_f1[0], evals_t_f2_n[3][0]);
+
+        true
     }
 
     pub fn get_proof_size (
@@ -670,8 +728,8 @@ impl<P: Pairing> DeSNARKLog<P> {
             proof.evals_g2_h2.len() + 
             proof.evals_g3_h3.len() +
             proof.evals_g4_h4.len() +
-            proof.evals_t_f2[0].len() * (proof.evals_t_f2.len() - 1) + 1 +
-            proof.evals_val_upper_lower_a_b.len() + 
+            proof.evals_t_f2_n[0].len() * 3 + proof.evals_t_f2_n[3].len() + 9 +
+            proof.evals_val_upper_lower_a_b_f1.len() + 
             proof.eval_f1.len() +
             proof.eval_l.len()
         );
