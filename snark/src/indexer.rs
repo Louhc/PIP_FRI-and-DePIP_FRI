@@ -5,53 +5,75 @@ use std::marker::PhantomData;
 use ark_ec::{pairing::Pairing, VariableBaseMSM};
 use my_kzg::{
     biv_batch_kzg::BivBatchKZG, biv_trivial_kzg::{BivariateKZG, BivariatePolynomial}, par_join_3, uni_batch_kzg::BatchKZG 
-    // transcript::ProofTranscript, trivial_kzg::{UniVerifierSRS, KZG}, uni_batch_kzg::BatchKZG, uni_trivial_kzg::KZG
 };
 use ark_ff::{Zero, Field, One};
 use rayon::prelude::*;
-use crate::prover_pre::{DeValPolys, DeRowIndex, DeColIndex, NEvals, NPolys};
+use crate::prover_pre::{DeValPolys, NPolys, DeLowerAandBEvals, DeLowerAandBPolys};
 use my_ipa::de_ipa::DeIPA;
 
+// Given public matrices Pa, Pb, Pc \in F^{ml} \times F^{ml}, split each of them into l sub-matrices
+// Each sub-matrix in \in F^{ml} \times F^{m}
+// Assume the sub-matrices have at most m' (m_prime) non-zero-entries, and m' should be power-of-two, padding if not
+// Say M with order m' and generator g
+// Assume the non-zero entries are presented in some canonical order (e.g., row-wise or column-wise) and works for all row, col, and val
+
+// The original data of row non-zero entry index vectors for some **sub-prover**, ie, some **sub-matrix**
+// The row index belongs to [0, ml-1]; we introduce row_low, row_high belonging to [0, sqrt{ml}-1] to describe it
+// row(g^i) = the row index of the (i-1)-th non-zero entry = row_low(g^i) + sqrt{ml} * row_high(g^i)
+// The value choice of row_low and row_high are unique
+
+// if some sub-matrix has m'' < m' non-zero entries, define arbitrary values for these (m' - m'') entries, here use 0
+
+// The values should be field_elements, but we requre usize to do the pow operation
+// Luckily, [0, ml-1] is smaller enough on a field, so just transform it to usize directly
 #[derive(Clone)]
-pub struct DeLowerAandBEvals<P: Pairing> {
-    pub eval_la_pa_low: Vec<P::ScalarField>,
-    pub eval_la_pa_high: Vec<P::ScalarField>,
-    pub eval_la_pb_low: Vec<P::ScalarField>,
-    pub eval_la_pb_high: Vec<P::ScalarField>,
-    pub eval_la_pc_low: Vec<P::ScalarField>,
-    pub eval_la_pc_high: Vec<P::ScalarField>,
-    pub eval_lb_pa: Vec<P::ScalarField>,
-    pub eval_lb_pb: Vec<P::ScalarField>,
-    pub eval_lb_pc: Vec<P::ScalarField>,
+pub struct DeRowIndex {
+    pub row_pa_low: Vec<usize>,
+    pub row_pa_high: Vec<usize>,
+    pub row_pb_low: Vec<usize>,
+    pub row_pb_high: Vec<usize>,
+    pub row_pc_low: Vec<usize>,
+    pub row_pc_high: Vec<usize>,
 }
 
+// The original data of col non-zero entry index vectors for some **sub-prover**, ie, some **sub-matrix**
+// Note col has the same non-zero entry order with row
+// if some sub-matrix has m'' < m' non-zero entries, define arbitrary values for these (m' - m'') entries, here use 0
 #[derive(Clone)]
-pub struct DeLowerAandBPolys<P: Pairing> {
-    pub la_pa_low: UnivariatePolynomial<P::ScalarField>,
-    pub la_pa_high: UnivariatePolynomial<P::ScalarField>,
-    pub la_pb_low: UnivariatePolynomial<P::ScalarField>,
-    pub la_pb_high: UnivariatePolynomial<P::ScalarField>,
-    pub la_pc_low: UnivariatePolynomial<P::ScalarField>,
-    pub la_pc_high: UnivariatePolynomial<P::ScalarField>,
-    pub lb_pa: UnivariatePolynomial<P::ScalarField>,
-    pub lb_pb: UnivariatePolynomial<P::ScalarField>,
-    pub lb_pc: UnivariatePolynomial<P::ScalarField>,
+pub struct DeColIndex {
+    pub col_pa: Vec<usize>,
+    pub col_pb: Vec<usize>,
+    pub col_pc: Vec<usize>,
 }
 
-// #[derive(Clone)]
-// // The original data of val values
-// pub struct DeValEvals<P: Pairing> {
-//     pub eval_val_pa: Vec<P::ScalarField>,
-//     pub eval_val_pb: Vec<P::ScalarField>,
-//     pub eval_val_pc: Vec<P::ScalarField>,
-// }
-
+// The original data of val non-zero entry index vectors for some **sub-prover**, ie, some **sub-matrix**
+// Note val has the same non-zero entry order with row
+// Here we use Field elements
+// if some sub-matrix has m'' < m' non-zero entries, define arbitrary values for these (m' - m'') entries, here use 0
 #[derive(Clone)]
-// The original data of val values
 pub struct DeValEvals<P: Pairing> {
     pub evals_val_pa: Vec<P::ScalarField>,
     pub evals_val_pb: Vec<P::ScalarField>,
     pub evals_val_pc: Vec<P::ScalarField>,
+}
+
+// The lookup frequency parameters
+// Each polys are defined over subgroup H with size m, say generator w
+// For col, n_col(w^i) = the times of {col(x)} equals to i, for i \in [0, m-1]
+// For row, n_row_low(w^i) / n_row_high(w^i) = the times of {row_low(x)} / {row_high(x)} equals to i
+// For row, when m > i > sqrt{ml}, n_row_low(w^i) / n_row_high(w^i) = 0
+// Note that {col(x)}, {row_low(x)} / {row_high(x)} can equal to 0
+#[derive(Clone)]
+pub struct NEvals<P: Pairing> {
+    pub row_pa_low: Vec<P::ScalarField>,
+    pub row_pa_high: Vec<P::ScalarField>,
+    pub row_pb_low: Vec<P::ScalarField>,
+    pub row_pb_high: Vec<P::ScalarField>,
+    pub row_pc_low: Vec<P::ScalarField>,
+    pub row_pc_high: Vec<P::ScalarField>,
+    pub col_pa: Vec<P::ScalarField>,
+    pub col_pb: Vec<P::ScalarField>,
+    pub col_pc: Vec<P::ScalarField>,
 }
 
 pub struct Indexer<P: Pairing> {

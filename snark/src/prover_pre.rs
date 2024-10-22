@@ -9,30 +9,35 @@ use my_kzg::{biv_batch_kzg::BivBatchKZG, par_join_3, uni_batch_kzg::BatchKZG, un
 use ark_ff::{Zero, One, Field};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use rayon::prelude::*;
-use crate::indexer::{DeLowerAandBEvals, DeLowerAandBPolys};
+use crate::indexer::{DeRowIndex, DeColIndex};
 use crate::prover_nopre::NoPreProver;
 use crate::par_join_4;
 use my_ipa::de_ipa::DeIPA;
 
 #[derive(Clone)]
-// The original data of row index vectors for pa, pb, pc
-// on subgroup M with size m_prime and generator g
-// row(g^i) = the row index of the i-1 th non-zero entry
-pub struct DeRowIndex {
-    pub row_pa_low: Vec<usize>,
-    pub row_pa_high: Vec<usize>,
-    pub row_pb_low: Vec<usize>,
-    pub row_pb_high: Vec<usize>,
-    pub row_pc_low: Vec<usize>,
-    pub row_pc_high: Vec<usize>,
+pub struct DeLowerAandBEvals<P: Pairing> {
+    pub eval_la_pa_low: Vec<P::ScalarField>,
+    pub eval_la_pa_high: Vec<P::ScalarField>,
+    pub eval_la_pb_low: Vec<P::ScalarField>,
+    pub eval_la_pb_high: Vec<P::ScalarField>,
+    pub eval_la_pc_low: Vec<P::ScalarField>,
+    pub eval_la_pc_high: Vec<P::ScalarField>,
+    pub eval_lb_pa: Vec<P::ScalarField>,
+    pub eval_lb_pb: Vec<P::ScalarField>,
+    pub eval_lb_pc: Vec<P::ScalarField>,
 }
 
 #[derive(Clone)]
-// The original data of col index vectors for pa, pb, pc
-pub struct DeColIndex {
-    pub col_pa: Vec<usize>,
-    pub col_pb: Vec<usize>,
-    pub col_pc: Vec<usize>,
+pub struct DeLowerAandBPolys<P: Pairing> {
+    pub la_pa_low: UnivariatePolynomial<P::ScalarField>,
+    pub la_pa_high: UnivariatePolynomial<P::ScalarField>,
+    pub la_pb_low: UnivariatePolynomial<P::ScalarField>,
+    pub la_pb_high: UnivariatePolynomial<P::ScalarField>,
+    pub la_pc_low: UnivariatePolynomial<P::ScalarField>,
+    pub la_pc_high: UnivariatePolynomial<P::ScalarField>,
+    pub lb_pa: UnivariatePolynomial<P::ScalarField>,
+    pub lb_pb: UnivariatePolynomial<P::ScalarField>,
+    pub lb_pc: UnivariatePolynomial<P::ScalarField>,
 }
 
 #[derive(Clone)]

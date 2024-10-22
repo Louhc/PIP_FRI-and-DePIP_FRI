@@ -23,7 +23,7 @@ fn configure_criterion() -> Criterion {
 }
 
 const POLYNOMIAL_NUMBER: usize = 10;
-const X_POINT_NUMBER: usize = 3;
+const X_POINT_NUMBER: usize = 2;
 const BIVARIATE_Y_LOG_DEGREE: usize = 3;
 
 fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {

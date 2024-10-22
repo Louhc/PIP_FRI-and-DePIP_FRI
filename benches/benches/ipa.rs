@@ -18,7 +18,7 @@ fn configure_criterion() -> Criterion {
 
 
 fn ipa_commit_and_prove_benchmark(c: &mut Criterion) {
-    let log_sizes = vec![12, 14];
+    let log_sizes = vec![12, 14, 16, 18, 20, 22, 24];
     let mut rng = StdRng::seed_from_u64(0u64);
     for &log_size in &log_sizes {
         let size = 1 << log_size;
@@ -111,7 +111,7 @@ fn ipa_commit_and_prove_benchmark(c: &mut Criterion) {
 }
 
 fn ipa_verifier_benchmark(c: &mut Criterion) {
-    let log_sizes = vec![10, 12, 14, 16, 18, 20];
+    let log_sizes = vec![12, 14, 16, 18, 20, 22, 24];
     let mut rng = StdRng::seed_from_u64(0u64);
     for &log_size in &log_sizes {
         let size = 1 << log_size;
