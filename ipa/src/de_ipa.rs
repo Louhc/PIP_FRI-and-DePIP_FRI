@@ -90,7 +90,7 @@ impl<P: Pairing> DeIPA<P> {
         let evals_r: Vec<P::ScalarField> = polys_r.par_iter().zip(points_r.par_iter()).map(|(poly, point)| poly.evaluate(&point)).collect();
         let eval_b_virtual = evals_r[2] * r_pow_m + evals_r[1] * (P::ScalarField::one() - r_pow_m);
 
-
+        
         // let eval_a_r = wit_polys.poly_a.evaluate(r);
         // let eval_b_0 = wit_polys.poly_b.evaluate(&P::ScalarField::zero());
         // let eval_b_inverse = wit_polys.poly_b.evaluate(&r.clone().inverse().unwrap());
@@ -110,16 +110,6 @@ impl<P: Pairing> DeIPA<P> {
         let evals_domain_target = Evaluations::<P::ScalarField>::from_vec_and_domain(evals_target, domain_2x);
         let polynomial_target = evals_domain_target.interpolate();
 
-        // let eval_r_pow_m_mul_c_r = UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * evals_r[3]]);
-        // let polynomial_f1 = &pub_polys.poly_pa * &wit_polys.poly_w + UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * evals_r[0]]);
-        // let polynomial_f2 = &pub_polys.poly_pb * &wit_polys.poly_w + UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * eval_b_virtual]);
-        // let polynomial_f3 = &(&pub_polys.poly_pc * &wit_polys.poly_w) + &eval_r_pow_m_mul_c_r;
-        // let polynomial_f4 = &(&(&poly_ar * &wit_polys.poly_b) * eval_r) + &eval_r_pow_m_mul_c_r;
-
-        // // target polynomial, rlc of f1-f4
-        // let mut polynomial_target = &polynomial_f1 + &(&polynomial_f2 * v);
-        // polynomial_target += (v * v, &polynomial_f3);
-        // polynomial_target += (v.pow([3 as u64]), &polynomial_f4);
         println!("Prover {:?} compute target polynomial time: {:?}", sub_prover_id, time.elapsed());
 
         // get g1 and h1

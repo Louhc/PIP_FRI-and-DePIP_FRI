@@ -146,7 +146,10 @@ impl<P: Pairing> DeSNARKLinear<P> {
 
             // get g2, h2low, h2high
             let (poly_g2, poly_h2) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target_y, &u2, &y_domain);
-            let coeffs_h2 = poly_h2.coeffs.to_vec();
+            let mut coeffs_h2 = poly_h2.coeffs.to_vec();
+            if coeffs_h2.len() < l {
+                coeffs_h2.resize(l + 1, P::ScalarField::zero());
+            }
             assert!(coeffs_h2.len() > l);
             let coeffs_h2_low: Vec<P::ScalarField> = coeffs_h2.iter().take(l).cloned().collect();
             let coeffs_h2_high = coeffs_h2.clone()[l..].to_vec();

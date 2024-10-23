@@ -7,10 +7,10 @@ use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_ec::pairing::Pairing;
 use my_kzg::{biv_batch_kzg::BivBatchKZG, helper::get_x_srs};
 use merlin::Transcript;
-use my_ipa::{de_ipa::DeIPA, helper::{generate_r1cs_de_polynomials, 
+use my_ipa::{helper::{generate_r1cs_de_polynomials, 
     generate_r1cs_pub_polynomials, 
-    generate_r1cs_de_pub_polynomials, 
-    generate_r1cs_de_vectors
+    // generate_r1cs_de_pub_polynomials, 
+    // generate_r1cs_de_vectors
 }, r1cs::R1CSPubVectors};
 use de_network::{DeMultiNet as Net, DeNet};
 use rayon::iter::IntoParallelRefIterator;
@@ -24,6 +24,7 @@ use std::time::Instant;
 use my_ipa::r1cs::{RandomCircuit, R1CSVectors};
 use ark_relations::r1cs::{ConstraintSystem, ConstraintSynthesizer};
 use rayon::prelude::*;
+use my_snark::snark_linear::DeSNARKLinear;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "example", about = "An example of StructOpt usage.")]
@@ -43,7 +44,7 @@ fn init() -> (usize, usize, usize) {
     Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
     let l = Net::n_parties();
     let sub_prover_id = Net::party_id();
-    let m = 1 << 22;
+    let m = 1 << 12;
     (m, l, sub_prover_id)
 }
 
@@ -91,11 +92,11 @@ fn main() {
     let mut transcript : Transcript = Transcript::new(b"R1CS inner product");
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<Bls12_381>(m, l, &r1cs_de_vecs);
     println!("Prover {:?} starts prove", sub_prover_id);
-    let proof = DeIPA::<Bls12_381>::de_r1cs_prove(sub_prover_id, &powers, &x_srs, &y_srs, &sub_wit_polys, &sub_pub_polys, &challenge_r, &domain_x, &domain_y, &mut transcript);
+    let proof = DeSNARKLinear::<Bls12_381>::de_r1cs_prove(sub_prover_id, &powers, &x_srs, &y_srs, &sub_wit_polys, &sub_pub_polys, &challenge_r, &domain_x, &domain_y, &mut transcript);
     println!("Prover {:?} prove total time: {:?}", sub_prover_id, time.elapsed());
 
     if Net::am_master() {
-        let proof_size = DeIPA::<Bls12_381>::get_proof_size(proof.as_ref().unwrap());
+        let proof_size = DeSNARKLinear::<Bls12_381>::get_proof_size(proof.as_ref().unwrap());
         println!("Proof size is {:?} bytes", proof_size);
     }
 
@@ -106,7 +107,7 @@ fn main() {
         let de_pub_polys = generate_r1cs_pub_polynomials(&r1cs_de_pub_vecs);
         println!("Verifier computes public polynomials time: {:?}", time.elapsed());
         let mut transcript : Transcript = Transcript::new(b"R1CS inner product");
-        let is_valid = DeIPA::<Bls12_381>::r1cs_verify_no_preprocess(&v_srs, &proof.unwrap(), &domain_x, &domain_y, &de_pub_polys, &challenge_r, &mut transcript);
+        let is_valid = DeSNARKLinear::<Bls12_381>::r1cs_verify_no_preprocess(&v_srs, &proof.unwrap(), &domain_x, &domain_y, &de_pub_polys, &challenge_r, &mut transcript);
         assert!(is_valid);
     }
     println!("Verify time: {:?}", total_time.elapsed());

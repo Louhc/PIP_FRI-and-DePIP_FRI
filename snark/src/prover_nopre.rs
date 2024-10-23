@@ -13,7 +13,6 @@ use ark_ff::{Zero, One, Field};
 use de_network::{DeMultiNet as Net, DeNet};
 use rayon::prelude::*;
 use my_kzg::par_join_3;
-
 use crate::par_join_4;
 
 
