@@ -1,3 +1,8 @@
+// usage
+// RAYON_NUM_THREADS=32 cargo build --release --example snark_linear_verifier_test --no-default-features --features "parallel"
+// RAYON_NUM_THREADS=32 ./snark_linear_verifier_test 2 ../../../snark/data/4
+
+
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_ec::pairing::Pairing;
 use my_kzg::{biv_batch_kzg::BivBatchKZG, helper::get_x_srs};
