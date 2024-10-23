@@ -9,9 +9,9 @@ use ark_ff::{Zero, One, Field};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use std::time::Instant;
 use rayon::prelude::*;
-use crate::{indexer::{DeRowIndex, DeColIndex}, prover_nopre::NoPreProver};
+use crate::{indexer::{DeRowIndex, DeColIndex, NEvals}, prover_nopre::NoPreProver};
 use my_kzg::par_join_3;
-use crate::prover_pre::{PreProver, DeValPolys, NEvals, NPolys, DeLowerAandBEvals, DeLowerAandBPolys, };
+use crate::prover_pre::{PreProver, DeValPolys, NPolys, DeLowerAandBEvals, DeLowerAandBPolys};
 use crate::par_join_4;
 
 pub struct DeSNARKLog<P: Pairing> {

@@ -28,7 +28,6 @@ pub struct SNARKProofNoPre<P: Pairing> {
     proofs_wit_polys: (P::G1, Vec<P::ScalarField>, P::ScalarField, (P::G1, P::G1), P::G1)
 }
 
-
 impl<P: Pairing> DeIPA<P> {
 
     pub fn de_r1cs_prove (
@@ -126,6 +125,8 @@ impl<P: Pairing> DeIPA<P> {
         // get g1 and h1
         let time = Instant::now();
         let (poly_g1, poly_h1) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target, &u1, &x_domain);
+        println!("g1's degree is: {}", poly_g1.degree());
+        println!("h1's degree is: {}", poly_h1.degree());
         let com_g1_h1 = BatchKZG::<P>::commit(&x_srs, &vec![poly_g1.clone(), poly_h1.clone()]).unwrap();
 
         // send com of g1 and h1 to P0
@@ -201,19 +202,23 @@ impl<P: Pairing> DeIPA<P> {
             // using ifft, from evaluations to polynomials
             // Require g2 and h2, so have to convert to coefficient terms
 
-            let evals_pa_alpha = evals.par_iter().map(|(eval, _)| eval[0]).collect();
+            let evals_pa_alpha: Vec<P::ScalarField> = evals.par_iter().map(|(eval, _)| eval[0]).collect();
             let evals_pb_alpha = evals.par_iter().map(|(eval, _)| eval[1]).collect();
             let evals_pc_alpha = evals.par_iter().map(|(eval, _)| eval[2]).collect();
             let evals_w_alpha = evals.par_iter().map(|(eval, _)| eval[3]).collect();
-            let evals_a_r_alpha = evals.par_iter().map(|(eval, _)| eval[4]).collect();
+            let evals_a_r_alpha: Vec<P::ScalarField> = evals.par_iter().map(|(eval, _)| eval[4]).collect();
             let evals_a_r = evals.par_iter().map(|(eval, _)| eval[5]).collect();
-            let evals_b_alpha = evals.par_iter().map(|(eval, _)| eval[6]).collect();
+            let evals_b_alpha: Vec<P::ScalarField> = evals.par_iter().map(|(eval, _)| eval[6]).collect();
             let evals_b_r_inverse: Vec<P::ScalarField> = evals.par_iter().map(|(eval, _)| eval[7]).collect();
             let evals_b_0: Vec<P::ScalarField> = evals.par_iter().map(|(eval, _)| eval[8]).collect();
             let evals_c_r = evals.par_iter().map(|(eval, _)| eval[9]).collect();
             let evals_r = evals.par_iter().map(|(eval, _)| eval[10]).collect();
+            println!("evals_a_r_alpha.len(): {}", evals_a_r_alpha.len());
+            println!("evals_b_alpha.len(): {}", evals_b_alpha.len());
 
+            println!("evals_pa_alpha length is: {}", evals_pa_alpha.len());
             let poly_pa_alpha = Self::interpolate_from_eval_domain(&evals_pa_alpha, y_domain);
+            println!("poly_pa_alpha degree is: {}", poly_pa_alpha.degree());
             let poly_pb_alpha = Self::interpolate_from_eval_domain(&evals_pb_alpha, y_domain);
             let poly_pc_alpha = Self::interpolate_from_eval_domain(&evals_pc_alpha, y_domain);
             let poly_w_alpha = Self::interpolate_from_eval_domain(&evals_w_alpha, y_domain);
@@ -225,11 +230,15 @@ impl<P: Pairing> DeIPA<P> {
             let poly_b_r_virtual = &poly_b_r_inverse * r_pow_m + &poly_b_0 * (P::ScalarField::one() - r_pow_m);
             let poly_c_r = Self::interpolate_from_eval_domain(&evals_c_r, y_domain);
             let poly_r = Self::interpolate_from_eval_domain(&evals_r, y_domain);
+            println!("poly_r's degree is: {}", poly_r.degree());
+            println!("poly_a_r_alpha's degree is: {}", poly_a_r_alpha.degree());
+            println!("poly_b_alpha's degree is: {}", poly_b_alpha.degree());
 
             let poly_f1_alpha = &(&poly_pa_alpha * &poly_w_alpha) - &(&poly_r * &poly_a_r);
             let poly_f2_alpha = &(&poly_pb_alpha * &poly_w_alpha) - &(&poly_r * &poly_b_r_virtual);
             let poly_f3_alpha = &(&poly_pc_alpha * &poly_w_alpha) - &(&poly_r * &poly_c_r);
             let poly_f4_alpha = &(&(&poly_r * &poly_a_r_alpha) * &poly_b_alpha) - &(&poly_r * &poly_c_r);
+            println!("poly_f4_alpha degree is: {}", poly_f4_alpha.degree());
 
             let polynomials_y = vec![poly_pa_alpha, poly_pb_alpha, poly_pc_alpha, poly_w_alpha,
                                                                                 poly_a_r_alpha, poly_a_r, poly_b_alpha, poly_b_r_inverse, poly_b_0, poly_c_r, poly_r];
@@ -242,10 +251,16 @@ impl<P: Pairing> DeIPA<P> {
             polynomial_target_y += (alpha_minus_u1, &poly_f3_alpha);
             alpha_minus_u1 *= v;
             polynomial_target_y += (alpha_minus_u1, &poly_f4_alpha);
+            println!("poly_y's degree is: {}", polynomial_target_y.degree());
 
             // get g2, h2low, h2high
             let (poly_g2, poly_h2) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target_y, &u2, &y_domain);
-            let coeffs_h2 = poly_h2.coeffs.to_vec();
+            println!("g2's degree is: {}", poly_g2.degree());
+            println!("h2's degree is: {}", poly_h2.degree());
+            let mut coeffs_h2 = poly_h2.coeffs.to_vec();
+            if coeffs_h2.len() < l {
+                coeffs_h2.resize(l + 1, P::ScalarField::zero());
+            }
             assert!(coeffs_h2.len() > l);
             let coeffs_h2_low: Vec<P::ScalarField> = coeffs_h2.iter().take(l).cloned().collect();
             let coeffs_h2_high = coeffs_h2.clone()[l..].to_vec();
