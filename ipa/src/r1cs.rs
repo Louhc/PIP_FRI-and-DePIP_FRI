@@ -12,35 +12,53 @@ use ark_relations::{
     lc,
     r1cs::ConstraintSynthesizer,
 };
+use ark_std::{UniformRand, test_rng};
+use std::marker::PhantomData;
 
 #[derive(Clone)]
 pub struct RandomCircuit<P: Pairing> {
-    pub a: Option<P::ScalarField>,
-    pub b: Option<P::ScalarField>,
     pub num_variables: usize,
     pub num_constraints: usize,
+    _pairing: PhantomData<P>,
+}
+
+impl<P: Pairing> RandomCircuit<P> {
+    pub fn new(
+        num_variables: usize,
+        num_constraints: usize,
+    ) -> Self {
+        Self {
+            num_variables,
+            num_constraints,
+            _pairing: PhantomData,
+        }
+    }
 }
 
 impl<P: Pairing> ConstraintSynthesizer<P::ScalarField> for RandomCircuit<P> {
     fn generate_constraints(self, cs: ConstraintSystemRef<P::ScalarField>) -> Result<(), SynthesisError> {
         let n = self.num_variables / 3;
+        let mut rng = test_rng();
         for i in 0..n {
-            let a = cs.new_witness_variable(|| self.a.ok_or(SynthesisError::AssignmentMissing))?;
-            let b = cs.new_witness_variable(|| self.b.ok_or(SynthesisError::AssignmentMissing))?;
+            let rand_a = Some(P::ScalarField::rand(&mut rng));
+            let rand_b = Some(P::ScalarField::rand(&mut rng));
+            let a = cs.new_witness_variable(|| rand_a.ok_or(SynthesisError::AssignmentMissing))?;
+            let b = cs.new_witness_variable(|| rand_b.ok_or(SynthesisError::AssignmentMissing))?;
             let c = cs.new_input_variable(|| {
-                let a = self.a.ok_or(SynthesisError::AssignmentMissing)?;
-                let b = self.b.ok_or(SynthesisError::AssignmentMissing)?;
+                let a = rand_a.ok_or(SynthesisError::AssignmentMissing)?;
+                let b = rand_b.ok_or(SynthesisError::AssignmentMissing)?;
     
                 Ok(a * b)
             })?;
             cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c)?;
             if i == n - 1 {
-                for _ in 0..(self.num_variables - n * 3 - 1) {
-                    let _ = cs.new_witness_variable(|| self.a.ok_or(SynthesisError::AssignmentMissing))?;
-                }
-
                 for _ in 0..(self.num_constraints - n) {
                     cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c)?;
+                }
+
+                for _ in 0..(self.num_variables - n * 3 - 1) {
+                    let rand_a = Some(P::ScalarField::rand(&mut rng));
+                    let _ = cs.new_witness_variable(|| rand_a.ok_or(SynthesisError::AssignmentMissing))?;
                 }
             }
         }

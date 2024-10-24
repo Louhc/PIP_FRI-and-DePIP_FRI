@@ -1,6 +1,6 @@
 use ark_ec::pairing::Pairing;
 use ark_std::rand::{rngs::StdRng, SeedableRng};
-use ark_ff::{ One, Zero, UniformRand};
+use ark_ff::{One, Zero, UniformRand};
 use ark_bls12_381::{Bls12_381, Fr};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
 use my_ipa::r1cs::{R1CSVectors, RandomCircuit};
@@ -19,12 +19,7 @@ fn random_r1cs_satisfication_test() {
 
     // Generate the circuit
 
-    let c = RandomCircuit::<Bls12_381> {
-        a: Some(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng)),
-        b: Some(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng)),
-        num_variables: NUM_VARIABLES,
-        num_constraints: NUM_CONSTRAINTS,
-    };
+    let c = RandomCircuit::<Bls12_381>::new(NUM_VARIABLES, NUM_CONSTRAINTS);
     let cs = ConstraintSystem::<<Bls12_381 as Pairing>::ScalarField>::new_ref();
     c.generate_constraints(cs.clone()).unwrap();
     assert!(cs.is_satisfied().unwrap());
