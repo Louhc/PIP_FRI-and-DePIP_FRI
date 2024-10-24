@@ -76,6 +76,8 @@ fn main() {
         num_variables: m * l,
         num_constraints: m * l,
     };
+    println!("Number of constraints: {:?}", c.num_constraints);
+    println!("Number of variables: {:?}", c.num_variables);
     let cs = ConstraintSystem::<<Bls12_381 as Pairing>::ScalarField>::new_ref();
     c.generate_constraints(cs.clone()).unwrap();
     assert!(cs.is_satisfied().unwrap());

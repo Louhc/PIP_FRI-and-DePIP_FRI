@@ -5,7 +5,6 @@ use ark_bls12_381::{Bls12_381, Fr};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
 use my_ipa::r1cs::{R1CSVectors, RandomCircuit};
 
-
 const NUM_CONSTRAINTS: usize = 1 << 10;
 const NUM_VARIABLES: usize = 1 << 10;
 
