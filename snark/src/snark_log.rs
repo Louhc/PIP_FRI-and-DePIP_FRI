@@ -650,7 +650,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         // T_col
         // Note: id starts from zero
         let evals_t_col = evals_t_f2_n[2].clone();
-        let l_h_m_minums_1 = evaluate_one_lagrange::<P>(m-2, &x_domain, &delta);
+        let l_h_m_minums_1 = evaluate_one_lagrange::<P>(m-1, &x_domain, &delta);
         assert!(evals_t_col[0] == P::ScalarField::one());
         assert!(evals_t_col[2] == alpha * evals_t_col[1] + l_h_m_minums_1 * (P::ScalarField::one() - alpha.pow([m as u64])));
         // T_row_low
