@@ -1,8 +1,5 @@
 use ark_ff::{Zero, One};
 use ark_ec::pairing::Pairing;
-use ark_relations::r1cs::{
-    ConstraintSystemRef, SynthesisError,
-};
 use rayon::prelude::*;
 use my_kzg::par_join_3;
 use itertools::MultiUnzip;
@@ -10,7 +7,7 @@ use ark_std::ops::AddAssign;
 use ark_std::cfg_iter;
 use ark_relations::{
     lc,
-    r1cs::ConstraintSynthesizer,
+    r1cs::{ConstraintSystemRef, ConstraintSynthesizer, SynthesisError},
 };
 use ark_std::{UniformRand, test_rng};
 use std::marker::PhantomData;
