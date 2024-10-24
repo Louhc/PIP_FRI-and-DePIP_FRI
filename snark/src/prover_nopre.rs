@@ -15,7 +15,6 @@ use rayon::prelude::*;
 use my_kzg::par_join_3;
 use crate::par_join_4;
 
-
 pub struct NoPreProver<P: Pairing> {
     _pairing: PhantomData<P>,
 }

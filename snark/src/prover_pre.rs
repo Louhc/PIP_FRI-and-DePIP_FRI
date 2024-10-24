@@ -126,7 +126,6 @@ impl<P: Pairing> PreProver<P> {
 
         assert!(m.is_power_of_two());
         assert!(m_domain.size().is_power_of_two());
-        assert!(m != m_domain.size());
         assert_eq!(row_index_vec.row_pa_low.len(), m_domain.size());
         let sqrt_ml = ((m * l) as f64).sqrt() as usize;
         let r_pow = r.pow([sqrt_ml as u64]);
@@ -228,7 +227,6 @@ impl<P: Pairing> PreProver<P> {
 
         assert!(m.is_power_of_two());
         assert!(m_domain.size().is_power_of_two());
-        assert!(m != m_domain.size());
         assert_eq!(sub_col.col_pa.len(), m_domain.size());
 
         // compute B_pa, B_pb, B_pc
