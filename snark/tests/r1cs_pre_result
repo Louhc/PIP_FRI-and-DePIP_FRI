@@ -1,0 +1,68 @@
+cs_matrix: Some(ConstraintMatrices { 
+    num_instance_variables: 1, 
+    num_witness_variables: 3, 
+    num_constraints: 4, 
+    a_num_non_zero: 4, 
+    b_num_non_zero: 4, 
+    c_num_non_zero: 4, 
+    a: [[(BigInt([1, 0, 0, 0]), 1)], [(BigInt([1, 0, 0, 0]), 2)], [(BigInt([3, 0, 0, 0]), 0)], [(BigInt([1, 0, 0, 0]), 0)]], 
+    b: [[(BigInt([1, 0, 0, 0]), 2)], [(BigInt([2, 0, 0, 0]), 0)], [(BigInt([1, 0, 0, 0]), 1)], [(BigInt([1, 0, 0, 0]), 2)]], 
+    c: [[(BigInt([1, 0, 0, 0]), 3)], [(BigInt([1, 0, 0, 0]), 3)], [(BigInt([1, 0, 0, 0]), 3)], [(BigInt([1, 0, 0, 0]), 2)]] 
+})
+
+witness vector: [BigInt([1, 0, 0, 0]), BigInt([2, 0, 0, 0]), BigInt([3, 0, 0, 0]), BigInt([6, 0, 0, 0])]
+
+r1cs preprocessing row info: [
+    DeRowIndex { 
+        row_pa_low: [0, 0, 1, 0], 
+        row_pa_high: [0, 1, 1, 0], 
+        row_pb_low: [1, 0, 0, 0], 
+        row_pb_high: [0, 1, 0, 0], 
+        row_pc_low: [0, 0, 0, 0], 
+        row_pc_high: [0, 0, 0, 0] }, 
+    DeRowIndex { 
+        row_pa_low: [1, 0, 0, 0], 
+        row_pa_high: [0, 0, 0, 0], 
+        row_pb_low: [0, 1, 0, 0], 
+        row_pb_high: [0, 1, 0, 0], 
+        row_pc_low: [0, 1, 0, 1], 
+        row_pc_high: [0, 0, 1, 1] 
+    }
+]
+
+r1cs preprocessing col info: [
+    DeColIndex { 
+        col_pa: [1, 0, 0, 0], 
+        col_pb: [0, 1, 0, 0], 
+        col_pc: [0, 0, 0, 0] 
+    }, 
+    DeColIndex { 
+        col_pa: [0, 0, 0, 0], 
+        col_pb: [0, 0, 0, 0], 
+        col_pc: [1, 1, 1, 0] 
+    }
+]
+
+r1cs preprocessing val info: [
+    DeValEvals { 
+        evals_val_pa: [BigInt([1, 0, 0, 0]), BigInt([3, 0, 0, 0]), BigInt([1, 0, 0, 0]), BigInt([0, 0, 0, 0])], 
+        evals_val_pb: [BigInt([2, 0, 0, 0]), BigInt([1, 0, 0, 0]), BigInt([0, 0, 0, 0]), BigInt([0, 0, 0, 0])], 
+        evals_val_pc: [BigInt([0, 0, 0, 0]), BigInt([0, 0, 0, 0]), BigInt([0, 0, 0, 0]), BigInt([0, 0, 0, 0])] 
+    }, 
+    DeValEvals { 
+        evals_val_pa: [BigInt([1, 0, 0, 0]), BigInt([0, 0, 0, 0]), BigInt([0, 0, 0, 0]), BigInt([0, 0, 0, 0])], 
+        evals_val_pb: [BigInt([1, 0, 0, 0]), BigInt([1, 0, 0, 0]), BigInt([0, 0, 0, 0]), BigInt([0, 0, 0, 0])], 
+        evals_val_pc: [BigInt([1, 0, 0, 0]), BigInt([1, 0, 0, 0]), BigInt([1, 0, 0, 0]), BigInt([1, 0, 0, 0])] 
+    }]
+
+r1cs preprocessing lookup info: 
+    NEvals { 
+        row_pa_low: [BigInt([6, 0, 0, 0]), BigInt([2, 0, 0, 0])], 
+        row_pa_high: [BigInt([6, 0, 0, 0]), BigInt([2, 0, 0, 0])], 
+        row_pb_low: [BigInt([6, 0, 0, 0]), BigInt([2, 0, 0, 0])], 
+        row_pb_high: [BigInt([6, 0, 0, 0]), BigInt([2, 0, 0, 0])], 
+        row_pc_low: [BigInt([6, 0, 0, 0]), BigInt([2, 0, 0, 0])],
+        row_pc_high: [BigInt([6, 0, 0, 0]), BigInt([2, 0, 0, 0])], 
+        col_pa: [BigInt([7, 0, 0, 0]), BigInt([1, 0, 0, 0])], 
+        col_pb: [BigInt([7, 0, 0, 0]), BigInt([1, 0, 0, 0])], 
+        col_pc: [BigInt([5, 0, 0, 0]), BigInt([3, 0, 0, 0])] }

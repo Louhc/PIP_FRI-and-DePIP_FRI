@@ -65,7 +65,7 @@ impl<P: Pairing> ConstraintSynthesizer<P::ScalarField> for RandomCircuit<P> {
 }
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct R1CSVectors<P: Pairing> {
     pub vec_x: Vec<P::ScalarField>,
     pub vec_y: Vec<P::ScalarField>,
