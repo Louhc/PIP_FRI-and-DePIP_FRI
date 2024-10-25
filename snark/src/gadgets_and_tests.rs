@@ -1,6 +1,8 @@
 use ark_ec::pairing::Pairing;
 use rayon::prelude::*;
-use ark_ff::{One, Zero};
+use ark_ff::{One, Zero, Field};
+use crate::indexer::{DeRowIndex, DeColIndex, DeValEvals, NEvals};
+use my_ipa::r1cs::R1CSVectors;
 
 pub fn inner_product <P: Pairing> (
     vec_1: &Vec<P::ScalarField>,
@@ -77,12 +79,16 @@ pub fn init <P: Pairing> ()
 
 pub fn init_distinct_m_m_prime <P: Pairing> () 
     -> (Vec<Vec<P::ScalarField>>, Vec<Vec<P::ScalarField>>, Vec<Vec<P::ScalarField>>,
-    Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) {
+    Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>,
+    Vec<DeRowIndex>, Vec<DeColIndex>, Vec<DeValEvals<P>>, NEvals<P>) {
     
     let f_zero = P::ScalarField::zero();
     let f_one = P::ScalarField::one();
     let f_two = P::ScalarField::from(2 as u64);
+    let f_three = P::ScalarField::from(3 as u64);
     let f_four = P::ScalarField::from(4 as u64);
+    let f_five = P::ScalarField::from(5 as u64);
+    let f_six = P::ScalarField::from(6 as u64);
     let pa = vec![vec![f_two, f_zero, f_zero, f_zero],
             vec![f_zero, f_one, f_one, f_zero],
             vec![f_zero, f_one, f_one, f_zero],
@@ -106,9 +112,178 @@ pub fn init_distinct_m_m_prime <P: Pairing> ()
 
     assert_eq!(c, entry_product::<P>(&a, &b));
 
-    (pa, pb, pc, w, a, b, c)
+     // m_prime is not power-of-two
+     let row_1 = DeRowIndex {
+        row_pa_low: vec![0, 1, 0, 0], row_pa_high: vec![0, 0, 1, 0],
+        row_pb_low: vec![0, 1, 1, 0], row_pb_high: vec![0, 0, 1, 0],
+        row_pc_low: vec![0, 1, 0, 0], row_pc_high: vec![0, 0, 0, 0]
+    };
+    let row_2 = DeRowIndex {
+        row_pa_low: vec![1, 0, 1, 0], row_pa_high: vec![0, 1, 1, 0],
+        row_pb_low: vec![0, 0, 1, 0], row_pb_high: vec![0, 1, 1, 0],
+        row_pc_low: vec![0, 1, 0, 0], row_pc_high: vec![1, 1, 0, 0]
+    };
+    let row = vec![row_1.clone(), row_2.clone()];
+
+    let col_1 = DeColIndex {
+        col_pa: vec![0, 1, 1, 0],
+        col_pb: vec![1, 0, 1, 0],
+        col_pc: vec![0, 1, 0, 0]
+    };
+    let col_2 = DeColIndex {
+        col_pa: vec![0, 0, 1, 0],
+        col_pb: vec![0, 1, 0, 0],
+        col_pc: vec![0, 1, 0, 0]
+    };
+    let col = vec![col_1.clone(), col_2.clone()];
+
+    let val_1 = DeValEvals::<P> {
+        evals_val_pa: vec![f_two, f_one, f_one, f_zero],
+        evals_val_pb: vec![f_one, f_two, f_one, f_zero],
+        evals_val_pc: vec![f_four, f_four, f_zero, f_zero]
+    };
+    let val_2 = DeValEvals::<P> {
+        evals_val_pa: vec![f_one, f_one, f_two, f_zero],
+        evals_val_pb: vec![f_one, f_two, f_one, f_zero],
+        evals_val_pc: vec![f_four, f_four, f_zero, f_zero]
+    };
+    let val_evals = vec![val_1.clone(), val_2.clone()];
+
+    let n = NEvals::<P> {
+        row_pa_low: vec![f_five, f_three],
+        row_pa_high: vec![f_five, f_three],
+        row_pb_low: vec![f_five, f_three],
+        row_pb_high: vec![f_five, f_three],
+        row_pc_low: vec![f_six, f_two],
+        row_pc_high: vec![f_six, f_two],
+        col_pa: vec![f_five, f_three],
+        col_pb: vec![f_five, f_three],
+        col_pc: vec![f_six, f_two]
+    };
+
+    (pa, pb, pc, w, a, b, c, row, col, val_evals, n)
 }
 
+
+pub fn init_r1cs_example <P: Pairing> (r: &P::ScalarField) 
+    -> (Vec<R1CSVectors<P>>,
+    Vec<DeRowIndex>, Vec<DeColIndex>, Vec<DeValEvals<P>>, NEvals<P>) {
+    
+    let f_zero = P::ScalarField::zero();
+    let f_one = P::ScalarField::one();
+    let f_two = P::ScalarField::from(2 as u64);
+    let f_three = P::ScalarField::from(3 as u64);
+    let f_four = P::ScalarField::from(4 as u64);
+    let f_five = P::ScalarField::from(5 as u64);
+    let f_six = P::ScalarField::from(6 as u64);
+    let pa = vec![vec![f_two, f_zero, f_zero, f_zero],
+            vec![f_zero, f_one, f_one, f_zero],
+            vec![f_zero, f_one, f_one, f_zero],
+            vec![f_zero, f_zero, f_zero, f_two]];
+
+    let pb = vec![vec![f_zero, f_one, f_one, f_zero],
+            vec![f_two, f_zero, f_zero, f_zero],
+            vec![f_zero, f_zero, f_zero, f_two],
+            vec![f_zero, f_one, f_one, f_zero]];
+
+    let pc = vec![vec![f_four, f_zero, f_zero, f_zero],
+            vec![f_zero, f_four, f_zero, f_zero],
+            vec![f_zero, f_zero, f_four, f_zero],
+            vec![f_zero, f_zero, f_zero, f_four]];
+
+    let w = vec![f_one, f_one, f_one, f_one];
+
+    let a = matrix_mul::<P>(&pa, &w);
+    let b = matrix_mul::<P>(&pb, &w);
+    let c = matrix_mul::<P>(&pc, &w);
+
+    let (w_1, w_2) = split_vector::<P>(&w);
+    let (a_1, a_2) = split_vector::<P>(&a);
+    let (b_1, b_2) = split_vector::<P>(&b);
+    let (c_1, c_2) = split_vector::<P>(&c);
+
+    assert_eq!(c, entry_product::<P>(&a, &b));
+
+
+    let vec_r = vec![f_one, *r, r.square(), r.pow([3 as u64])];
+    let x = vec_matrix_mul::<P>(&vec_r, &pa);
+    let y = vec_matrix_mul::<P>(&vec_r, &pb);
+    let z = vec_matrix_mul::<P>(&vec_r, &pc);
+
+    let (x_1, x_2) = split_vector::<P>(&x);
+    let (y_1, y_2) = split_vector::<P>(&y);
+    let (z_1, z_2) = split_vector::<P>(&z);
+
+     // m_prime is not power-of-two
+     let row_1 = DeRowIndex {
+        row_pa_low: vec![0, 1, 0, 0], row_pa_high: vec![0, 0, 1, 0],
+        row_pb_low: vec![0, 1, 1, 0], row_pb_high: vec![0, 0, 1, 0],
+        row_pc_low: vec![0, 1, 0, 0], row_pc_high: vec![0, 0, 0, 0]
+    };
+    let row_2 = DeRowIndex {
+        row_pa_low: vec![1, 0, 1, 0], row_pa_high: vec![0, 1, 1, 0],
+        row_pb_low: vec![0, 0, 1, 0], row_pb_high: vec![0, 1, 1, 0],
+        row_pc_low: vec![0, 1, 0, 0], row_pc_high: vec![1, 1, 0, 0]
+    };
+    let row = vec![row_1.clone(), row_2.clone()];
+
+    let col_1 = DeColIndex {
+        col_pa: vec![0, 1, 1, 0],
+        col_pb: vec![1, 0, 1, 0],
+        col_pc: vec![0, 1, 0, 0]
+    };
+    let col_2 = DeColIndex {
+        col_pa: vec![0, 0, 1, 0],
+        col_pb: vec![0, 1, 0, 0],
+        col_pc: vec![0, 1, 0, 0]
+    };
+    let col = vec![col_1.clone(), col_2.clone()];
+
+    let val_1 = DeValEvals::<P> {
+        evals_val_pa: vec![f_two, f_one, f_one, f_zero],
+        evals_val_pb: vec![f_one, f_two, f_one, f_zero],
+        evals_val_pc: vec![f_four, f_four, f_zero, f_zero]
+    };
+    let val_2 = DeValEvals::<P> {
+        evals_val_pa: vec![f_one, f_one, f_two, f_zero],
+        evals_val_pb: vec![f_one, f_two, f_one, f_zero],
+        evals_val_pc: vec![f_four, f_four, f_zero, f_zero]
+    };
+    let val_evals = vec![val_1.clone(), val_2.clone()];
+
+    let n = NEvals::<P> {
+        row_pa_low: vec![f_five, f_three],
+        row_pa_high: vec![f_five, f_three],
+        row_pb_low: vec![f_five, f_three],
+        row_pb_high: vec![f_five, f_three],
+        row_pc_low: vec![f_six, f_two],
+        row_pc_high: vec![f_six, f_two],
+        col_pa: vec![f_five, f_three],
+        col_pb: vec![f_five, f_three],
+        col_pc: vec![f_six, f_two]
+    };
+
+    let r1cs_vec_1 = R1CSVectors::<P> {
+        vec_x: x_1,
+        vec_y: y_1,
+        vec_z: z_1,
+        vec_w: w_1,
+        vec_a: a_1,
+        vec_b: b_1, 
+        vec_c: c_1
+    };
+    let r1cs_vec_2 = R1CSVectors::<P> {
+        vec_x: x_2,
+        vec_y: y_2,
+        vec_z: z_2,
+        vec_w: w_2,
+        vec_a: a_2,
+        vec_b: b_2, 
+        vec_c: c_2
+    };
+
+    (vec![r1cs_vec_1, r1cs_vec_2], row, col, val_evals, n)
+}
 
 #[cfg(test)]
 mod tests{
@@ -132,7 +307,7 @@ fn matrix_mul_test() {
     let (_pa, _pb, _pc, _w, a, b, c) = init::<Bls12_381>();
     assert_eq!(c, entry_product::<Bls12_381>(&a, &b));
 
-    let (_pa, _pb, _pc, _w, a, b, c) = init_distinct_m_m_prime::<Bls12_381>();
+    let (_pa, _pb, _pc, _w, a, b, c, _row, _col, _val_evals, _n) = init_distinct_m_m_prime::<Bls12_381>();
     assert_eq!(c, entry_product::<Bls12_381>(&a, &b));
 }
 
@@ -499,80 +674,26 @@ fn preprocessing_gadgetes_test_with_distinct_m_and_mprime() {
 
     let f_zero = MyField::zero();
     let f_one = MyField::one();
-    let f_two = MyField::from(2);
-    let f_three = MyField::from(3);
-    let f_four = MyField::from(4);
-    let f_five = MyField::from(5);
-    let f_six = MyField::from(6);
-    let (pa, pb, pc, _w, _a, _b, _c) = init_distinct_m_m_prime::<Bls12_381>();
-
-    // TODO: consider m_prime is not power-of-two
-    let row_1 = DeRowIndex {
-        row_pa_low: vec![0, 1, 0, 0], row_pa_high: vec![0, 0, 1, 0],
-        row_pb_low: vec![0, 1, 1, 0], row_pb_high: vec![0, 0, 1, 0],
-        row_pc_low: vec![0, 1, 0, 0], row_pc_high: vec![0, 0, 0, 0]
-    };
-    let row_2 = DeRowIndex {
-        row_pa_low: vec![1, 0, 1, 0], row_pa_high: vec![0, 1, 1, 0],
-        row_pb_low: vec![0, 0, 1, 0], row_pb_high: vec![0, 1, 1, 0],
-        row_pc_low: vec![0, 1, 0, 0], row_pc_high: vec![1, 1, 0, 0]
-    };
-    let row = vec![row_1.clone(), row_2.clone()];
-
-    let col_1 = DeColIndex {
-        col_pa: vec![0, 1, 1, 0],
-        col_pb: vec![1, 0, 1, 0],
-        col_pc: vec![0, 1, 0, 0]
-    };
-    let col_2 = DeColIndex {
-        col_pa: vec![0, 0, 1, 0],
-        col_pb: vec![0, 1, 0, 0],
-        col_pc: vec![0, 1, 0, 0]
-    };
-    let col = vec![col_1.clone(), col_2.clone()];
-
-    let val_1 = DeValEvals::<Bls12_381> {
-        evals_val_pa: vec![f_two, f_one, f_one, f_zero],
-        evals_val_pb: vec![f_one, f_two, f_one, f_zero],
-        evals_val_pc: vec![f_four, f_four, f_zero, f_zero]
-    };
-    let val_2 = DeValEvals::<Bls12_381> {
-        evals_val_pa: vec![f_one, f_one, f_two, f_zero],
-        evals_val_pb: vec![f_one, f_two, f_one, f_zero],
-        evals_val_pc: vec![f_four, f_four, f_zero, f_zero]
-    };
-    let val_evals = vec![val_1.clone(), val_2.clone()];
-
-    let n = NEvals::<Bls12_381> {
-        row_pa_low: vec![f_five, f_three],
-        row_pa_high: vec![f_five, f_three],
-        row_pb_low: vec![f_five, f_three],
-        row_pb_high: vec![f_five, f_three],
-        row_pc_low: vec![f_six, f_two],
-        row_pc_high: vec![f_six, f_two],
-        col_pa: vec![f_five, f_three],
-        col_pb: vec![f_five, f_three],
-        col_pc: vec![f_six, f_two]
-    };
+    let (pa, pb, pc, _w, _a, _b, _c , row, col, val_evals, n) = init_distinct_m_m_prime::<Bls12_381>();
 
     let mut rng = StdRng::seed_from_u64(0u64);
-    // let r = MyField::rand(&mut rng);
-    // let alpha = MyField::rand(&mut rng);
-    // let beta = MyField::rand(&mut rng);
+    let r = MyField::rand(&mut rng);
+    let alpha = MyField::rand(&mut rng);
+    let beta = MyField::rand(&mut rng);
     let gamma = MyField::rand(&mut rng);
-    let r = f_two;
-    let alpha = f_one;
-    let beta = f_one;
+    // let r = f_two;
+    // let alpha = f_one;
+    // let beta = f_one;
     let x_domain =  <GeneralEvaluationDomain<MyField> as EvaluationDomain<MyField>>::new(m).unwrap();
     let y_domain =  <GeneralEvaluationDomain<MyField> as EvaluationDomain<MyField>>::new(l).unwrap();
     let m_domain =  <GeneralEvaluationDomain<MyField> as EvaluationDomain<MyField>>::new(m_prime).unwrap();
     let eval_beta: Vec<MyField> = y_domain.evaluate_all_lagrange_coefficients(beta);
 
     // compute f_V(alpha, beta) from A, B
-    let (upper_a_t_polys_1, upper_a_t_evals_1) = PreProver::<Bls12_381>::compute_upper_a_t_polys_from_rows(m, l, &x_domain, &m_domain, &row_1, &r);
-    let (upper_a_t_polys_2, upper_a_t_evals_2) = PreProver::<Bls12_381>::compute_upper_a_t_polys_from_rows(m, l, &x_domain, &m_domain, &row_2, &r);
-    let (upper_b_t_polys_1, upper_b_t_evals_1) = PreProver::<Bls12_381>::compute_upper_b_t_polys_from_cols(m, &x_domain, &m_domain, &col_1, &alpha);
-    let (upper_b_t_polys_2, upper_b_t_evals_2) = PreProver::<Bls12_381>::compute_upper_b_t_polys_from_cols(m, &x_domain, &m_domain, &col_2, &alpha);
+    let (upper_a_t_polys_1, upper_a_t_evals_1) = PreProver::<Bls12_381>::compute_upper_a_t_polys_from_rows(m, l, &x_domain, &m_domain, &row[0], &r);
+    let (upper_a_t_polys_2, upper_a_t_evals_2) = PreProver::<Bls12_381>::compute_upper_a_t_polys_from_rows(m, l, &x_domain, &m_domain, &row[1], &r);
+    let (upper_b_t_polys_1, upper_b_t_evals_1) = PreProver::<Bls12_381>::compute_upper_b_t_polys_from_cols(m, &x_domain, &m_domain, &col[0], &alpha);
+    let (upper_b_t_polys_2, upper_b_t_evals_2) = PreProver::<Bls12_381>::compute_upper_b_t_polys_from_cols(m, &x_domain, &m_domain, &col[1], &alpha);
     let val_polys = Indexer::<Bls12_381>::compute_val_polys(l, &m_domain, &val_evals);
     let upper_a_t_polys = vec![upper_a_t_polys_1, upper_a_t_polys_2];
     let upper_b_t_polys = vec![upper_b_t_polys_1, upper_b_t_polys_2];
@@ -610,7 +731,6 @@ fn preprocessing_gadgetes_test_with_distinct_m_and_mprime() {
     // compute f_V(alpha, beta) from rPa, rPb, rPc
     let vec_r = vec![f_one, r, r.square(), r.pow([3 as u64])];
     let x = vec_matrix_mul::<Bls12_381>(&vec_r, &pa);
-    println!("vec_x: {:?}", x);
     let y = vec_matrix_mul::<Bls12_381>(&vec_r, &pb);
     let z = vec_matrix_mul::<Bls12_381>(&vec_r, &pc);
 

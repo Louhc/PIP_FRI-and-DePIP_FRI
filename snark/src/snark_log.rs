@@ -114,35 +114,46 @@ impl<P: Pairing> DeSNARKLog<P> {
         let (upper_a_t_polys, upper_a_t_evals) = PreProver::<P>::compute_upper_a_t_polys_from_rows(m, l, &x_domain, &m_domain, &row_index_vec, &r);
         // get g1 and h1
         let (poly_g1, poly_h1) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target, &u1, &x_domain);
-        let (coms_upper_a, coms_g1_h1_t) = PreProver::commit_g1_h1_upper_a_t_polys(sub_prover_id, &m_powers, &x_srs, &poly_g1, &poly_h1, &upper_a_t_polys);
+        // Note:: here coms_upper_a are de_commitments
+        let (coms_upper_a, de_coms_g1_h1_t) = PreProver::commit_g1_h1_upper_a_t_polys(sub_prover_id, &m_powers, &x_srs, &poly_g1, &poly_h1, &upper_a_t_polys);
 
         // send com of A_low, A_high, g1, h1 to P0
-        let mut com_upper_a_g1_h1_slice = coms_upper_a.clone();
-        com_upper_a_g1_h1_slice.push(coms_g1_h1_t[0]);
-        com_upper_a_g1_h1_slice.push(coms_g1_h1_t[1]);
-        let com_upper_a_g1_h1_slices = Net::send_to_master(&com_upper_a_g1_h1_slice);
+        let mut com_g1_h1_slice = vec![de_coms_g1_h1_t[0]];
+        com_g1_h1_slice.push(de_coms_g1_h1_t[1]);
+        let com_g1_h1_slices = Net::send_to_master(&com_g1_h1_slice);
 
         // generate the final commitments of A_low, A_high, g1, h1, t_low, t_high, total 10 coms, and t_low, t_high only held by P_0
-        let coms_upper_a_g1_h1_t = if Net::am_master() {
-            let com_upper_a_g1_h1_slices = com_upper_a_g1_h1_slices.unwrap();
-            let coms_upper_a_g1_h1: Vec<P::G1> = (0..com_upper_a_g1_h1_slices[0].len()).map(|i| {
-                com_upper_a_g1_h1_slices.par_iter().map(|coms| coms[i]).sum()
+        let coms_g1_h1_t = if Net::am_master() {
+            let com_g1_h1_slices = com_g1_h1_slices.unwrap();
+            let coms_g1_h1: Vec<P::G1> = (0..com_g1_h1_slices[0].len()).map(|i| {
+                com_g1_h1_slices.par_iter().map(|coms| coms[i]).sum()
             }).collect();
-            let mut coms_upper_a_g1_h1_t = coms_upper_a_g1_h1;
-            coms_upper_a_g1_h1_t.push(coms_g1_h1_t[2]);
-            coms_upper_a_g1_h1_t.push(coms_g1_h1_t[3]);
-            assert_eq!(coms_upper_a_g1_h1_t.len(), 10);
-            coms_upper_a_g1_h1_t
+            let mut coms_g1_h1_t = coms_g1_h1;
+            coms_g1_h1_t.push(de_coms_g1_h1_t[2]);
+            coms_g1_h1_t.push(de_coms_g1_h1_t[3]);
+            assert_eq!(coms_g1_h1_t.len(), 4);
+            coms_g1_h1_t
         } else {
             Vec::new()
         };
-        let coms_g1_h1 = vec![coms_upper_a_g1_h1_t[6].clone(), coms_upper_a_g1_h1_t[7].clone()];
-        let coms_a_t = vec![coms_upper_a_g1_h1_t[8].clone(), coms_upper_a_g1_h1_t[9].clone()];
+        let coms_g1_h1 = if Net::am_master() {
+            vec![coms_g1_h1_t[0].clone(), coms_g1_h1_t[1].clone()]
+        } else {
+            Vec::new()
+        };
+        let coms_a_t = if Net::am_master() {
+            vec![coms_g1_h1_t[2].clone(), coms_g1_h1_t[3].clone()]
+        } else {
+            Vec::new()
+        };
         println!("Prover {:?} compute and commit A, T, g1, h1 time: {:?}", sub_prover_id, time.elapsed());
 
         // generate new challenges alpha and u2
         let (alpha, u2, gamma) = if Net::am_master() {
-            let slice: &[P::G1] = &coms_upper_a_g1_h1_t;
+            let mut coms = coms_upper_a.clone();
+            coms.extend(&coms_g1_h1.clone());
+            coms.extend(&coms_a_t.clone());
+            let slice: &[P::G1] = &coms;
             <Transcript as ProofTranscript<P>>::append_points(transcript, b"alpha_and_u2", slice);
             let alpha = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluation_for_x");
             let u2 = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_ldt_padding");
@@ -163,12 +174,14 @@ impl<P: Pairing> DeSNARKLog<P> {
         // also send g1(alpha) and h1(alpha)
         let time = Instant::now();
         let eval_r = eval_r;
+        // pa, pb, pc, w, ar, b
         let evals_alpha = NoPreProver::<P>::compute_evals_alpha(&wit_polys, &pub_polys, &r, &alpha);
         // slices of g1(alpha) and h1(alpha)
         let eval_g1 = poly_g1.evaluate(&alpha);
         let eval_h1 = poly_h1.evaluate(&alpha);
         let proof_g1_h1 = BatchKZG::<P>::open(&x_srs, &vec![poly_g1, poly_h1], &alpha, &gamma).unwrap();
 
+        // pa_alpha, pb_alpha, pc_alpha, w_alpha, a_r_alpha, a_r, b_alpha, b_r_inverse, b_0, c_r, R
         let evals = vec![evals_alpha[0], evals_alpha[1], evals_alpha[2], evals_alpha[3], evals_alpha[4], evals_r[0], 
                                                             evals_alpha[5], evals_r[2], evals_r[1], evals_r[3], eval_r,
                                                             eval_g1, eval_h1];
@@ -189,7 +202,11 @@ impl<P: Pairing> DeSNARKLog<P> {
 
             // get g2, h2low, h2high
             let (poly_g2, poly_h2) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target_y, &u2, &y_domain);
-            let coeffs_h2 = poly_h2.coeffs.to_vec();
+            let mut coeffs_h2 = poly_h2.coeffs.to_vec();
+            if coeffs_h2.len() < l {
+                coeffs_h2.resize(l + 1, P::ScalarField::zero());
+                println!("Pad degree {} h2", poly_h2.degree())
+            }
             assert!(coeffs_h2.len() > l);
             let coeffs_h2_low: Vec<P::ScalarField> = coeffs_h2.iter().take(l).cloned().collect();
             let coeffs_h2_high = coeffs_h2.clone()[l..].to_vec();
@@ -231,14 +248,6 @@ impl<P: Pairing> DeSNARKLog<P> {
             Net::recv_from_master(None)
         };
 
-        // generate proof to alpha, beta
-        // also open R(r^m, beta)
-        let time = Instant::now();
-        let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r], vec![r_pow_m]];
-        let sub_polynomials = vec![wit_polys.poly_w.clone(), wit_polys.poly_a.clone(), wit_polys.poly_b.clone(), wit_polys.poly_c.clone(), upper_r_poly.clone()];
-        let proofs_wit_upper_r_polys= BivBatchKZG::<P>::de_open_lagrange_at_same_y(sub_prover_id, &powers, &x_srs, &sub_polynomials, &x_points, &beta, &y_domain, transcript, &gamma);
-        println!("Prover {:?} computs proofs of bivariate polynomials time: {:?}", sub_prover_id, time.elapsed());
-
         let time = Instant::now();
         let (evals_g1_h1, proof_g1_h1, evals_wit_upper_r_polys, evals_g2_h2, proof_g2_h2) = if Net::am_master() {
             // compute proof and evaluations to g2, h2low, h2high
@@ -247,6 +256,7 @@ impl<P: Pairing> DeSNARKLog<P> {
             let eval_h2_low = polys_g2_h2[1].evaluate(&beta);
             let eval_h2_high = polys_g2_h2[2].evaluate(&beta);
             
+            // pa_alpha, pb_alpha, pc_alpha, w_alpha, a_r_alpha, a_r, b_alpha, b_r_inverse, b_0, c_r, R
             let eval_w_alpha_beta = polynomials_y[3].evaluate(&beta);
             let eval_ar_alpha_beta = polynomials_y[4].evaluate(&beta);
             let eval_a_r_beta = polynomials_y[5].evaluate(&beta);
@@ -287,7 +297,7 @@ impl<P: Pairing> DeSNARKLog<P> {
             <Transcript as ProofTranscript<P>>::append_points(transcript, b"u3", slice);
             let w = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"rlc");
             let u3 = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_ldt_padding");
-            Net::recv_from_master(Some(vec![u3; Net::n_parties()]));
+            Net::recv_from_master(Some(vec![(w, u3); Net::n_parties()]));
             (w, u3)
         } else {
             Net::recv_from_master(None)
@@ -297,7 +307,6 @@ impl<P: Pairing> DeSNARKLog<P> {
         let time = Instant::now();
         let polys_g3_h3 = PreProver::<P>::compute_g3_h3(&val_polys, &upper_a_t_polys, &upper_b_t_polys, &m_domain, &eval_beta, &w, &u3);
         let coms_g3_h3 = PreProver::<P>::commit_g3_h3(&m_srs, &polys_g3_h3);
-        assert_eq!(coms_g3_h3.len(), 4);
         println!("Prover {:?} commits g3 h3 time: {:?}", sub_prover_id, time.elapsed());
 
         // generate challenges delta and u4
@@ -306,7 +315,7 @@ impl<P: Pairing> DeSNARKLog<P> {
             <Transcript as ProofTranscript<P>>::append_points(transcript, b"delta_u4", slice);
             let delta = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluation_for_x");
             let u4 = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_ldt_padding");
-            Net::recv_from_master(Some(vec![u3; Net::n_parties()]));
+            Net::recv_from_master(Some(vec![(delta, u4); Net::n_parties()]));
             (delta, u4)
         } else {
             Net::recv_from_master(None)
@@ -323,7 +332,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         // compute and commit polys g4,h4
         let time = Instant::now();
         let polys_g4_h4 = PreProver::<P>::compute_g4_h4(&val_upper_and_l_total_evals, &y_domain, &delta, &w, &u3, &u4);
-        let coms_g4_h4 = PreProver::<P>::commit_g4_h4(&y_srs, &polys_g4_h4);
+        let coms_g4_h4 = PreProver::<P>::commit_g4_h4(&y_srs, &y_domain, &polys_g4_h4);
         println!("Prover {:?} commits g4, h4 time: {:?}", sub_prover_id, time.elapsed());
 
         // generate challenge zeta
@@ -331,44 +340,74 @@ impl<P: Pairing> DeSNARKLog<P> {
             let slice: &[P::G1] = &coms_g4_h4;
             <Transcript as ProofTranscript<P>>::append_points(transcript, b"zeta", slice);
             let zeta = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluation_for_y");
-            Net::recv_from_master(Some(vec![u3; Net::n_parties()]));
+            Net::recv_from_master(Some(vec![zeta; Net::n_parties()]));
             zeta
         } else {
             Net::recv_from_master(None)
         };
+        println!("zeta is: {:?}", zeta);
+
+        // generate proof to alpha, beta
+        // also open R(r^m, beta)
+        // Note:: this involves transcript, must put after the generation of the last challenge
+        let time = Instant::now();
+        let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r], vec![r_pow_m]];
+        let sub_polynomials = vec![wit_polys.poly_w.clone(), wit_polys.poly_a.clone(), wit_polys.poly_b.clone(), wit_polys.poly_c.clone(), upper_r_poly.clone()];
+        let proofs_wit_upper_r_polys= BivBatchKZG::<P>::de_open_lagrange_at_same_y(sub_prover_id, &powers, &x_srs, &sub_polynomials, &x_points, &beta, &y_domain, transcript, &gamma);
+        println!("Prover {:?} computs proofs of bivariate polynomials time: {:?}", sub_prover_id, time.elapsed());
 
         // open g4 h4, only P_0 works
         let time = Instant::now();
         let (evals_g4_h4, proof_g4_h4) = PreProver::<P>::open_g4_h4(&y_srs, &y_domain, &polys_g4_h4, &zeta, &gamma);
-        assert_eq!(evals_g4_h4.len(), 5);
         println!("Prover {:?} open g4, h4 time: {:?}", sub_prover_id, time.elapsed());
 
         // open t and f2, only P_0 works
+        // Note:: this also involves transcript
         let time = Instant::now();
-        let mut coms_t_f2 = coms_a_t;
-        coms_t_f2.push(com_b_t);
-        coms_t_f2.push(com_f2);
+        let coms_t_f2 = if Net::am_master() {
+            let mut coms_t_f2 = coms_a_t;
+            coms_t_f2.push(com_b_t);
+            coms_t_f2.push(com_f2);
+            coms_t_f2
+        } else {
+            Vec::new()
+        };
         let (evals_t_f2_n, proof_t_f2_n) = PreProver::<P>::open_t_f2_n(&x_srs, &upper_a_t_polys, &upper_b_t_polys, &poly_f2, &n_polys, &x_domain, &delta, &gamma, transcript);
-        assert_eq!(evals_t_f2_n[0].len(), 3);
-        assert_eq!(evals_t_f2_n[3].len(), 2);
+        if Net::am_master() {
+            assert_eq!(evals_t_f2_n[0].len(), 3);
+            assert_eq!(evals_t_f2_n[3].len(), 2);
+        }
         println!("Prover {:?} open t, f2 time: {:?}", sub_prover_id, time.elapsed());
 
         // open val_upper_lower_a_b at (delta, zeta)
         let time = Instant::now();
-        let (evals_val_upper_lower_a_b_f1, proof_val_upper_lower_a_b_f1) = PreProver::<P>::open_val_upper_lower_a_b_f1(sub_prover_id, &m_powers, &val_polys, &upper_a_t_polys, &upper_b_t_polys, &lower_a_b_polys, &val_upper_and_l_evals, &lower_evals, &de_poly_f1, &y_domain, &delta, &zeta, &gamma);
+        let (evals_val_upper_lower_a_b_f1, proof_val_upper_lower_a_b_f1) = PreProver::<P>::open_val_upper_lower_a_b_f1(sub_prover_id, 
+            &m_powers, 
+            &val_polys, 
+            &upper_a_t_polys, 
+            &upper_b_t_polys, 
+            &lower_a_b_polys, 
+            &val_upper_and_l_evals, 
+            &lower_evals, 
+            &de_poly_f1, 
+            &y_domain, &delta, &zeta, &gamma);
         println!("Prover {:?} open val, A, B, a, b at (delta, zeta) time: {:?}", sub_prover_id, time.elapsed());
 
         // open f1 at (0, 0)
         let time = Instant::now();
         let (eval_f1, proof_f1) = PreProver::<P>::open_f1(sub_prover_id, &m_powers, &de_poly_f1, &y_domain, &gamma);
-        assert_eq!(eval_f1.len(), 1);
+        if Net::am_master() {
+            assert_eq!(eval_f1.len(), 1);
+        }
         println!("Prover {:?} open f1 at (0, 0) time: {:?}", sub_prover_id, time.elapsed());
 
         // open L at (beta, zeta)
         // the prover doesn't need to compute com to L(X, Y) as it is generated by indexer
         let time = Instant::now();
         let (eval_l, proof_l) = PreProver::<P>::open_l_beta_zeta(sub_prover_id, l, &y_domain, &powers, &eval_beta, &beta, &zeta, &gamma);
-        assert_eq!(eval_l.len(), 1);
+        if Net::am_master() {
+            assert_eq!(eval_l.len(), 1);
+        }
         println!("Prover {:?} open L at (beta, zeta) time: {:?}", sub_prover_id, time.elapsed());
 
         if Net::am_master() {
@@ -444,11 +483,6 @@ impl<P: Pairing> DeSNARKLog<P> {
             h: m_v_srs.h.clone(),
             h_alpha: m_v_srs.h_alpha.clone()
         };
-        let uni_m_v_srs_for_y = UniVerifierSRS {
-            g: m_v_srs.g.clone(),
-            h: m_v_srs.h.clone(),
-            h_alpha: m_v_srs.h_beta.clone()
-        };
 
         let SNARKProofLog {
             coms_wit_polys,
@@ -500,7 +534,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         let slice: &[P::G1] = &coms;
         <Transcript as ProofTranscript<P>>::append_points(transcript, b"beta", slice);
         let beta = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluation_for_y");
-        let slice: &[P::G1] = &vec![com_f1.clone(), coms_t_f2[3]];
+        let slice: &[P::G1] = &vec![com_f1.clone(), coms_t_f2[3].clone()];
         <Transcript as ProofTranscript<P>>::append_points(transcript, b"u3", slice);
         let w = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"rlc");
         let u3 = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_ldt_padding");
@@ -511,6 +545,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         let slice: &[P::G1] = &coms_g4_h4;
         <Transcript as ProofTranscript<P>>::append_points(transcript, b"zeta", slice);
         let zeta = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluation_for_y");
+        println!("zeta is: {:?}", zeta);
 
         // evaluation checks for fw, fa, fb, fc
         let time = Instant::now();
@@ -524,6 +559,9 @@ impl<P: Pairing> DeSNARKLog<P> {
             (evals_p_alpha_beta[0], evals_p_alpha_beta[1], evals_p_alpha_beta[2], evals_wit_upper_r_polys[7]);
  
 
+        //     w_alpha_beta, eval_ar_alpha_beta, eval_a_r_beta, 
+        //     eval_b_alpha_beta, eval_b_r_inverse_beta, eval_b_0_beta, eval_c_r_beta, 
+        //     eval_r_beta];
         let (f1, f2, f3, f4): (P::ScalarField, P::ScalarField, P::ScalarField, P::ScalarField) = par_join_4!(
             || eval_pa_alpha_beta * evals_wit_upper_r_polys[0] - eval_r_beta * evals_wit_upper_r_polys[2],
             || eval_pb_alpha_beta * evals_wit_upper_r_polys[0] - eval_r_beta * (evals_wit_upper_r_polys[4] * r_pow_m + evals_wit_upper_r_polys[5] * (P::ScalarField::one() - r_pow_m)),
@@ -538,7 +576,7 @@ impl<P: Pairing> DeSNARKLog<P> {
                 left_hand
             },
             || {
-                let t2 = (alpha * evals_g1_h1[0] + (alpha - u1) * z_h_eval_x * evals_g1_h1[1])/y_domain.size_as_field_element();
+                let t2 = (alpha * evals_g1_h1[0] + (alpha - u1) * z_h_eval_x * evals_g1_h1[1]) / y_domain.size_as_field_element();
                 let right_hand = beta * evals_g2_h2[0] + (beta - u2) * t2 + (beta - u2) * y_domain.evaluate_vanishing_polynomial(beta) * (evals_g2_h2[1] + beta.pow([l as u64]) * evals_g2_h2[2]);
                 right_hand
         });
@@ -561,7 +599,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         let time = Instant::now();
         let (check4, check5) = rayon::join(
             || BatchKZG::<P>::verify(&uni_m_v_srs_for_x, &coms_g3_h3, &delta, &evals_g3_h3, &proof_g3_h3, &gamma).unwrap(),
-            || BatchKZG::<P>::verify(&uni_m_v_srs_for_y, &coms_g4_h4, &zeta, &evals_g4_h4, &proof_g4_h4, &gamma).unwrap()
+            || BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g4_h4, &zeta, &evals_g4_h4, &proof_g4_h4, &gamma).unwrap()
         );
         assert!(check4);
         assert!(check5);

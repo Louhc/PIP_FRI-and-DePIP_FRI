@@ -9,9 +9,9 @@ cargo build --release --example $1 --no-default-features --features "parallel"
 BIN=../target/release/examples/$1
 
 PROCS=()
-for i in 0 1 2 3
+for i in 0 1
 do
-  RAYON_NUM_THREADS=8 $BIN $i ./data/4_local &
+  RAYON_NUM_THREADS=8 $BIN $i ./data/2_local &
   #RUST_LOG=debug $BIN $i ./data/4 &
   pid=$!
   PROCS+=("$pid")

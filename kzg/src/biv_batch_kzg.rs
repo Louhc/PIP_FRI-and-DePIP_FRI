@@ -435,6 +435,8 @@ impl<P: Pairing> BivBatchKZG<P> {
         challenge: &P::ScalarField,
     ) -> Result<bool, Error> {
 
+        assert_eq!(evals.len(), coms.len());
+
         let (x, y) = point;
         let mut linear_factors = vec![P::ScalarField::one(); coms.len()];
         linear_factors.par_iter_mut().enumerate().for_each(|(i, val)| {

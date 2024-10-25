@@ -202,13 +202,18 @@ impl<P: Pairing> PreProver<P> {
 
         let polys_upper_a = vec![set.a_pa_low.clone(), set.a_pa_high.clone(), set.a_pb_low.clone(), 
             set.a_pb_high.clone(), set.a_pc_low.clone(), set.a_pc_high.clone()];
-        let coms_upper_a = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &polys_upper_a).unwrap();
+        let coms_upper_a = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &polys_upper_a);
+        let coms_upper_a = if Net::am_master() {
+            coms_upper_a.unwrap()
+        } else {
+            Vec::new()
+        };
 
         let coms_g1_h1_t_polys = {
             let g1_h1_t_polys = if Net::am_master() {
                 vec![g1.clone(), h1.clone(), set.t_row_low.clone(), set.t_row_high.clone()]
             } else {
-                vec![g1.clone(), h1.clone()]
+                vec![g1.clone(), h1.clone(), UnivariatePolynomial::zero(), UnivariatePolynomial::zero()]
             };
             BatchKZG::<P>::commit(&x_srs, &g1_h1_t_polys).unwrap()
         };
@@ -268,9 +273,13 @@ impl<P: Pairing> PreProver<P> {
     ) -> Vec<P::G1> {
         let set = upper_b_t_polys.clone();
         let polys_m_srs = vec![set.b_pa, set.b_pb, set.b_pc];
-        let coms_upper_b = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &polys_m_srs).unwrap();
+        let coms_upper_b = BivBatchKZG::<P>::de_commit(sub_prover_id,&m_powers, &polys_m_srs);
 
-        coms_upper_b
+        if Net::am_master() {
+            coms_upper_b.unwrap()
+        } else {
+            Vec::new()
+        }
     }
 
     // need self-check of the validity
@@ -535,9 +544,10 @@ impl<P: Pairing> PreProver<P> {
 
         // compute poly_g3 and poly_h
         let (poly_g3, poly_h) = IPA::<P>::get_g_mul_u_and_h(&poly_target, &u3, &m_domain);
+        println!("h3 degree: {:?}", poly_h.degree());
         let coeffs_h3 = poly_h.coeffs.to_vec();
         assert!(coeffs_h3.len() > 2 * m_prime);
-        assert!(coeffs_h3.len() < 3 * m_prime);
+        assert!(coeffs_h3.len() <= 3 * m_prime);
         let (poly_h3_low, poly_h3_mid, poly_h3_high): (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) = par_join_3!(
             || {
                 let coeffs_h3_low = coeffs_h3[0..m_prime].to_vec();
@@ -680,6 +690,7 @@ impl<P: Pairing> PreProver<P> {
         let polys_g4_h4 = if Net::am_master() {
 
             let evals = upper_total_evals.clone();
+            assert_eq!(evals[0].len(), 13);
             // evaluate evaluations 
             let (evals_first, evals_second, evals_third): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = par_join_3!(
                 || {
@@ -740,7 +751,11 @@ impl<P: Pairing> PreProver<P> {
                 .map(|(((a, b), c), d)| (*a + *b + *c) * d * (*delta - *u3)).collect();
             let poly_target = NoPreProver::<P>::interpolate_from_eval_domain(&evals_target, &domain_8y);
             let (poly_g4, poly_h4) = IPA::<P>::get_g_mul_u_and_h(&poly_target, &u4, &y_domain);
-            let coeffs_h4 = poly_h4.coeffs.to_vec();
+            let mut coeffs_h4 = poly_h4.coeffs.to_vec();
+            if coeffs_h4.len() < 3 * l {
+                coeffs_h4.resize(3 * l + 1, P::ScalarField::zero());
+                println!("Pad degree {} h4", poly_h4.degree())
+            }
             assert!(coeffs_h4.len() > 3 * l);
             assert!(coeffs_h4.len() < 4 * l);
             let (poly_h4_one, poly_h4_two, poly_h4_three, poly_h4_four): 
@@ -763,8 +778,6 @@ impl<P: Pairing> PreProver<P> {
                     UnivariatePolynomial::from_coefficients_vec(coeffs_h4_four)
                 }
             );
-
-            assert_eq!(evals.len(), 13);
             vec![poly_g4, poly_h4_one, poly_h4_two, poly_h4_three, poly_h4_four]
         } else {
             Vec::new()
@@ -775,10 +788,12 @@ impl<P: Pairing> PreProver<P> {
 
     pub fn commit_g4_h4 (
         y_srs: &Vec<P::G1Affine>,
+        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         polys_g4_h4: &Vec<UnivariatePolynomial<P::ScalarField>>,
     ) -> Vec<P::G1> {
         if Net::am_master() {
-            BatchKZG::<P>::commit(&y_srs, &polys_g4_h4).unwrap()
+            let eval_vec = polys_g4_h4.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(*y_domain)).collect();
+            BatchKZG::<P>::commit_lagrange(&y_srs, &eval_vec).unwrap()
         } else {
             Vec::new()
         }
@@ -829,7 +844,7 @@ impl<P: Pairing> PreProver<P> {
         upper_a_t_polys: &DeAandTPolys<P>,
         upper_b_t_polys: &DeBandTPolys<P>,
         lower_a_b_polys: &DeLowerAandBPolys<P>,
-        val_upper_evals: &Vec<P::ScalarField>,
+        val_upper_l_evals: &Vec<P::ScalarField>,
         lower_evals: &Vec<P::ScalarField>,
         sub_poly_f1: &UnivariatePolynomial<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
@@ -837,6 +852,7 @@ impl<P: Pairing> PreProver<P> {
         zeta: &P::ScalarField,
         gamma: &P::ScalarField,
     ) -> (Vec<P::ScalarField>, (P::G1, P::G1)) {
+        // val, row, col, lower_pa, lower_b, f1
         let sub_polys = vec![
             val_polys.val_pa.clone(), val_polys.val_pb.clone(), val_polys.val_pc.clone(),
             upper_a_t_polys.a_pa_low.clone(), upper_a_t_polys.a_pa_high.clone(), 
@@ -849,11 +865,12 @@ impl<P: Pairing> PreProver<P> {
             lower_a_b_polys.lb_pa.clone(), lower_a_b_polys.lb_pb.clone(), lower_a_b_polys.lb_pc.clone(), 
             sub_poly_f1.clone()
         ];
-        let mut evals_slice: Vec<P::ScalarField> = val_upper_evals.clone();
+        // let evals_slice: Vec<P::ScalarField> = val_upper_l_evals[..9].to_vec();
+        let mut evals_slice: Vec<P::ScalarField> = val_upper_l_evals.clone();
         evals_slice.pop();
         evals_slice.extend(lower_evals);
 
-        let eval_f = sub_poly_f1.evaluate(&zeta);
+        let eval_f = sub_poly_f1.evaluate(&delta);
         evals_slice.push(eval_f);
 
         assert_eq!(sub_polys.len(), evals_slice.len());
@@ -950,6 +967,7 @@ impl<P: Pairing> PreProver<P> {
             let evals_on_domain: Vec<Evaluations<P::ScalarField>> = polys_g4_h4.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(*y_domain)).collect();
             let proof = BatchKZG::<P>::open_lagrange(&y_srs, &evals_on_domain, &zeta, &y_domain, &gamma).unwrap();
 
+            assert_eq!(evals.len(), 5);
             (evals, proof)
         } else {
             (Vec::new(), P::G1::zero())

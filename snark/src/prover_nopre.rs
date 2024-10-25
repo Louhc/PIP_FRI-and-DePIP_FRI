@@ -134,6 +134,7 @@ impl<P: Pairing> NoPreProver<P> {
         // compute univariate polynomials over Y with X = alpha
             // using ifft, from evaluations to polynomials
             // Require g2 and h2, so have to convert to coefficient terms
+            // pa_alpha, pb_alpha, pc_alpha, w_alpha, a_r_alpha, a_r, b_alpha, b_r_inverse, b_0, c_r, R
             let evals_pa_alpha = message.par_iter().map(|(eval, _)| eval[0]).collect();
             let evals_pb_alpha = message.par_iter().map(|(eval, _)| eval[1]).collect();
             let evals_pc_alpha = message.par_iter().map(|(eval, _)| eval[2]).collect();
