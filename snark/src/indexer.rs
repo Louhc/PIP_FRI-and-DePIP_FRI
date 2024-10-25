@@ -2,7 +2,7 @@ use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolyn
     // Polynomial
 };
 use std::marker::PhantomData;
-use ark_ec::{pairing::Pairing, VariableBaseMSM};
+use ark_ec::pairing::Pairing;
 use my_kzg::{
     biv_batch_kzg::BivBatchKZG, biv_trivial_kzg::{BivariateKZG, BivariatePolynomial}, par_join_3, uni_batch_kzg::BatchKZG 
 };
@@ -499,7 +499,7 @@ impl<P: Pairing> Indexer<P> {
     }
 
     pub fn commit_lower_a_b_polys (
-        powers: &Vec<Vec<P::G1Affine>>,
+        m_powers: &Vec<Vec<P::G1Affine>>,
         de_polys: &Vec<DeLowerAandBPolys<P>>,
     ) -> Vec<P::G1> {
         let x_polys_la_pa_low: Vec<UnivariatePolynomial<P::ScalarField>> = de_polys.par_iter().map(|polys| polys.la_pa_low.clone()).collect();
@@ -513,33 +513,47 @@ impl<P: Pairing> Indexer<P> {
         let x_polys_lb_pb = de_polys.par_iter().map(|polys| polys.lb_pb.clone()).collect();
         let x_polys_lb_pc = de_polys.par_iter().map(|polys| polys.lb_pc.clone()).collect();
 
-        let total_x_polys = vec![x_polys_la_pa_low, x_polys_la_pa_high, x_polys_la_pb_low, x_polys_la_pb_high,
-                                                x_polys_la_pc_low, x_polys_la_pc_high, x_polys_lb_pa, x_polys_lb_pb, x_polys_lb_pc];
-        let coms: Vec<P::G1> = total_x_polys.par_iter().map(|x_polys| {
-            x_polys.par_iter().zip(powers.par_iter()).map(|(poly, power)|{
-                let mut coeffs = poly.coeffs.to_vec();
-                coeffs.resize(power.len(), <P::ScalarField>::zero());
-                P::G1::msm(&power, &coeffs).unwrap()
-            }).sum()
-        }).collect();
+        let biv_la_pa_low = BivariatePolynomial {x_polynomials: x_polys_la_pa_low};
+        let biv_la_pa_high = BivariatePolynomial {x_polynomials: x_polys_la_pa_high};
+        let biv_la_pb_low = BivariatePolynomial {x_polynomials: x_polys_la_pb_low};
+        let biv_la_pb_high = BivariatePolynomial {x_polynomials: x_polys_la_pb_high};
+        let biv_la_pc_low = BivariatePolynomial {x_polynomials: x_polys_la_pc_low};
+        let biv_la_pc_high = BivariatePolynomial {x_polynomials: x_polys_la_pc_high};
+
+        let biv_lb_pa = BivariatePolynomial {x_polynomials: x_polys_lb_pa};
+        let biv_lb_pb = BivariatePolynomial {x_polynomials: x_polys_lb_pb};
+        let biv_lb_pc = BivariatePolynomial {x_polynomials: x_polys_lb_pc};
+
+        let biv_polys = vec![biv_la_pa_low, biv_la_pa_high, biv_la_pb_low, biv_la_pb_high, biv_la_pc_low, biv_la_pc_high, biv_lb_pa, biv_lb_pb, biv_lb_pc];
+        // let total_x_polys = vec![x_polys_la_pa_low, x_polys_la_pa_high, x_polys_la_pb_low, x_polys_la_pb_high,
+        //                                         x_polys_la_pc_low, x_polys_la_pc_high, x_polys_lb_pa, x_polys_lb_pb, x_polys_lb_pc];
+        // let coms: Vec<P::G1> = total_x_polys.par_iter().map(|x_polys| {
+        //     x_polys.par_iter().zip(m_powers.par_iter()).map(|(poly, power)|{
+        //         let mut coeffs = poly.coeffs.to_vec();
+        //         coeffs.resize(power.len(), <P::ScalarField>::zero());
+        //         P::G1::msm(&power, &coeffs).unwrap()
+        //     }).sum()
+        // }).collect();
+        let coms = BivBatchKZG::<P>::commit(&m_powers, &biv_polys).unwrap();
 
         coms
     }
 
-    pub fn commit_poly_upper_r (
+    pub fn compute_and_commit_poly_upper_r (
         powers: &Vec<Vec<P::G1Affine>>,
         l: usize,
-    ) -> P::G1 {
+    ) -> (Vec<UnivariatePolynomial<P::ScalarField>>, P::G1) {
         let x_polynomials: Vec<UnivariatePolynomial<P::ScalarField>> = (0..l).into_par_iter().map(|i| {
             let mut vec = vec![P::ScalarField::zero(); i+1];
             vec[i] = P::ScalarField::one();
             UnivariatePolynomial::from_coefficients_vec(vec)
         }).collect();
+        let x_polynomials_res = x_polynomials.clone();
 
         let biv_poly = BivariatePolynomial{x_polynomials};
         let com = BivariateKZG::<P>::commit(&powers, &biv_poly).unwrap();
 
-        com
+        (x_polynomials_res, com)
     }
 
     // TODO: consider other approaches to be faster
