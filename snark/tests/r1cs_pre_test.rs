@@ -1,14 +1,10 @@
 use ark_ec::pairing::Pairing;
-use ark_std::rand::{rngs::StdRng, SeedableRng};
-use ark_ff::{One, Zero, UniformRand};
-use ark_bls12_381::{Bls12_381, Fr};
+use ark_bls12_381::Bls12_381;
 use ark_relations::{
     lc,
     r1cs::{ConstraintSynthesizer, SynthesisError, ConstraintSystem, ConstraintSystemRef, Variable},
 };
-use my_ipa::r1cs::R1CSVectors;
 use my_snark::indexer::Indexer;
-use ark_std::test_rng;
 use std::marker::PhantomData;
 
 #[derive(Clone)]
@@ -25,23 +21,51 @@ impl<P: Pairing> TestCircuit<P> {
     }
 }
 
+// impl<P: Pairing> ConstraintSynthesizer<P::ScalarField> for TestCircuit<P> {
+//     fn generate_constraints(self, cs: ConstraintSystemRef<P::ScalarField>) -> Result<(), SynthesisError> {
+//         let f_a = Some(P::ScalarField::from(2u64));
+//         let f_b = Some(P::ScalarField::from(3u64));
+//         let a = cs.new_witness_variable(|| f_a.ok_or(SynthesisError::AssignmentMissing))?;
+//         let b = cs.new_witness_variable(|| f_b.ok_or(SynthesisError::AssignmentMissing))?;
+//         let c = cs.new_witness_variable(|| {
+//             let a = f_a.ok_or(SynthesisError::AssignmentMissing)?;
+//             let b = f_b.ok_or(SynthesisError::AssignmentMissing)?;
+    
+//             Ok(a * b)
+//         })?;
+//         cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c)?;
+//         cs.enforce_constraint(lc!() + b, lc!() + (P::ScalarField::from(2u64), Variable::One), lc!() + c)?;
+//         cs.enforce_constraint(lc!() + (P::ScalarField::from(3u64), Variable::One), lc!() + a, lc!() + c)?;
+//         cs.enforce_constraint(lc!() + (P::ScalarField::from(1u64),Variable::One), lc!() + b, lc!() + b)?;
+    
+//         Ok(())
+//     }
+// }
+
 impl<P: Pairing> ConstraintSynthesizer<P::ScalarField> for TestCircuit<P> {
     fn generate_constraints(self, cs: ConstraintSystemRef<P::ScalarField>) -> Result<(), SynthesisError> {
-        let f_a = Some(P::ScalarField::from(2u64));
-        let f_b = Some(P::ScalarField::from(3u64));
-        let a = cs.new_witness_variable(|| f_a.ok_or(SynthesisError::AssignmentMissing))?;
-        let b = cs.new_witness_variable(|| f_b.ok_or(SynthesisError::AssignmentMissing))?;
-        let c = cs.new_witness_variable(|| {
-            let a = f_a.ok_or(SynthesisError::AssignmentMissing)?;
-            let b = f_b.ok_or(SynthesisError::AssignmentMissing)?;
-    
-            Ok(a * b)
-        })?;
-        cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c)?;
-        cs.enforce_constraint(lc!() + b, lc!() + (P::ScalarField::from(2u64), Variable::One), lc!() + c)?;
-        cs.enforce_constraint(lc!() + (P::ScalarField::from(3u64), Variable::One), lc!() + a, lc!() + c)?;
-        cs.enforce_constraint(lc!() + (P::ScalarField::from(1u64),Variable::One), lc!() + b, lc!() + b)?;
-    
+        for i in 0..5 {
+            let f_a = Some(P::ScalarField::from(2u64));
+            let f_b = Some(P::ScalarField::from(3u64));
+            let a = cs.new_witness_variable(|| f_a.ok_or(SynthesisError::AssignmentMissing))?;
+            let b = cs.new_witness_variable(|| f_b.ok_or(SynthesisError::AssignmentMissing))?;
+            let c = cs.new_witness_variable(|| {
+                let a = f_a.ok_or(SynthesisError::AssignmentMissing)?;
+                let b = f_b.ok_or(SynthesisError::AssignmentMissing)?;
+        
+                Ok(a * b)
+            })?;
+            cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c)?;  
+
+            if i == 4 {
+                for _ in 0..5 {
+                    cs.enforce_constraint(lc!() + b, lc!() + (P::ScalarField::from(2u64), Variable::One), lc!() + c)?;
+                    cs.enforce_constraint(lc!() + (P::ScalarField::from(3u64), Variable::One), lc!() + a, lc!() + c)?;
+                }
+                cs.enforce_constraint(lc!() + (P::ScalarField::from(1u64), Variable::One), lc!() + b, lc!() + b)?;    
+            }
+        }
+
         Ok(())
     }
 }

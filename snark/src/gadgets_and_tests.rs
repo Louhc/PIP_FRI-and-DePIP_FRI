@@ -89,17 +89,20 @@ pub fn init_distinct_m_m_prime <P: Pairing> ()
     let f_four = P::ScalarField::from(4 as u64);
     let f_five = P::ScalarField::from(5 as u64);
     let f_six = P::ScalarField::from(6 as u64);
-    let pa = vec![vec![f_two, f_zero, f_zero, f_zero],
+    let pa = vec![
+            vec![f_two, f_zero, f_zero, f_zero],
             vec![f_zero, f_one, f_one, f_zero],
             vec![f_zero, f_one, f_one, f_zero],
             vec![f_zero, f_zero, f_zero, f_two]];
 
-    let pb = vec![vec![f_zero, f_one, f_one, f_zero],
+    let pb = vec![
+            vec![f_zero, f_one, f_one, f_zero],
             vec![f_two, f_zero, f_zero, f_zero],
             vec![f_zero, f_zero, f_zero, f_two],
             vec![f_zero, f_one, f_one, f_zero]];
 
-    let pc = vec![vec![f_four, f_zero, f_zero, f_zero],
+    let pc = vec![
+            vec![f_four, f_zero, f_zero, f_zero],
             vec![f_zero, f_four, f_zero, f_zero],
             vec![f_zero, f_zero, f_four, f_zero],
             vec![f_zero, f_zero, f_zero, f_four]];

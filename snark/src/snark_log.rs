@@ -206,7 +206,7 @@ impl<P: Pairing> DeSNARKLog<P> {
             // get g2, h2low, h2high
             let (poly_g2, poly_h2) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target_y, &u2, &y_domain);
             let mut coeffs_h2 = poly_h2.coeffs.to_vec();
-            if coeffs_h2.len() < l {
+            if coeffs_h2.len() <= l {
                 coeffs_h2.resize(l + 1, P::ScalarField::zero());
                 println!("Pad degree {} h2", poly_h2.degree())
             }
@@ -774,16 +774,15 @@ impl<P: Pairing> DeSNARKLog<P> {
         assert!(right_eval_rlc == left * x_domain.evaluate_vanishing_polynomial(delta));
 
         //check f1 f2 relation
-        let m_prime = m_domain.size_as_field_element();
-        assert_eq!(evals_f1[0] * m_prime, evals_t_f2_q2_n[3][0]);
-        assert_eq!(evals_f1[1] * m_prime, evals_t_f2_q2_n[4][0]);
-        assert_eq!(evals_f1[2] * m_prime, evals_t_f2_q2_n[5][0]);
-        assert_eq!(evals_f1[3] * m_prime, evals_t_f2_q2_n[6][0]);
-        assert_eq!(evals_f1[4] * m_prime, evals_t_f2_q2_n[7][0]);
-        assert_eq!(evals_f1[5] * m_prime, evals_t_f2_q2_n[8][0]);
-        assert_eq!(evals_f1[6] * m_prime, evals_t_f2_q2_n[9][0]);
-        assert_eq!(evals_f1[7] * m_prime, evals_t_f2_q2_n[10][0]);
-        assert_eq!(evals_f1[8] * m_prime, evals_t_f2_q2_n[11][0]);
+        let factor = m_domain.size_as_field_element() * y_domain.size_as_field_element() / x_domain.size_as_field_element();
+        assert!(evals_f1[0] * factor == evals_t_f2_q2_n[3][0]);
+        assert_eq!(evals_f1[1] * factor, evals_t_f2_q2_n[4][0]);
+        assert_eq!(evals_f1[3] * factor, evals_t_f2_q2_n[6][0]);
+        assert_eq!(evals_f1[4] * factor, evals_t_f2_q2_n[7][0]);
+        assert_eq!(evals_f1[5] * factor, evals_t_f2_q2_n[8][0]);
+        assert_eq!(evals_f1[6] * factor, evals_t_f2_q2_n[9][0]);
+        assert_eq!(evals_f1[7] * factor, evals_t_f2_q2_n[10][0]);
+        assert_eq!(evals_f1[8] * factor, evals_t_f2_q2_n[11][0]);
 
         true
     }
