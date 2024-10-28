@@ -295,6 +295,34 @@ impl<P: Pairing> DeKZG<P> {
         }
     }
 
+    pub fn de_open_with_eval(
+        powers: &[P::G1Affine],
+        sub_polynomial: &UnivariatePolynomial<P::ScalarField>,
+        point: &P::ScalarField,
+    ) -> (P::ScalarField, P::G1) {
+        assert!(powers.len() >= sub_polynomial.degree() + 1);
+
+        // Trick to calculate (p(x) - p(z)) / (x - z) as p(x) / (x - z) ignoring remainder p(z)
+        let quotient_polynomial = sub_polynomial
+            / &UnivariatePolynomial::from_coefficients_vec(vec![
+                -point.clone(),
+                P::ScalarField::one(),
+            ]);
+        let mut quotient_coeffs = quotient_polynomial.coeffs.to_vec();
+        quotient_coeffs.resize(powers.len(), <P::ScalarField>::zero());
+
+        let sub_eval = sub_polynomial.evaluate(point);
+        let sub_proof = P::G1::msm(powers, &quotient_coeffs).unwrap();
+        let final_proof_slice = Net::send_to_master(&(sub_eval, sub_proof));
+
+        if Net::am_master() {
+            let proofs = final_proof_slice.unwrap();
+            (proofs.par_iter().map(|proof| proof.0 ).sum(), proofs.par_iter().map(|proof| proof.1).sum())
+        } else {
+            (P::ScalarField::zero(), P::G1::zero())
+        }
+    }
+
     pub fn verify(
         v_srs: &UniVerifierSRS<P>,
         com: &P::G1,

@@ -287,7 +287,7 @@ pub fn init_r1cs_example <P: Pairing> (r: &P::ScalarField)
 
 #[cfg(test)]
 mod tests{
-    use ark_poly::{EvaluationDomain, GeneralEvaluationDomain, Polynomial, univariate::DensePolynomial as UnivariatePolynomial};
+    use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, EvaluationDomain, GeneralEvaluationDomain, Polynomial};
     use ark_bls12_381::Bls12_381;
     use ark_ec::pairing::Pairing;
     type MyField = <Bls12_381 as Pairing>::ScalarField;
@@ -393,6 +393,7 @@ fn preprocessing_gadgetes_test_with_same_m_and_mprime() {
     let (upper_b_t_polys_1, upper_b_t_evals_1) = PreProver::<Bls12_381>::compute_upper_b_t_polys_from_cols(m, &x_domain, &m_domain, &col_1, &alpha);
     let (upper_b_t_polys_2, upper_b_t_evals_2) = PreProver::<Bls12_381>::compute_upper_b_t_polys_from_cols(m, &x_domain, &m_domain, &col_2, &alpha);
     let val_polys = Indexer::<Bls12_381>::compute_val_polys(l, &m_domain, &val_evals);
+    let n_polys = Indexer::<Bls12_381>::compute_n_polys(&x_domain, &n);
     let upper_a_t_polys = vec![upper_a_t_polys_1, upper_a_t_polys_2];
     let upper_b_t_polys = vec![upper_b_t_polys_1, upper_b_t_polys_2];
     let poly_pa_alpha_beta: UnivariatePolynomial<MyField> = val_polys.par_iter().
@@ -513,6 +514,12 @@ fn preprocessing_gadgetes_test_with_same_m_and_mprime() {
         .collect();
     let f2_b_pa = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&f2_evals, &x_domain);
     let f2_zero = f2_b_pa.evaluate(&f_zero);
+    let mut left_poly_b_pa = &f2_b_pa * &(&UnivariatePolynomial::<MyField>::from_coefficients_vec(vec![gamma, beta]) + &t_col);
+    left_poly_b_pa = &left_poly_b_pa - &n_polys.col_pa;
+    let (_quotient, reminder) = left_poly_b_pa.divide_by_vanishing_poly(x_domain).unwrap();
+    assert_eq!(reminder, UnivariatePolynomial::zero());
+    // assert_eq!(quotient, UnivariatePolynomial::<MyField>::from_coefficients_vec(vec![MyField::zero()]));
+
     assert_eq!(f1_zero_zero * MyField::from(m_prime as u64), f2_zero);
 
     // test all f_1 f_2 evals
