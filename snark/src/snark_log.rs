@@ -114,11 +114,15 @@ impl<P: Pairing> DeSNARKLog<P> {
         // compute A, T, g1, h1 polys and commit them
         let time = Instant::now();
         // After receiving r, compute A_high, A_low, T_high, T_low from rows
+        let time1 = Instant::now();
         let (upper_a_t_polys, upper_a_t_evals) = PreProver::<P>::compute_upper_a_t_polys_from_rows(m, l, &x_domain, &m_domain, &row_index_vec, &r);
+        println!("FFT time: {:?}", time1.elapsed());
         // get g1 and h1
         let (poly_g1, poly_h1) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target, &u1, &x_domain);
         // Note:: here coms_upper_a are de_commitments
+        let time1 = Instant::now();
         let (coms_upper_a, de_coms_g1_h1_t) = PreProver::commit_g1_h1_upper_a_t_polys(sub_prover_id, &m_powers, &x_srs, &poly_g1, &poly_h1, &upper_a_t_polys);
+        println!("commit time: {:?}", time1.elapsed());
 
         // send com of A_low, A_high, g1, h1 to P0
         let mut com_g1_h1_slice = vec![de_coms_g1_h1_t[0]];
