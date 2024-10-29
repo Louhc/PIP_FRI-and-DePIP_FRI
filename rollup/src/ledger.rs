@@ -3,17 +3,25 @@ use ark_crypto_primitives::crh::injective_map::constraints::{
     PedersenCRHCompressorGadget, TECompressorGadget,
 };
 use ark_crypto_primitives::crh::{
-    constraints::{CRHGadget, TwoToOneCRHGadget},
+    constraints::{CRHSchemeGadget, TwoToOneCRHSchemeGadget},
+    pedersen,
     injective_map::TECompressor,
 };
 use ark_crypto_primitives::merkle_tree::constraints::PathVar;
 use ark_ed_on_bls12_381::{constraints::EdwardsVar, EdwardsProjective};
 use ark_r1cs_std::bits::uint64::UInt64;
 use ark_r1cs_std::prelude::*;
+use ark_r1cs_std::{
+    alloc::AllocVar, fields::fp::FpVar, uint32::UInt32, R1CSVar,
+};
 use ark_relations::r1cs::{Namespace, SynthesisError};
 use ark_simple_payments::ledger::*;
 use ark_simple_payments::signature::schnorr::constraints::ParametersVar as SchnorrParamsVar;
 use std::borrow::Borrow;
+use ark_crypto_primitives::merkle_tree::{
+    constraints::{ConfigGadget, BytesVarDigestConverter},
+    IdentityDigestConverter,
+};
 
 /// Represents transaction amounts and account balances.
 #[derive(Clone, Debug)]
@@ -79,28 +87,12 @@ impl AllocVar<Amount, ConstraintF> for AmountVar {
     }
 }
 
-pub type TwoToOneHashGadget = PedersenCRHCompressorGadget<
-    EdwardsProjective,
-    TECompressor,
-    TwoToOneWindow,
-    EdwardsVar,
-    TECompressorGadget,
->;
-
-pub type LeafHashGadget = PedersenCRHCompressorGadget<
-    EdwardsProjective,
-    TECompressor,
-    LeafWindow,
-    EdwardsVar,
-    TECompressorGadget,
->;
-
 pub type AccRootVar =
-    <TwoToOneHashGadget as TwoToOneCRHGadget<TwoToOneHash, ConstraintF>>::OutputVar;
-pub type AccPathVar = PathVar<MerkleConfig, LeafHashGadget, TwoToOneHashGadget, ConstraintF>;
-pub type LeafHashParamsVar = <LeafHashGadget as CRHGadget<LeafHash, ConstraintF>>::ParametersVar;
+    <TwoToOneHashGadget as TwoToOneCRHSchemeGadget<TwoToOneHash, ConstraintF>>::OutputVar;
+pub type AccPathVar = PathVar<MerkleConfig, ConstraintF, MerkleConfigVar>;
+pub type LeafHashParamsVar = <LeafHashGadget as CRHSchemeGadget<LeafHash, ConstraintF>>::ParametersVar;
 pub type TwoToOneHashParamsVar =
-    <TwoToOneHashGadget as TwoToOneCRHGadget<TwoToOneHash, ConstraintF>>::ParametersVar;
+    <TwoToOneHashGadget as TwoToOneCRHSchemeGadget<TwoToOneHash, ConstraintF>>::ParametersVar;
 
 /// The parameters that are used in transaction creation and validation.
 pub struct ParametersVar {
@@ -108,6 +100,7 @@ pub struct ParametersVar {
     pub leaf_crh_params: LeafHashParamsVar,
     pub two_to_one_crh_params: TwoToOneHashParamsVar,
 }
+
 
 impl AllocVar<Parameters, ConstraintF> for ParametersVar {
     #[tracing::instrument(target = "r1cs", skip(cs, f, _mode))]

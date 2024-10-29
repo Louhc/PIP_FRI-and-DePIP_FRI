@@ -22,7 +22,7 @@ impl<P: Pairing> ProofTranscript<P> for Transcript {
 
   fn append_scalar(&mut self, label: &'static [u8], scalar: &P::ScalarField) {
     let mut buf = vec![];
-    scalar.serialize_compressed(&mut buf).unwrap();
+    scalar.serialize_uncompressed(&mut buf).unwrap();
     self.append_message(label, &buf);
   }
 
@@ -36,7 +36,7 @@ impl<P: Pairing> ProofTranscript<P> for Transcript {
 
   fn append_point(&mut self, label: &'static [u8], point: &P::G1) {
     let mut buf = vec![];
-    point.serialize_compressed(&mut buf).unwrap();
+    point.serialize_uncompressed(&mut buf).unwrap();
     self.append_message(label, &buf);
   }
 

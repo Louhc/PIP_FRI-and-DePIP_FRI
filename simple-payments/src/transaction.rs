@@ -57,7 +57,7 @@ impl Transaction {
                     &parameters.leaf_crh_params,
                     &parameters.two_to_one_crh_params,
                     &state.account_merkle_tree.root(),
-                    &sender_acc_info.to_bytes_le(),
+                    sender_acc_info.to_bytes_le(),
                 )
                 .unwrap()
             };

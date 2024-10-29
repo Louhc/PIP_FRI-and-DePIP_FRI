@@ -1,6 +1,7 @@
 use crate::ledger::*;
 use crate::signature::schnorr;
 use ark_ed_on_bls12_381::EdwardsProjective;
+use ark_serialize::CanonicalSerialize;
 
 /// Account public key used to verify transaction signatures.
 pub type AccountPublicKey = schnorr::PublicKey<EdwardsProjective>;
@@ -37,6 +38,10 @@ pub struct AccountInformation {
 impl AccountInformation {
     /// Convert the account information to bytes.
     pub fn to_bytes_le(&self) -> Vec<u8> {
-        ark_ff::to_bytes![self.public_key, self.balance.to_bytes_le()].unwrap()
+        let mut bytes_out = Vec::new();
+        self.public_key.serialize_uncompressed(&mut bytes_out).unwrap();
+        self.balance.to_bytes_le().serialize_uncompressed(&mut bytes_out).unwrap();
+
+        bytes_out
     }
 }

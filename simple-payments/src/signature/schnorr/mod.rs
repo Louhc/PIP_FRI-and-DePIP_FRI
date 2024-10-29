@@ -1,11 +1,11 @@
 use super::SignatureScheme;
 use ark_crypto_primitives::Error;
-use ark_ec::{AffineCurve, ProjectiveCurve};
+use ark_ec::CurveGroup;
 use ark_ff::{
-    bytes::ToBytes,
     fields::{Field, PrimeField},
-    to_bytes, ToConstraintField, UniformRand,
+    ToConstraintField, UniformRand,
 };
+use ark_serialize::CanonicalSerialize;
 use ark_std::io::{Result as IoResult, Write};
 use ark_std::rand::Rng;
 use ark_std::{hash::Hash, marker::PhantomData, vec::Vec};
@@ -16,39 +16,32 @@ use derivative::Derivative;
 #[cfg(feature = "r1cs")]
 pub mod constraints;
 
-pub struct Schnorr<C: ProjectiveCurve> {
+pub struct Schnorr<C: CurveGroup> {
     _group: PhantomData<C>,
 }
 
 #[derive(Derivative)]
-#[derivative(Clone(bound = "C: ProjectiveCurve"), Debug)]
-pub struct Parameters<C: ProjectiveCurve> {
+#[derivative(Clone(bound = "C: CurveGroup"), Debug)]
+pub struct Parameters<C: CurveGroup> {
     pub generator: C::Affine,
     pub salt: Option<[u8; 32]>,
 }
 
-pub type PublicKey<C> = <C as ProjectiveCurve>::Affine;
+pub type PublicKey<C> = <C as CurveGroup>::Affine;
 
 #[derive(Clone, Default, Debug)]
-pub struct SecretKey<C: ProjectiveCurve> {
+pub struct SecretKey<C: CurveGroup> {
     pub secret_key: C::ScalarField,
     pub public_key: PublicKey<C>,
 }
 
-impl<C: ProjectiveCurve> ToBytes for SecretKey<C> {
-    #[inline]
-    fn write<W: Write>(&self, writer: W) -> IoResult<()> {
-        self.secret_key.write(writer)
-    }
-}
-
 #[derive(Clone, Default, Debug)]
-pub struct Signature<C: ProjectiveCurve> {
+pub struct Signature<C: CurveGroup> {
     pub prover_response: C::ScalarField,
     pub verifier_challenge: [u8; 32],
 }
 
-impl<C: ProjectiveCurve + Hash> SignatureScheme for Schnorr<C>
+impl<C: CurveGroup + Hash> SignatureScheme for Schnorr<C>
 where
     C::ScalarField: PrimeField,
 {
@@ -61,7 +54,7 @@ where
         // let setup_time = start_timer!(|| "SchnorrSig::Setup");
 
         let salt = None;
-        let generator = C::prime_subgroup_generator().into();
+        let generator = C::generator().into();
 
         // end_timer!(setup_time);
         Ok(Parameters { generator, salt })
@@ -76,7 +69,7 @@ where
         // Secret is a random scalar x
         // the pubkey is y = xG
         let secret_key = C::ScalarField::rand(rng);
-        let public_key = parameters.generator.mul(secret_key).into();
+        let public_key = (parameters.generator * secret_key).into();
 
         // end_timer!(keygen_time);
         Ok((
@@ -101,7 +94,7 @@ where
             let random_scalar: C::ScalarField = C::ScalarField::rand(rng);
             // Commit to the random scalar via r := k · G.
             // This is the prover's first msg in the Sigma protocol.
-            let prover_commitment = parameters.generator.mul(random_scalar).into_affine();
+            let prover_commitment = (parameters.generator * random_scalar).into_affine();
 
             // Hash everything to get verifier challenge.
             // e := H(salt || pubkey || r || msg);
@@ -109,8 +102,8 @@ where
             if parameters.salt != None {
                 hash_input.extend_from_slice(&parameters.salt.unwrap());
             }
-            hash_input.extend_from_slice(&to_bytes![sk.public_key]?);
-            hash_input.extend_from_slice(&to_bytes![prover_commitment]?);
+            sk.public_key.serialize_uncompressed(&mut hash_input).unwrap();
+            prover_commitment.serialize_uncompressed(&mut hash_input).unwrap();
             hash_input.extend_from_slice(message);
 
             let hash_digest = Blake2s::digest(&hash_input);
@@ -150,8 +143,8 @@ where
         // sG = kG - eY
         // kG = sG + eY
         // so we first solve for kG.
-        let mut claimed_prover_commitment = parameters.generator.mul(*prover_response);
-        let public_key_times_verifier_challenge = pk.mul(verifier_challenge_fe);
+        let mut claimed_prover_commitment = parameters.generator * *prover_response;
+        let public_key_times_verifier_challenge = *pk * verifier_challenge_fe;
         claimed_prover_commitment += &public_key_times_verifier_challenge;
         let claimed_prover_commitment = claimed_prover_commitment.into_affine();
 
@@ -160,8 +153,8 @@ where
         if parameters.salt != None {
             hash_input.extend_from_slice(&parameters.salt.unwrap());
         }
-        hash_input.extend_from_slice(&to_bytes![pk]?);
-        hash_input.extend_from_slice(&to_bytes![claimed_prover_commitment]?);
+        pk.serialize_uncompressed(&mut hash_input).unwrap();
+        claimed_prover_commitment.serialize_uncompressed(&mut hash_input).unwrap();
         hash_input.extend_from_slice(message);
 
         // cast the hash output to get e
@@ -184,11 +177,11 @@ pub fn bytes_to_bits(bytes: &[u8]) -> Vec<bool> {
     bits
 }
 
-impl<ConstraintF: Field, C: ProjectiveCurve + ToConstraintField<ConstraintF>>
+impl<ConstraintF: Field, C: CurveGroup + ToConstraintField<ConstraintF>>
     ToConstraintField<ConstraintF> for Parameters<C>
 {
     #[inline]
     fn to_field_elements(&self) -> Option<Vec<ConstraintF>> {
-        self.generator.into_projective().to_field_elements()
+        self.generator.into().to_field_elements()
     }
 }

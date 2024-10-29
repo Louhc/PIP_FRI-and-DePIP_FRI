@@ -12,22 +12,22 @@ pub trait DeSerNet: DeNet {
     #[inline]
     fn broadcast<T: CanonicalDeserialize + CanonicalSerialize>(out: &T) -> Vec<T> {
         let mut bytes_out = Vec::new();
-        out.serialize_compressed(&mut bytes_out).unwrap();
+        out.serialize_uncompressed(&mut bytes_out).unwrap();
         let bytes_in = Self::broadcast_bytes(&bytes_out);
         bytes_in
             .into_iter()
-            .map(|b| T::deserialize_compressed(&b[..]).unwrap())
+            .map(|b| T::deserialize_uncompressed(&b[..]).unwrap())
             .collect()
     }
 
     #[inline]
     fn send_to_master<T: CanonicalDeserialize + CanonicalSerialize>(out: &T) -> Option<Vec<T>> {
         let mut bytes_out = Vec::new();
-        out.serialize_compressed(&mut bytes_out).unwrap();
+        out.serialize_uncompressed(&mut bytes_out).unwrap();
         Self::send_bytes_to_master(&bytes_out).map(|bytes_in| {
             bytes_in
                 .into_iter()
-                .map(|b| T::deserialize_compressed(&b[..]).unwrap())
+                .map(|b| T::deserialize_uncompressed(&b[..]).unwrap())
                 .collect()
         })
     }
@@ -38,18 +38,18 @@ pub trait DeSerNet: DeNet {
             outs.iter()
                 .map(|out| {
                     let mut bytes_out = Vec::new();
-                    out.serialize_compressed(&mut bytes_out).unwrap();
+                    out.serialize_uncompressed(&mut bytes_out).unwrap();
                     bytes_out
                 })
                 .collect()
         }));
-        T::deserialize_compressed(&bytes_in[..]).unwrap()
+        T::deserialize_uncompressed(&bytes_in[..]).unwrap()
     }
 
     #[inline]
     fn atomic_broadcast<T: CanonicalDeserialize + CanonicalSerialize>(out: &T) -> Vec<T> {
         let mut bytes_out = Vec::new();
-        out.serialize_compressed(&mut bytes_out).unwrap();
+        out.serialize_uncompressed(&mut bytes_out).unwrap();
         let ser_len = bytes_out.len();
         bytes_out.resize(ser_len + COMMIT_RAND_BYTES, 0);
         rand::thread_rng().fill_bytes(&mut bytes_out[ser_len..]);
@@ -70,7 +70,7 @@ pub trait DeSerNet: DeNet {
         }
         all_data
             .into_iter()
-            .map(|d| T::deserialize_compressed(&d[..ser_len]).unwrap())
+            .map(|d| T::deserialize_uncompressed(&d[..ser_len]).unwrap())
             .collect()
     }
 
@@ -94,9 +94,9 @@ type CommitHash = Sha256;
 #[inline]
 pub fn exchange<F: CanonicalSerialize + CanonicalDeserialize>(f: &F) -> F {
     let mut bytes_out = Vec::new();
-    f.serialize_compressed(&mut bytes_out).unwrap();
+    f.serialize_uncompressed(&mut bytes_out).unwrap();
     let bytes_in = net_two::exchange_bytes(&bytes_out).unwrap();
-    F::deserialize_compressed(&bytes_in[..]).unwrap()
+    F::deserialize_uncompressed(&bytes_in[..]).unwrap()
 }
 
 #[inline]
@@ -106,7 +106,7 @@ pub fn exchange<F: CanonicalSerialize + CanonicalDeserialize>(f: &F) -> F {
 /// other.
 pub fn atomic_exchange<F: CanonicalSerialize + CanonicalDeserialize>(f: &F) -> F {
     let mut bytes_out = Vec::new();
-    f.serialize_compressed(&mut bytes_out).unwrap();
+    f.serialize_uncompressed(&mut bytes_out).unwrap();
     let ser_len = bytes_out.len();
     bytes_out.resize(ser_len + COMMIT_RAND_BYTES, 0);
     rand::thread_rng().fill_bytes(&mut bytes_out[ser_len..]);
@@ -121,7 +121,7 @@ pub fn atomic_exchange<F: CanonicalSerialize + CanonicalDeserialize>(f: &F) -> F
         &CommitHash::new().chain(&other_bytes).finalize()[..]
     );
     // parse data
-    F::deserialize_compressed(&other_bytes[..ser_len]).unwrap()
+    F::deserialize_uncompressed(&other_bytes[..ser_len]).unwrap()
 }
 
 #[inline]
