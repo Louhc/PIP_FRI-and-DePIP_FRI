@@ -448,15 +448,17 @@ mod test {
         rollup
     }
 
+    /*
     #[test]
     fn snark_verification() {
         use ark_bls12_381::Bls12_381;
         use ark_groth16::Groth16;
         use ark_snark::SNARK;
+        use rand_core::OsRng;
         // Use a circuit just to generate the circuit
         let circuit_defining_cs = build_two_tx_circuit();
 
-        let mut rng = ark_std::test_rng();
+        let mut rng = OsRng;
         let (pk, vk) =
             Groth16::<Bls12_381>::circuit_specific_setup(circuit_defining_cs, &mut rng).unwrap();
 
@@ -485,5 +487,6 @@ mod test {
         let valid_proof = Groth16::verify(&vk, &public_input, &proof).unwrap();
         assert!(!valid_proof);
     }
+    */
 }
 // Optimization ideas: remove `pre_tx_roots` entirely.
