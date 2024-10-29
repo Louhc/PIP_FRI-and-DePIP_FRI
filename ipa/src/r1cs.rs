@@ -16,6 +16,8 @@ use std::marker::PhantomData;
 pub struct RandomCircuit<P: Pairing> {
     pub num_variables: usize,
     pub num_constraints: usize,
+    pub m: usize,
+    pub l: usize,
     _pairing: PhantomData<P>,
 }
 
@@ -23,10 +25,14 @@ impl<P: Pairing> RandomCircuit<P> {
     pub fn new(
         num_variables: usize,
         num_constraints: usize,
+        m: usize,
+        l: usize,
     ) -> Self {
         Self {
             num_variables,
             num_constraints,
+            m,
+            l,
             _pairing: PhantomData,
         }
     }
@@ -35,32 +41,34 @@ impl<P: Pairing> RandomCircuit<P> {
 impl<P: Pairing> ConstraintSynthesizer<P::ScalarField> for RandomCircuit<P> {
     fn generate_constraints(self, cs: ConstraintSystemRef<P::ScalarField>) -> Result<(), SynthesisError> {
         assert_eq!(self.num_variables, self.num_constraints);
-        let n = (self.num_variables - 1) / 3;
+        let n = (self.m - 1) / 3;
         let mut rng = test_rng();
-        let (a_vec, b_vec, c_vec): (Vec<_>, Vec<_>, Vec<_>) = (0..n).map(|_| {
-            let rand_a = P::ScalarField::rand(&mut rng);
-            let rand_b = P::ScalarField::rand(&mut rng);
-            let a = cs.new_witness_variable(|| Ok(rand_a) ).unwrap();
-            let b = cs.new_witness_variable(|| Ok(rand_b) ).unwrap();
-            let c = cs.new_witness_variable(|| Ok(rand_a * rand_b) ).unwrap();
-            (a, b, c)
-        }).multiunzip();
+        for k in 0..self.l {
+            let (a_vec, b_vec, c_vec): (Vec<_>, Vec<_>, Vec<_>) = (0..n).map(|_| {
+                let rand_a = P::ScalarField::rand(&mut rng);
+                let rand_b = P::ScalarField::rand(&mut rng);
+                let a = cs.new_witness_variable(|| Ok(rand_a) ).unwrap();
+                let b = cs.new_witness_variable(|| Ok(rand_b) ).unwrap();
+                let c = cs.new_witness_variable(|| Ok(rand_a * rand_b) ).unwrap();
+                (a, b, c)
+            }).multiunzip();
 
-        for _ in 0..3 {
-            for j in 0..n {
-                cs.enforce_constraint(lc!() + a_vec[j], lc!() + b_vec[j], lc!() + c_vec[j])?;
+            for _ in 0..3 {
+                for j in 0..n {
+                    cs.enforce_constraint(lc!() + a_vec[j], lc!() + b_vec[j], lc!() + c_vec[j])?;
+                }
+            }
+            
+            let left = if k == 0 { self.m - n * 3 - 1 } else { self.m - n * 3 };
+            for _ in 0..left {
+                let _ = cs.new_witness_variable(|| Ok(P::ScalarField::rand(&mut rng))).unwrap();
+            }
+    
+            for _ in 0..(self.m - 3 * n) {
+                cs.enforce_constraint(lc!(), lc!(), lc!())?;
             }
         }
-        
-        for _ in 0..(self.num_variables - n * 3 - 1) {
-            let rand_a = Some(P::ScalarField::rand(&mut rng));
-                let _ = cs.new_witness_variable(|| rand_a.ok_or(SynthesisError::AssignmentMissing))?;
-        }
 
-        for _ in 0..(self.num_constraints - 3 * n) {
-            cs.enforce_constraint(lc!(), lc!(), lc!())?;
-        }
-    
         Ok(())
     }
 }

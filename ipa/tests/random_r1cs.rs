@@ -11,6 +11,7 @@ const NUM_VARIABLES: usize = 1 << 10;
 #[test]
 fn random_r1cs_satisfication_test() {
     let l = 8;
+    let m = NUM_CONSTRAINTS / l;
     
     let mut rng = StdRng::seed_from_u64(0u64);
     let challenge_r = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
@@ -19,15 +20,13 @@ fn random_r1cs_satisfication_test() {
 
     // Generate the circuit
 
-    let c = RandomCircuit::<Bls12_381>::new(NUM_VARIABLES, NUM_CONSTRAINTS);
+    let c = RandomCircuit::<Bls12_381>::new(NUM_VARIABLES, NUM_CONSTRAINTS, m, l);
     let cs = ConstraintSystem::<<Bls12_381 as Pairing>::ScalarField>::new_ref();
     c.generate_constraints(cs.clone()).unwrap();
     assert!(cs.is_satisfied().unwrap());
 
     println!("Number of constraints: {:?}", NUM_CONSTRAINTS);
     println!("Number of variables: {:?}", NUM_VARIABLES);
-
-    let m = cs.num_constraints() / l;
 
     let mut vec_r = Vec::new();
     let mut r_pow = <Bls12_381 as Pairing>::ScalarField::one();
