@@ -23,6 +23,7 @@ macro_rules! par_join_3 {
     }};
 }
 
+#[derive(Clone, Debug)]
 pub struct VerifierSRS<P: Pairing> {
     pub g: P::G1,
     pub h: P::G2,

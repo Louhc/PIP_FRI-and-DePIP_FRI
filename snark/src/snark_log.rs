@@ -801,11 +801,12 @@ impl<P: Pairing> DeSNARKLog<P> {
             proof.coms_g1_h1.len() +
             proof.coms_upper_b.len() +
             proof.coms_g2_h2.len() +
-            1 +
+            proof.coms_f1.len() +
             proof.coms_g3_h3.len() + 
             proof.coms_g4_h4_g5_h5.len() +
+            1 +
             proof.coms_t_f2_q2.len() +
-            12
+            13
         );
         let proof_len_fields = field_size * (
             proof.evals_wit_upper_r_polys.len() +
@@ -814,7 +815,10 @@ impl<P: Pairing> DeSNARKLog<P> {
             proof.evals_g2_h2.len() + 
             proof.evals_g3_h3.len() +
             proof.evals_g4_h4_g5_h5.len() +
-            proof.evals_t_f2_q2_n[0].len() * 3 + proof.evals_t_f2_q2_n[3].len() + 9 +
+            1 +
+            proof.evals_t_f2_q2_n[0].len() * 3 +
+            proof.evals_t_f2_q2_n[3].len() * 9 + 
+            1 + 9 +
             proof.evals_val_upper_lower_a_b_f1.len() + 
             proof.evals_f1.len() +
             proof.eval_l.len()
