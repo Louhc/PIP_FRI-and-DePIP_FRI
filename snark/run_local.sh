@@ -6,6 +6,7 @@ trap "kill 0" EXIT
 
 # cargo build --example $1 --release
 cargo build --release --example $1 --no-default-features --features "parallel"
+# RUSTFLAGS="-C target-feature=+bmi2,+adx" cargo +nightly build --release --example $1 --no-default-features --features "parallel asm"
 BIN=../target/release/examples/$1
 
 PROCS=()

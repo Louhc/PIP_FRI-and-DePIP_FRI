@@ -1,6 +1,6 @@
 // usage: 
-// RAYON_NUM_THREADS=N cargo bench --no-default-features --features "std parallel" -- --nocapture
-// cargo bench --bench biv_batch_kzg
+// RAYON_NUM_THREADS=N cargo bench --bench biv_batch_kzg --no-default-features --features "parallel asm" -- --nocapture
+
 
 use ark_ec::pairing::Pairing;
 use ark_bls12_381::Bls12_381;
