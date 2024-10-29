@@ -71,6 +71,7 @@ fn main() {
     let c = RandomCircuit::<Bls12_381>::new( 
         m * l,
         m * l,
+        m, l
     );
     println!("Number of constraints: {:?}", c.num_constraints);
     println!("Number of variables: {:?}", c.num_variables);

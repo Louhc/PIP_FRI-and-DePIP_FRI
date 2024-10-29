@@ -52,7 +52,7 @@ fn main() {
     let (m, l, sub_prover_id) = init();
 
     let time = Instant::now();
-    let c = RandomCircuit::<Bls12_381>::new(m * l, m * l);
+    let c = RandomCircuit::<Bls12_381>::new(m * l, m * l, m, l);
     let cs = ConstraintSystem::<<Bls12_381 as Pairing>::ScalarField>::new_ref();
     c.generate_constraints(cs.clone()).unwrap();
     assert!(cs.is_satisfied().unwrap());

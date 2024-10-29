@@ -134,43 +134,36 @@ impl<P: Pairing> PreProver<P> {
         let r_pow = r.pow([sqrt_ml as u64]);
 
         // compute A_pa_low and A_pa_high
-        let ((a_pa_low, eval_a_pa_low), (a_pa_high, eval_a_pa_high)) = rayon::join(
-            || {
-                let evals_a_pa_low = row_index_vec.row_pa_low.par_iter().map(|eval| r.pow([*eval as u64])).collect();
-                let a_pa_low = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pa_low, m_domain);
-                (a_pa_low, evals_a_pa_low)
-            }, 
-            || {
-                let evals_a_pa_high = row_index_vec.row_pa_high.par_iter().map(|eval| r_pow.pow([*eval as u64])).collect();
-                let a_pa_high = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pa_high, m_domain);
-                (a_pa_high, evals_a_pa_high)
-        });
-
-        // compute A_pb_low and A_pb_high
-        let ((a_pb_low, eval_a_pb_low), (a_pb_high, eval_a_pb_high)) = rayon::join(
-            || {
-                let evals_a_pb_low = row_index_vec.row_pb_low.par_iter().map(|eval| r.pow([*eval as u64])).collect();
-                let a_pb_low = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pb_low, m_domain);
-                (a_pb_low, evals_a_pb_low)
-            }, 
-            || {
-                let evals_a_pb_high = row_index_vec.row_pb_high.par_iter().map(|eval| r_pow.pow([*eval as u64])).collect();
-                let a_pb_high = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pb_high, m_domain);
-                (a_pb_high, evals_a_pb_high)
-        });
-
-        // compute A_pc_low and A_pc_high
-        let ((a_pc_low, eval_a_pc_low), (a_pc_high, eval_a_pc_high)) = rayon::join(
-            || {
-                let evals_a_pc_low = row_index_vec.row_pc_low.par_iter().map(|eval| r.pow([*eval as u64])).collect();
-                let a_pc_low = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pc_low, m_domain);
-                (a_pc_low, evals_a_pc_low)
-            }, 
-            || {
-                let evals_a_pc_high = row_index_vec.row_pc_high.par_iter().map(|eval| r_pow.pow([*eval as u64])).collect();
-                let a_pc_high = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pc_high, m_domain);
-                (a_pc_high, evals_a_pc_high)
-        });
+        let (a_pa_low, eval_a_pa_low) = {
+            let evals_a_pa_low = row_index_vec.row_pa_low.par_iter().map(|eval| r.pow([*eval as u64])).collect();
+            let a_pa_low = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pa_low, m_domain);
+            (a_pa_low, evals_a_pa_low)
+        };
+        let (a_pa_high, eval_a_pa_high) = {
+            let evals_a_pa_high = row_index_vec.row_pa_high.par_iter().map(|eval| r_pow.pow([*eval as u64])).collect();
+            let a_pa_high = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pa_high, m_domain);
+            (a_pa_high, evals_a_pa_high)
+        };
+        let (a_pb_low, eval_a_pb_low) = {
+            let evals_a_pb_low = row_index_vec.row_pb_low.par_iter().map(|eval| r.pow([*eval as u64])).collect();
+            let a_pb_low = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pb_low, m_domain);
+            (a_pb_low, evals_a_pb_low)
+        };
+        let (a_pb_high, eval_a_pb_high) = {
+            let evals_a_pb_high = row_index_vec.row_pb_high.par_iter().map(|eval| r_pow.pow([*eval as u64])).collect();
+            let a_pb_high = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pb_high, m_domain);
+            (a_pb_high, evals_a_pb_high)
+        };
+        let (a_pc_low, eval_a_pc_low) = {
+            let evals_a_pc_low = row_index_vec.row_pc_low.par_iter().map(|eval| r.pow([*eval as u64])).collect();
+            let a_pc_low = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pc_low, m_domain);
+            (a_pc_low, evals_a_pc_low)
+        };
+        let (a_pc_high, eval_a_pc_high) = {
+            let evals_a_pc_high = row_index_vec.row_pc_high.par_iter().map(|eval| r_pow.pow([*eval as u64])).collect();
+            let a_pc_high = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pc_high, m_domain);
+            (a_pc_high, evals_a_pc_high)
+        };
 
         // compute T_low and T_high
         let ((t_row_low, eval_t_row_low), (t_row_high, eval_t_row_high)) = if Net::am_master() {
@@ -188,6 +181,62 @@ impl<P: Pairing> PreProver<P> {
         } else {
             ((UnivariatePolynomial::zero(), Vec::new()), (UnivariatePolynomial::zero(), Vec::new()))
         };
+
+        // // compute A_pa_low and A_pa_high
+        // let ((a_pa_low, eval_a_pa_low), (a_pa_high, eval_a_pa_high)) = rayon::join(
+        //     || {
+        //         let evals_a_pa_low = row_index_vec.row_pa_low.par_iter().map(|eval| r.pow([*eval as u64])).collect();
+        //         let a_pa_low = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pa_low, m_domain);
+        //         (a_pa_low, evals_a_pa_low)
+        //     }, 
+        //     || {
+        //         let evals_a_pa_high = row_index_vec.row_pa_high.par_iter().map(|eval| r_pow.pow([*eval as u64])).collect();
+        //         let a_pa_high = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pa_high, m_domain);
+        //         (a_pa_high, evals_a_pa_high)
+        // });
+
+        // // compute A_pb_low and A_pb_high
+        // let ((a_pb_low, eval_a_pb_low), (a_pb_high, eval_a_pb_high)) = rayon::join(
+        //     || {
+        //         let evals_a_pb_low = row_index_vec.row_pb_low.par_iter().map(|eval| r.pow([*eval as u64])).collect();
+        //         let a_pb_low = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pb_low, m_domain);
+        //         (a_pb_low, evals_a_pb_low)
+        //     }, 
+        //     || {
+        //         let evals_a_pb_high = row_index_vec.row_pb_high.par_iter().map(|eval| r_pow.pow([*eval as u64])).collect();
+        //         let a_pb_high = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pb_high, m_domain);
+        //         (a_pb_high, evals_a_pb_high)
+        // });
+
+        // // compute A_pc_low and A_pc_high
+        // let ((a_pc_low, eval_a_pc_low), (a_pc_high, eval_a_pc_high)) = rayon::join(
+        //     || {
+        //         let evals_a_pc_low = row_index_vec.row_pc_low.par_iter().map(|eval| r.pow([*eval as u64])).collect();
+        //         let a_pc_low = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pc_low, m_domain);
+        //         (a_pc_low, evals_a_pc_low)
+        //     }, 
+        //     || {
+        //         let evals_a_pc_high = row_index_vec.row_pc_high.par_iter().map(|eval| r_pow.pow([*eval as u64])).collect();
+        //         let a_pc_high = DeIPA::<P>::interpolate_from_eval_domain(&evals_a_pc_high, m_domain);
+        //         (a_pc_high, evals_a_pc_high)
+        // });
+
+        // // compute T_low and T_high
+        // let ((t_row_low, eval_t_row_low), (t_row_high, eval_t_row_high)) = if Net::am_master() {
+        //     rayon::join(
+        //         || {
+        //             let t_low_evals = (0..m).into_par_iter().map(|i| r.pow([i as u64])).collect();
+        //             let t_row_low = DeIPA::<P>::interpolate_from_eval_domain(&t_low_evals, x_domain);
+        //             (t_row_low, t_low_evals)
+        //         },
+        //         || {
+        //             let t_high_evals = (0..m).into_par_iter().map(|i| r_pow.pow([i as u64])).collect();
+        //             let t_row_high = DeIPA::<P>::interpolate_from_eval_domain(&t_high_evals, x_domain);
+        //             (t_row_high, t_high_evals)
+        //         })
+        // } else {
+        //     ((UnivariatePolynomial::zero(), Vec::new()), (UnivariatePolynomial::zero(), Vec::new()))
+        // };
         
         (DeAandTPolys {a_pa_low, a_pa_high, a_pb_low, a_pb_high, a_pc_low, a_pc_high, t_row_low, t_row_high},
             DeAandTEvals {eval_a_pa_low, eval_a_pa_high, eval_a_pb_low, eval_a_pb_high, eval_a_pc_low, eval_a_pc_high, eval_t_row_low, eval_t_row_high})
