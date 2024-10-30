@@ -63,7 +63,7 @@ pub struct TwoToOneWindow;
 
 // `WINDOW_SIZE * NUM_WINDOWS` = 2 * 256 bits = enough for hashing two outputs.
 impl pedersen::Window for TwoToOneWindow {
-    const WINDOW_SIZE: usize = 128;
+    const WINDOW_SIZE: usize = 256;
     const NUM_WINDOWS: usize = 4;
 }
 
@@ -72,7 +72,7 @@ pub struct LeafWindow;
 
 // `WINDOW_SIZE * NUM_WINDOWS` = 2 * 256 bits = enough for hashing two outputs.
 impl pedersen::Window for LeafWindow {
-    const WINDOW_SIZE: usize = 144;
+    const WINDOW_SIZE: usize = 256;
     const NUM_WINDOWS: usize = 4;
 }
 

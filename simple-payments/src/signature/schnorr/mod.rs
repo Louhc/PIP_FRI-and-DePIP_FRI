@@ -9,8 +9,9 @@ use ark_serialize::CanonicalSerialize;
 use ark_std::io::{Result as IoResult, Write};
 use ark_std::rand::Rng;
 use ark_std::{hash::Hash, marker::PhantomData, vec::Vec};
-use blake2::Blake2s;
-use digest::Digest;
+use blake2::Blake2s256;
+use digest::generic_array::GenericArray;
+use blake2::Digest;
 
 use derivative::Derivative;
 #[cfg(feature = "r1cs")]
@@ -106,7 +107,7 @@ where
             prover_commitment.serialize_uncompressed(&mut hash_input).unwrap();
             hash_input.extend_from_slice(message);
 
-            let hash_digest = Blake2s::digest(&hash_input);
+            let hash_digest = Blake2s256::digest(&hash_input);
             assert!(hash_digest.len() >= 32);
             let mut verifier_challenge = [0u8; 32];
             verifier_challenge.copy_from_slice(&hash_digest);
@@ -158,7 +159,7 @@ where
         hash_input.extend_from_slice(message);
 
         // cast the hash output to get e
-        let obtained_verifier_challenge = &Blake2s::digest(&hash_input)[..];
+        let obtained_verifier_challenge = &Blake2s256::digest(&hash_input)[..];
         // end_timer!(verify_time);
         // The signature is valid iff the computed verifier challenge is the same as the one
         // provided in the signature

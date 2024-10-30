@@ -199,7 +199,10 @@ impl<const NUM_TX: usize> ConstraintSynthesizer<ConstraintF> for Rollup<NUM_TX> 
                 })?;
             // ... and authentication path after the update.
             // TODO: Fill in the following
-            // let sender_post_path = ???
+            let sender_post_path =
+                AccPathVar::new_witness(ark_relations::ns!(cs, "Sender Post-Path"), || {
+                    sender_post_path.ok_or(SynthesisError::AssignmentMissing)
+                })?;
 
             // Declare the recipient's initial account balance...
             let recipient_acc_info = AccountInformationVar::new_witness(
@@ -214,7 +217,10 @@ impl<const NUM_TX: usize> ConstraintSynthesizer<ConstraintF> for Rollup<NUM_TX> 
 
             // ... and authentication path after the update.
             // TODO: Fill in the following
-            // let recipient_post_path = ???
+            let recipient_post_path =
+                AccPathVar::new_witness(ark_relations::ns!(cs, "Recipient Post-Path"), || {
+                    recipient_post_path.ok_or(SynthesisError::AssignmentMissing)
+                })?;
 
             // Declare the state root before the transaction...
             let pre_tx_root =
@@ -229,22 +235,22 @@ impl<const NUM_TX: usize> ConstraintSynthesizer<ConstraintF> for Rollup<NUM_TX> 
 
             // Enforce that the state root after the previous transaction equals
             // the starting state root for this transaction
-            // TODO: Write this
+            prev_root.enforce_equal(&pre_tx_root)?;
 
             // Validate that the transaction signature and amount is correct.
             // TODO: Uncomment this
-            // tx.validate(
-            //     &ledger_params,
-            //     &sender_acc_info,
-            //     &sender_pre_path,
-            //     &sender_post_path,
-            //     &recipient_acc_info,
-            //     &recipient_pre_path,
-            //     &recipient_post_path,
-            //     &pre_tx_root,
-            //     &post_tx_root,
-            // )?
-            // .enforce_equal(&Boolean::TRUE)?;
+            tx.validate(
+                &ledger_params,
+                &sender_acc_info,
+                &sender_pre_path,
+                &sender_post_path,
+                &recipient_acc_info,
+                &recipient_pre_path,
+                &recipient_post_path,
+                &pre_tx_root,
+                &post_tx_root,
+            )?
+            .enforce_equal(&Boolean::TRUE)?;
 
             // Set the root for the next transaction.
             prev_root = post_tx_root;
@@ -252,6 +258,7 @@ impl<const NUM_TX: usize> ConstraintSynthesizer<ConstraintF> for Rollup<NUM_TX> 
         // Check that the final root is consistent with the root computed after
         // applying all state transitions
         // TODO: implement this
+        prev_root.enforce_equal(&final_root)?;
         Ok(())
     }
 }
@@ -454,11 +461,10 @@ mod test {
         use ark_bls12_381::Bls12_381;
         use ark_groth16::Groth16;
         use ark_snark::SNARK;
-        use rand_core::OsRng;
         // Use a circuit just to generate the circuit
         let circuit_defining_cs = build_two_tx_circuit();
 
-        let mut rng = OsRng;
+        let mut rng = ark_std::test_rng();
         let (pk, vk) =
             Groth16::<Bls12_381>::circuit_specific_setup(circuit_defining_cs, &mut rng).unwrap();
 
