@@ -123,7 +123,7 @@ fn main() {
 
     std::thread::sleep(Duration::from_secs(20));    
     // prover
-    println!("Prover {:?} starts to prove: {:?}", sub_prover_id, total_time.elapsed());
+    println!("Prover {:?} starts to prove", sub_prover_id);
     let total_time = Instant::now();
     let time = Instant::now();
     let mut transcript : Transcript = Transcript::new(b"R1CS inner product");
