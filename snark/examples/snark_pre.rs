@@ -16,7 +16,7 @@ use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_bls12_381::Bls12_381;
 use ark_ff::UniformRand;
 type MyField = <Bls12_381 as Pairing>::ScalarField;
-use std::time::Instant;
+use std::time::{Instant, Duration};
 // use my_ipa::r1cs::{RandomCircuit, R1CSVectors};
 use ark_relations::r1cs::{ConstraintSystem, ConstraintSynthesizer};
 use rayon::prelude::*;
@@ -121,7 +121,9 @@ fn main() {
     let com_l = Indexer::<Bls12_381>::commit_poly_upper_l(&powers, l, &domain_y);
     println!("Indexer time: {:?}", time.elapsed());
 
+    std::thread::sleep(Duration::from_secs(20));    
     // prover
+    println!("Prover {:?} starts to prove: {:?}", sub_prover_id, total_time.elapsed());
     let total_time = Instant::now();
     let time = Instant::now();
     let mut transcript : Transcript = Transcript::new(b"R1CS inner product");

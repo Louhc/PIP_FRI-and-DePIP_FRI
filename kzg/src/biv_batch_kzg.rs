@@ -167,7 +167,7 @@ impl<P: Pairing> BivBatchKZG<P> {
             
             let evals_q2 = Evaluations::<P::ScalarField>::from_vec_and_domain(sub_poly_evals_sum, *domain);
             let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_q2, &y, &domain);
-            let proof_2 = P::G1::msm(&y_srs, &coeffs_q2).unwrap();
+            let proof_2 = P::G1::msm_unchecked(&y_srs, &coeffs_q2);
 
             Some((proof_1, proof_2))
         }
