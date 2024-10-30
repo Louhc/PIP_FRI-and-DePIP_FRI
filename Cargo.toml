@@ -8,8 +8,3 @@ members = [
   "simple-payments",
   "rollup",
 ]
-
-[patch.crates-io]
-ark-ff = { git = "https://github.com/zhaowenlan1779/algebra", branch = "optimize" }
-ark-ec = { git = "https://github.com/zhaowenlan1779/algebra", branch = "optimize" }
-ark-serialize = { git = "https://github.com/zhaowenlan1779/algebra", branch = "optimize" }
