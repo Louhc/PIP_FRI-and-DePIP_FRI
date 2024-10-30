@@ -13,4 +13,3 @@ members = [
 ark-ff = { git = "https://github.com/zhaowenlan1779/algebra", branch = "optimize" }
 ark-ec = { git = "https://github.com/zhaowenlan1779/algebra", branch = "optimize" }
 ark-serialize = { git = "https://github.com/zhaowenlan1779/algebra", branch = "optimize" }
-ark-bn254 = { git = "https://github.com/zhaowenlan1779/curves", branch = "optimize" }
