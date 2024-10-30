@@ -69,7 +69,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         let sub_coms: Vec<P::G1> = sub_polynomials.par_iter().map(|polynomial| {
             let mut coeffs = polynomial.coeffs.to_vec();
             coeffs.resize(sub_powers.len(), <P::ScalarField>::zero());
-            P::G1::msm(&sub_powers, &coeffs).unwrap()
+            P::G1::msm_unchecked(&sub_powers, &coeffs)
         }).collect();
         
         let final_coms_slice = Net::send_to_master(&sub_coms);
@@ -77,18 +77,24 @@ impl<P: Pairing> BivBatchKZG<P> {
         if Net::am_master() {
             // let mut final_coms = vec![P::G1::zero(); sub_polynomials.len()];
             let final_coms_slice = final_coms_slice.unwrap();
-            let final_coms: Vec<_> = final_coms_slice
-            .par_iter()
-            .map(|row| {
-                row.iter().cloned().collect::<Vec<_>>()
-            })
-            .reduce_with(|mut acc, row| {
-                acc.iter_mut().zip(row.iter()).for_each(|(a, &b)| {
-                    *a += b;
-                });
-                acc
-            })
-            .unwrap_or_else(|| vec![P::G1::zero(); sub_polynomials.len()]);
+            // let final_coms: Vec<_> = final_coms_slice
+            // .par_iter()
+            // .map(|row| {
+            //     row.iter().cloned().collect::<Vec<_>>()
+            // })
+            // .reduce_with(|mut acc, row| {
+            //     acc.iter_mut().zip(row.iter()).for_each(|(a, &b)| {
+            //         *a += b;
+            //     });
+            //     acc
+            // })
+            // .unwrap_or_else(|| vec![P::G1::zero(); sub_polynomials.len()]);
+            let column_count = final_coms_slice[0].len();
+            let final_coms = (0..column_count).into_par_iter()
+                .map(|col_index| {
+                    final_coms_slice.iter().map(|row| row[col_index]).sum()
+                })
+                .collect();
             Some(final_coms)
         } else {
             None
