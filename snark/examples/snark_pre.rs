@@ -121,7 +121,10 @@ fn main() {
     let com_l = Indexer::<Bls12_381>::commit_poly_upper_l(&powers, l, &domain_y);
     println!("Indexer time: {:?}", time.elapsed());
 
-    std::thread::sleep(Duration::from_secs(20));    
+    let time = Instant::now();
+    std::thread::sleep(Duration::from_secs(60));    
+    println!("Sleep: {:?}", time.elapsed());
+
     // prover
     println!("Prover {:?} starts to prove", sub_prover_id);
     let total_time = Instant::now();
