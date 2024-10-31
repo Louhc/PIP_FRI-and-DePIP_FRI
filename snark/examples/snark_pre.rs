@@ -91,15 +91,15 @@ fn main() {
 
     // indexer works
     // common preprocess
-    // let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bls12_381>::preprocess(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
+    let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bls12_381>::preprocess(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
     // new preprocess to file
     // let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bls12_381>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
     // println!("Prover {:?} Indexer time: {:?}", sub_prover_id, time.elapsed());
     // preprocess from file
-    let (pre_mes_prover, pre_mes_verifier) = match Indexer::<Bls12_381>::preprocess_from_file(m, l) {
-        Ok(pre) => pre,
-        Err(_) => Indexer::<Bls12_381>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m)
-    };
+    // let (pre_mes_prover, pre_mes_verifier) = match Indexer::<Bls12_381>::preprocess_from_file(m, l) {
+    //     Ok(pre) => pre,
+    //     Err(_) => Indexer::<Bls12_381>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m)
+    // };
 
     // prover
     println!("Prover {:?} starts to prove", sub_prover_id);
