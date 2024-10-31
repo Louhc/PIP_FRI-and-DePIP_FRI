@@ -129,4 +129,6 @@ fn main() {
         assert!(is_valid);
     }
     println!("Verify time: {:?}", time.elapsed());
+
+    Net::deinit();
 }
