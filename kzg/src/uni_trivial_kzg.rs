@@ -121,7 +121,7 @@ impl<P: Pairing> KZG<P> {
         // coeffs.resize(powers.len(), <P::ScalarField>::zero());
 
         // Can unwrap because coeffs.len() is guaranteed to be equal to powers.len()
-        Ok(P::G1::msm_unchecked(powers, &coeffs))
+        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &coeffs).into().into())
     }
 
     pub fn commit_lagrange(
@@ -133,7 +133,7 @@ impl<P: Pairing> KZG<P> {
         evals.resize(powers.len(), <P::ScalarField>::zero());
 
         // Can unwrap because coeffs.len() is guaranteed to be equal to powers.len()
-        Ok(P::G1::msm(powers, &evals).unwrap())
+        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &evals).into().into())
     }
 
     pub fn open(
@@ -152,7 +152,7 @@ impl<P: Pairing> KZG<P> {
         let quotient_coeffs = quotient_polynomial.coeffs.to_vec();
 
         // Can unwrap because quotient_coeffs.len() is guaranteed to be equal to powers.len()
-        Ok(P::G1::msm_unchecked(powers, &quotient_coeffs))
+        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &quotient_coeffs).into().into())
     }
 
     // Given the evaluations, compute the quotient polynomial evaluations
@@ -201,7 +201,7 @@ impl<P: Pairing> KZG<P> {
         let quotient_evals = Self::get_quotient_eval_lagrange(&evals, &point, &domain);
 
         // Can unwrap because quotient_coeffs.len() is guaranteed to be equal to powers.len()
-        Ok(P::G1::msm(powers, &quotient_evals).unwrap())
+        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &quotient_evals).into().into())
     }
 
 
@@ -243,13 +243,14 @@ impl<P: Pairing> DeKZG<P> {
         let mut coeffs = sub_polynomial.coeffs.to_vec();
         coeffs.resize(powers.len(), <P::ScalarField>::zero());
 
-        let sub_com = P::G1::msm(powers, &coeffs).unwrap();
+        let sub_com = P::G1MSM::msm_unchecked_par_auto(powers, &coeffs).into();
         let final_com_slice = Net::send_to_master(&sub_com);
 
         // guaranteed by the Net if delayed
         // the output vec lengh equals to sub prover number
         if Net::am_master() {
-            Some(final_com_slice.unwrap().par_iter().sum())
+            Some(final_com_slice.unwrap().iter()
+            .fold(P::G1MSM::zero(), |acc, x| acc + x).into().into())
         } else {
             None
         }
@@ -285,11 +286,12 @@ impl<P: Pairing> DeKZG<P> {
         let mut quotient_coeffs = quotient_polynomial.coeffs.to_vec();
         quotient_coeffs.resize(powers.len(), <P::ScalarField>::zero());
 
-        let sub_proof = P::G1::msm(powers, &quotient_coeffs).unwrap();
+        let sub_proof = P::G1MSM::msm_unchecked_par_auto(powers, &quotient_coeffs).into();
         let final_proof_slice = Net::send_to_master(&sub_proof);
 
         if Net::am_master() {
-            Some(final_proof_slice.unwrap().par_iter().sum())
+            Some(final_proof_slice.unwrap().iter()
+                .fold(P::G1MSM::zero(), |acc, x| acc + x).into().into())
         } else {
             None
         }
@@ -312,12 +314,12 @@ impl<P: Pairing> DeKZG<P> {
         quotient_coeffs.resize(powers.len(), <P::ScalarField>::zero());
 
         let sub_eval = sub_polynomial.evaluate(point);
-        let sub_proof = P::G1::msm(powers, &quotient_coeffs).unwrap();
+        let sub_proof = P::G1MSM::msm_unchecked_par_auto(powers, &quotient_coeffs).into();
         let final_proof_slice = Net::send_to_master(&(sub_eval, sub_proof));
 
         if Net::am_master() {
             let proofs = final_proof_slice.unwrap();
-            (proofs.par_iter().map(|proof| proof.0 ).sum(), proofs.par_iter().map(|proof| proof.1).sum())
+            (proofs.iter().map(|proof| proof.0 ).sum(), proofs.iter().map(|proof| proof.1).fold(P::G1MSM::zero(), |acc, x| acc + x).into().into())
         } else {
             (P::ScalarField::zero(), P::G1::zero())
         }

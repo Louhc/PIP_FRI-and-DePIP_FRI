@@ -190,7 +190,7 @@ impl<P: Pairing> BivariateKZG<P> {
             extended_powers.extend(&powers[i]);
         }
         
-        Ok(P::G1::msm(&extended_powers, &extended_coeff).unwrap())
+        Ok(P::G1MSM::msm_unchecked_par_auto(&extended_powers, &extended_coeff).into().into())
     }
 
     pub fn open(
@@ -244,11 +244,9 @@ impl<P: Pairing> BivariateKZG<P> {
         let mut coeffs_q2 = polynomial_q2.coeffs.to_vec();
         coeffs_q2.resize(y_srs.len(), <P::ScalarField>::zero());
 
-        let proof = 
-            rayon::join(
-                || P::G1::msm(&xy_srs, &coeffs_q1).unwrap(),
-                || P::G1::msm(&y_srs, &coeffs_q2).unwrap()
-            );
+        let proof = (
+            P::G1MSM::msm_unchecked_par_auto(&xy_srs, &coeffs_q1).into().into(), 
+            P::G1MSM::msm_unchecked_par_auto(&y_srs, &coeffs_q2).into().into());
         
         Ok(proof)
     }
@@ -301,9 +299,9 @@ impl<P: Pairing> BivariateKZG<P> {
      
         let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_z1_eval, &y, &domain);
         assert_eq!(coeffs_q2.len(), y_srs.len());
-        let proof = rayon::join (
-            || P::G1::msm(&xy_srs, &coeffs_q1).unwrap(), 
-            || P::G1::msm(&y_srs, &coeffs_q2).unwrap());
+        let proof = (
+            P::G1MSM::msm_unchecked_par_auto(&xy_srs, &coeffs_q1).into().into(), 
+            P::G1MSM::msm_unchecked_par_auto(&y_srs, &coeffs_q2).into().into());
         
         Ok(proof)
     }

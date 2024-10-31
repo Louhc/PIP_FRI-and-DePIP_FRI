@@ -50,7 +50,7 @@ impl<P: Pairing> BatchKZG<P> {
 
         Ok(polynomials.par_iter().map(|polynomial| {
             let coeffs = polynomial.coeffs.to_vec();
-            P::G1::msm_unchecked(powers, &coeffs)
+            P::G1MSM::msm_unchecked(powers, &coeffs).into().into()
         })
         .collect())
 
@@ -65,7 +65,7 @@ impl<P: Pairing> BatchKZG<P> {
         Ok(evals_vec.par_iter().map(|evals| {
             let mut evals = evals.evals.clone();
             evals.resize(powers.len(), <P::ScalarField>::zero());
-            P::G1::msm(powers, &evals).unwrap()
+            P::G1MSM::msm_unchecked(powers, &evals).into().into()
         })
         .collect())
     }
@@ -94,7 +94,7 @@ impl<P: Pairing> BatchKZG<P> {
         let quotient_evals = KZG::<P>::get_quotient_eval_lagrange(&result_eval, &point, &domain);
 
         // Can unwrap because quotient_coeffs.len() is guaranteed to be equal to powers.len()
-        Ok(P::G1::msm(powers, &quotient_evals).unwrap())
+        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &quotient_evals).into().into())
     }
 
     pub fn open(
@@ -123,7 +123,7 @@ impl<P: Pairing> BatchKZG<P> {
         let mut quotient_coeffs = quotient_polynomial.coeffs.to_vec();
         quotient_coeffs.resize(powers.len(), <P::ScalarField>::zero());
 
-        Ok(P::G1::msm(powers, &quotient_coeffs).unwrap())
+        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &quotient_coeffs).into().into())
     }
 
     pub fn open_multiple_polys_and_points(
