@@ -40,9 +40,8 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
         let srs = BivBatchKZG::<Bls12_381>::setup(&mut rng, x_degree, y_degree).unwrap();
 
         // generate bivariate polynomials
-        let mut bivariate_polynomials = Vec::new();
+        let mut x_polynomials = Vec::new();
         for _ in 0..POLYNOMIAL_NUMBER {
-            let mut x_polynomials = Vec::new();
             for _ in 0..y_degree + 1 {
                 let mut x_polynomial_coeffs = vec![];
                 for _ in 0..x_degree + 1 {
@@ -51,8 +50,13 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
                 x_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
                     &x_polynomial_coeffs,
                 ));
-            }
-            bivariate_polynomials.push (BivariatePolynomial { x_polynomials });
+            }   
+        }
+
+        let x_poly_refs : Vec<_> = x_polynomials.iter().collect();
+        let mut bivariate_polynomials = Vec::new();
+        for i in 0..POLYNOMIAL_NUMBER {
+            bivariate_polynomials.push( BivariatePolynomial { x_polynomials: &x_poly_refs[i * (y_degree + 1) .. (i + 1) * (y_degree + 1)]});
         }
 
         // pick random x_points and compute the evals
@@ -87,19 +91,19 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
                 for i in 0..POLYNOMIAL_NUMBER {
                     let _ = BivariateKZG::<Bls12_381>::open(
                         &srs.0, 
-                        &bivariate_polynomials[i], 
+                        bivariate_polynomials[i], 
                         &(x_points[i][0], y_point));
 
                     let _ = BivariateKZG::<Bls12_381>::open(
                         &srs.0, 
-                        &bivariate_polynomials[i], 
+                        bivariate_polynomials[i], 
                         &(x_points[i][1], y_point));
                 }
             });
         });
         let proof = BivariateKZG::<Bls12_381>::open(
             &srs.0, 
-            &bivariate_polynomials[0], 
+            bivariate_polynomials[0], 
             &(x_points[0][0], y_point)).unwrap();
         let proof_size = size_of_val(&proof);
         println!("Trival Bivariate KZG proof size: {:?} bytes", proof_size * total_point_number);
@@ -139,12 +143,12 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
         for i in 0..POLYNOMIAL_NUMBER {
             let proof_1 = BivariateKZG::<Bls12_381>::open(
                 &srs.0, 
-                &bivariate_polynomials[i], 
+                bivariate_polynomials[i], 
                 &(x_points[i][0], y_point)).unwrap();
 
             let proof_2 = BivariateKZG::<Bls12_381>::open(
                 &srs.0, 
-                &bivariate_polynomials[i], 
+                bivariate_polynomials[i], 
                 &(x_points[i][1], y_point)).unwrap();
             
             proofs.push(vec![proof_1, proof_2]);

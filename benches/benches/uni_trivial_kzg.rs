@@ -65,7 +65,7 @@ fn kzg_commit_benchmark(c: &mut Criterion) {
         });
 
         let (g_alpha_powers, _v_srs) = KZG::<Bls12_381>::setup_lagrange(&mut rng, degree, &domain).unwrap();
-        let evals = polynomial.clone().evaluate_over_domain(domain);
+        let evals = polynomial.evaluate_over_domain_by_ref(domain);
         c.bench_function(&format!("KZG_lagrange_commit, log_degree {}", log_size), |b| {
             b.iter(|| {
                 let _ = KZG::<Bls12_381>::commit_lagrange(
@@ -100,7 +100,7 @@ fn kzg_open_benchmark(c: &mut Criterion) {
         });
 
         let (g_alpha_powers, _v_srs) = KZG::<Bls12_381>::setup_lagrange(&mut rng, degree, &domain).unwrap();
-        let evals = polynomial.clone().evaluate_over_domain(domain);
+        let evals = polynomial.evaluate_over_domain_by_ref(domain);
         c.bench_function(&format!("KZG_lagrange_open, log_degree {}", log_size), |b| {
             b.iter(|| {
                 let _ = KZG::<Bls12_381>::open_lagrange(
@@ -141,8 +141,8 @@ fn kzg_verify_benchmark(c: &mut Criterion) {
 
 
         let (g_alpha_powers, v_srs) = KZG::<Bls12_381>::setup_lagrange(&mut rng, degree, &domain).unwrap();
-        let evals = polynomial.clone().evaluate_over_domain(domain);
-        let eval = polynomial.clone().evaluate(&point);
+        let evals = polynomial.evaluate_over_domain_by_ref(domain);
+        let eval = polynomial.evaluate(&point);
         let proof = KZG::<Bls12_381>::open_lagrange(
             &g_alpha_powers,
             &evals,

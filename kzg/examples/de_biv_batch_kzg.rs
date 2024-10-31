@@ -88,7 +88,7 @@ fn main() {
     } else {
         Net::recv_from_master(None)
     };
-    let sub_polynomials = polys_x_polynomials.iter().map(|x_polynomials| x_polynomials[sub_prover_id].clone()).collect();
+    let sub_polynomials : Vec<_> = polys_x_polynomials.iter().map(|x_polynomials| &x_polynomials[sub_prover_id]).collect();
 
     let (y_point, x_points) = if Net::am_master() {
         let y_point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
@@ -168,9 +168,13 @@ fn main() {
 
 
     if Net::am_master() {
+        let polys_x_refs = polys_x_polynomials.iter()
+            .map(|x_polynomials| x_polynomials.iter().collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+
         let mut bivariate_polynomials = Vec::new();
         for i in 0..polynomial_number {
-            bivariate_polynomials.push(BivariatePolynomial{x_polynomials: polys_x_polynomials[i].clone()});
+            bivariate_polynomials.push(BivariatePolynomial{x_polynomials: &polys_x_refs[i]});
         }
 
         let time = Instant::now();

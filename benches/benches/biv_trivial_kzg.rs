@@ -37,20 +37,22 @@ fn main() {
             &x_polynomial_coeffs,
         ));
     }
-    let bivariate_polynomial = BivariatePolynomial { x_polynomials };
+
+    let x_poly_refs = x_polynomials.iter().collect::<Vec<_>>();
+    let bivariate_polynomial = BivariatePolynomial { x_polynomials: &x_poly_refs };
 
     let point = (UniformRand::rand(&mut rng), UniformRand::rand(&mut rng));
     let eval = bivariate_polynomial.evaluate(&point);
 
     // Commit
     let com_start = Instant::now();
-    let com = BivariateKZG::<Bls12_381>::commit(&g_alpha_powers, &bivariate_polynomial).unwrap();
+    let com = BivariateKZG::<Bls12_381>::commit(&g_alpha_powers, bivariate_polynomial).unwrap();
     let time = com_start.elapsed().as_millis();
     println!("Bivariate KZG commi time, {:?} ms", time);
 
     // Open
     let open_start = Instant::now();
-    let proof = BivariateKZG::<Bls12_381>::open(&g_alpha_powers, &bivariate_polynomial, &point).unwrap();
+    let proof = BivariateKZG::<Bls12_381>::open(&g_alpha_powers, bivariate_polynomial, &point).unwrap();
     let time = open_start.elapsed().as_millis();
     println!("Bivariate KZG open  time: {:?} ms", time);
 

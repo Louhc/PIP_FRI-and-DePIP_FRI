@@ -1,7 +1,7 @@
 use ark_ff::{Zero, One};
 use ark_ec::pairing::Pairing;
 use rayon::prelude::*;
-use my_kzg::par_join_3;
+use my_kzg::{par_join_3, helper::generate_powers};
 use itertools::MultiUnzip;
 use ark_std::ops::AddAssign;
 use ark_std::cfg_iter;
@@ -145,12 +145,7 @@ impl<P:Pairing> R1CSVectors<P> {
                 (a, b, c)
             }).multiunzip();
     
-        let mut vec_r = Vec::new();
-        let mut r_pow = P::ScalarField::one();
-        for _ in 0..m * l {
-            vec_r.push(r_pow.clone());
-            r_pow *= challenge_r;
-        }
+        let vec_r = generate_powers(&challenge_r, m * l);
     
         let mut sub_vec_x = vec![f_zero; m];
         let mut sub_vec_y = vec![f_zero; m];
@@ -226,13 +221,8 @@ impl<P:Pairing> R1CSPubVectors<P> {
         let cs = cs.borrow().unwrap();
         let cs_matrix = cs.to_matrices().unwrap();
     
-        let mut vec_r = Vec::new();
-        let mut r_pow = P::ScalarField::one();
-        for _ in 0..m * l {
-            vec_r.push(r_pow.clone());
-            r_pow *= challenge_r;
-        }
-    
+        let vec_r = generate_powers(challenge_r, m * l);
+
         let mut vec_x = vec![f_zero; m * l];
         let mut vec_y = vec![f_zero; m * l];
         let mut vec_z = vec![f_zero; m * l];

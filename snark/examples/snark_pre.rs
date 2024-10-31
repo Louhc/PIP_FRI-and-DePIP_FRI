@@ -107,6 +107,8 @@ fn main() {
     let mut transcript : Transcript = Transcript::new(b"Random R1CS");
     let time = Instant::now();
     let r1cs_de_vecs: R1CSVectors<Bls12_381> = R1CSVectors::<Bls12_381>::build(sub_prover_id, m, l, challenge_r, &cs).unwrap();
+    println!("Prover {:?} build time: {:?}", sub_prover_id, time.elapsed());
+    let time = Instant::now();
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<Bls12_381>(m, l, &r1cs_de_vecs);
     println!("Prover {:?} generates de secret polynomials time: {:?}", sub_prover_id, time.elapsed());
     let proof = DeSNARKLog::<Bls12_381>::de_r1cs_prove(sub_prover_id, &powers, 

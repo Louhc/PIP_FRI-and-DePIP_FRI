@@ -3,7 +3,7 @@ use ark_ec::{
     Group,
     CurveGroup, AffineRepr
 };
-use ark_ff::{One, Field, Zero};
+use ark_ff::{Field, One, Zero};
 use ark_poly::{polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial
 }   , 
@@ -109,11 +109,7 @@ pub fn linear_combination_poly<P: Pairing> (
     polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>,
     challenge: &P::ScalarField,
 ) -> UnivariatePolynomial<P::ScalarField> {
-
-    let mut linear_factors = vec![P::ScalarField::one(); polynomials.len()];
-        linear_factors.par_iter_mut().enumerate().for_each(|(i, val)| {
-            *val = challenge.pow([i as u64]);
-    });
+    let linear_factors = generate_powers(challenge, polynomials.len());
     // an example of polynomial rlc using par_iter()
     let combined_polynomial = polynomials.par_iter().zip(linear_factors.par_iter())
         .map(|(poly, factor)| poly * *factor)
@@ -134,6 +130,22 @@ pub fn linear_combination_field<P: Pairing> (
     for value in values {
         result += *value * linear_factor;
         linear_factor *= challenge;
+    }
+    result
+}
+
+#[inline]
+pub fn generate_powers<F: Field>(
+    base: &F,
+    len: usize
+) -> Vec<F> {
+    let mut result = vec![F::one(); len];
+    let mut pow = *base;
+    for i in 1..len {
+        result[i] = pow;
+        if i != len - 1 {
+            pow *= base;
+        }
     }
     result
 }

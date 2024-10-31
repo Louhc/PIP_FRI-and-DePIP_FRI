@@ -11,6 +11,7 @@ use std::time::Instant;
 use rayon::prelude::*;
 use crate::prover_nopre::NoPreProver;
 use my_kzg::par_join_3;
+use std::mem::take;
 
 #[macro_export] macro_rules! par_join_4 {
     ($task1:expr, $task2:expr, $task3:expr, $task4:expr) => {{
@@ -88,7 +89,7 @@ impl<P: Pairing> DeSNARKLinear<P> {
         // get g1 and h1
         let time = Instant::now();
         let (poly_g1, poly_h1) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target, &u1, &x_domain);
-        let com_g1_h1 = BatchKZG::<P>::commit(&x_srs, &vec![poly_g1.clone(), poly_h1.clone()]).unwrap();
+        let com_g1_h1 = BatchKZG::<P>::commit(&x_srs, &vec![&poly_g1, &poly_h1]).unwrap();
 
         // send com of g1 and h1 to P0
         let com_g1_h1_slice = Net::send_to_master(&com_g1_h1);
@@ -122,7 +123,7 @@ impl<P: Pairing> DeSNARKLinear<P> {
         // slices of g1(alpha) and h1(alpha)
         let eval_g1 = poly_g1.evaluate(&alpha);
         let eval_h1 = poly_h1.evaluate(&alpha);
-        let proof_g1_h1 = BatchKZG::<P>::open(&x_srs, &vec![poly_g1, poly_h1], &alpha, &gamma).unwrap();
+        let proof_g1_h1 = BatchKZG::<P>::open(&x_srs, &vec![&poly_g1, &poly_h1], &alpha, &gamma).unwrap();
 
         let evals = vec![evals_alpha[0], evals_alpha[1], evals_alpha[2], evals_alpha[3], evals_alpha[4], evals_r[0], 
                                                           evals_alpha[5], evals_r[2], evals_r[1], evals_r[3], eval_r,
@@ -145,15 +146,14 @@ impl<P: Pairing> DeSNARKLinear<P> {
             let (polynomials_y, polynomial_target_y) = NoPreProver::<P>::compute_y_polys_and_2nd_target_poly(l, &evals, &y_domain, &r_pow_m, &alpha, &u1, &v);
 
             // get g2, h2low, h2high
-            let (poly_g2, poly_h2) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target_y, &u2, &y_domain);
-            let mut coeffs_h2 = poly_h2.coeffs.to_vec();
+            let (poly_g2, mut poly_h2) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target_y, &u2, &y_domain);
+            let mut coeffs_h2 = take(&mut poly_h2.coeffs);
             if coeffs_h2.len() < l {
                 coeffs_h2.resize(l + 1, P::ScalarField::zero());
             }
             assert!(coeffs_h2.len() > l);
-            let coeffs_h2_low: Vec<P::ScalarField> = coeffs_h2.iter().take(l).cloned().collect();
-            let coeffs_h2_high = coeffs_h2.clone()[l..].to_vec();
-            let poly_h2_low = UnivariatePolynomial::from_coefficients_vec(coeffs_h2_low);
+            let coeffs_h2_high= coeffs_h2.split_off(l);
+            let poly_h2_low = UnivariatePolynomial::from_coefficients_vec(coeffs_h2);
             let poly_h2_high = UnivariatePolynomial::from_coefficients_vec(coeffs_h2_high);
 
             // get lagrange evaluations of g2, h2low, h2high
@@ -188,7 +188,7 @@ impl<P: Pairing> DeSNARKLinear<P> {
         // generate proof to alpha, beta
         let time = Instant::now();
         let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r]];
-        let sub_polynomials = vec![wit_polys.poly_w.clone(), wit_polys.poly_a.clone(), wit_polys.poly_b.clone(), wit_polys.poly_c.clone()];
+        let sub_polynomials = vec![&wit_polys.poly_w, &wit_polys.poly_a, &wit_polys.poly_b, &wit_polys.poly_c];
         let proofs_wit_polys= BivBatchKZG::<P>::de_open_lagrange_at_same_y(sub_prover_id, &powers, &x_srs, &sub_polynomials, &x_points, &beta, &y_domain, transcript, &gamma);
         println!("Prover {:?} computs proofs of bivariate polynomials time: {:?}", sub_prover_id, time.elapsed());
 

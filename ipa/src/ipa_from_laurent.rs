@@ -46,10 +46,10 @@ impl<P: Pairing> IPA<P> {
 
         // compute the target polynomial, f(x) = f1(x) * x^{m-1} * f2(x^{-1})
         let ifft_domain = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(domain.size() * 2).unwrap();
-        let evals_left = polynomial_left.clone().evaluate_over_domain(ifft_domain);
+        let evals_left = polynomial_left.evaluate_over_domain_by_ref(ifft_domain);
         coeffs_right.reverse();
         let polynomial_right_mul_x = UnivariatePolynomial::from_coefficients_vec(coeffs_right);
-        let evals_right = polynomial_right_mul_x.clone().evaluate_over_domain(ifft_domain);
+        let evals_right = polynomial_right_mul_x.evaluate_over_domain_by_ref(ifft_domain);
         let evals_target = &evals_left * &evals_right;
         let polynomial_target = evals_target.interpolate();
 
@@ -115,7 +115,7 @@ impl<P: Pairing> IPA<P> {
         // We do not put com_f_2 and eval_f_2 into the vector with distinct evaluation point
         let com_vec = vec![com_f_1, com_p, com_q, com_p_prime, com_q_prime];
         let eval_vec = vec![eval_f_1, eval_p, eval_q, eval_p_prime, eval_q_prime];
-        let polynomial_vec = vec![polynomial_left, polynomial_p, polynomial_q, polynomial_p_prime, polynomial_q_prime];
+        let polynomial_vec = vec![&polynomial_left, &polynomial_p, &polynomial_q, &polynomial_p_prime, &polynomial_q_prime];
 
         // generate the proof for f2 and eval_f2
         let proof_f_2 = KZG::<P>::open(&powers, &polynomial_right, &alpha_inverse).unwrap();

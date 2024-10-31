@@ -8,7 +8,7 @@ use my_kzg::{uni_batch_kzg::BatchKZG, transcript::ProofTranscript, uni_trivial_k
 use crate::Error;
 use merlin::Transcript;
 use ark_ff::{Zero, One};
-
+use std::mem::take;
 
 pub struct IPA<P: Pairing> {
     _pairing: PhantomData<P>,
@@ -22,7 +22,7 @@ impl<P: Pairing> IPA<P> {
         polynomial: &UnivariatePolynomial<P::ScalarField>,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> P::ScalarField {
-        let evals = polynomial.clone().evaluate_over_domain(*domain);
+        let evals = polynomial.evaluate_over_domain_by_ref(*domain);
         let mut sum = P::ScalarField::zero();
         for i in 0..evals.evals.len() {
             sum += evals.evals[i];
@@ -35,15 +35,13 @@ impl<P: Pairing> IPA<P> {
         // sum: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
-        let (h, reminder_polynomial) = polynomial.clone().divide_by_vanishing_poly(*domain).unwrap();
+        let (h, reminder_polynomial) = polynomial.divide_by_vanishing_poly(*domain).unwrap();
         // let constant_term = *sum / domain.size_as_field_element();
-        let constant_term = reminder_polynomial.coeffs.to_vec()[0];
+        let constant_term = reminder_polynomial.coeffs[0];
         let g_prime = reminder_polynomial + UnivariatePolynomial::from_coefficients_vec(vec![-constant_term]);
         assert_eq!(g_prime.coeffs[0], P::ScalarField::zero());
-        let mut coeffs_g = g_prime.coeffs.clone();
-        coeffs_g.remove(0);
         // let g = &g_prime / &UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero(), P::ScalarField::one()]);
-        let g = UnivariatePolynomial::from_coefficients_vec(coeffs_g);
+        let g = UnivariatePolynomial::from_coefficients_slice(&g_prime.coeffs[1..]);
 
         (g, h, g_prime)
     }
@@ -55,14 +53,14 @@ impl<P: Pairing> IPA<P> {
         domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
         let u = *challenge;
-        let (h, reminder_polynomial) = polynomial.clone().divide_by_vanishing_poly(*domain).unwrap();
+        let (h, reminder_polynomial) = polynomial.divide_by_vanishing_poly(*domain).unwrap();
         // let constant_term = *sum / domain.size_as_field_element();
-        let constant_term = reminder_polynomial.coeffs.to_vec()[0];
+        let constant_term = reminder_polynomial.coeffs[0];
         // test over
-        let g_prime = reminder_polynomial + UnivariatePolynomial::from_coefficients_vec(vec![-constant_term]);
+        let mut g_prime = reminder_polynomial + UnivariatePolynomial::from_coefficients_vec(vec![-constant_term]);
         // Check the correctness of sum, the constant coefficient of g_prime should be zero
         assert_eq!(g_prime.coeffs[0], P::ScalarField::zero());
-        let mut coeffs_g = g_prime.coeffs.clone();
+        let mut coeffs_g = take(&mut g_prime.coeffs);
         coeffs_g.remove(0);
         // let g = &g_prime / &UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero(), P::ScalarField::one()]);
         let g = UnivariatePolynomial::from_coefficients_vec(coeffs_g);
@@ -80,15 +78,16 @@ impl<P: Pairing> IPA<P> {
         // helper polynomials
         // for ldt: g, h, g_prime
         // for ours, g, h
-        helper_polynomials: &Vec<UnivariatePolynomial<P::ScalarField>>,
+        helper_polynomials: &[&UnivariatePolynomial<P::ScalarField>],
         point: &P::ScalarField,
         transcript: &mut Transcript,
     ) -> Result<(Vec<P::ScalarField>, Vec<P::G1>, P::G1), Error> {
         let mut evals = vec![polynomial_left.evaluate(&point), polynomial_right.evaluate(&point)];
-        let mut polynomials = vec![polynomial_left.clone(), polynomial_right.clone()];
+
+        let mut polynomials = vec![polynomial_left, polynomial_right];
         for i in 0..helper_polynomials.len() {
             evals.push(helper_polynomials[i].evaluate(&point));
-            polynomials.push(helper_polynomials[i].clone());
+            polynomials.push(helper_polynomials[i]);
         }
 
         // evaluations of f1,f2,g_u,h or f1,f2,g,h,g_prime
@@ -114,7 +113,7 @@ impl<P: Pairing> IPA<P> {
         transcript: &mut Transcript,
     ) -> Result<bool, Error> {
         let z_h_eval = domain.evaluate_vanishing_polynomial(*point);
-        let (evals, helper_coms, kzg_proof) = proof.clone();
+        let (evals, helper_coms, kzg_proof) = proof;
         assert_eq!(helper_coms.len(), proof.0.len() - 2);
         // f1 * f2 = x * g(x) + sum/|H| + Z_H(x) * h(x)
         let check1 = evals[0] * evals[1] == *point * evals[2] + *sum / domain.size_as_field_element() + z_h_eval * evals[3];
@@ -151,7 +150,7 @@ impl<P: Pairing> IPA<P> {
         transcript: &mut Transcript,
     ) -> Result<bool, Error> {
         let z_h_eval = domain.evaluate_vanishing_polynomial(*point);
-        let (evals, helper_coms, kzg_proof) = proof.clone();
+        let (evals, helper_coms, kzg_proof) = proof;
         assert_eq!(helper_coms.len(), proof.0.len() - 2);
         let constant_term = *point - *challenge_u;
         let left =  evals[0] * evals[1];
@@ -196,7 +195,7 @@ impl<P: Pairing> IPA<P> {
         transcript: &mut Transcript,
     ) -> Result<(Vec<P::ScalarField>, Vec<P::G1>, P::G1), Error> {
         let (g, h, g_prime) = Self::get_g_h_g_prime(&polynomial_target, &domain);
-        let helper_polynomials = vec![g, h, g_prime];
+        let helper_polynomials = vec![&g, &h, &g_prime];
         let helper_coms = BatchKZG::<P>::commit(&powers, &helper_polynomials).unwrap();
 
         // generate eta using fiat-shamir
@@ -232,7 +231,7 @@ impl<P: Pairing> IPA<P> {
         
         let (g_u, h) = Self::get_g_mul_u_and_h(&polynomial_target, &u, &domain);
         // assert_eq!(g_u.degree(), domain.size() - 1);
-        let helper_polynomials = vec![g_u, h];
+        let helper_polynomials = vec![&g_u, &h];
         let helper_coms = BatchKZG::<P>::commit(&powers, &helper_polynomials).unwrap();
 
         // generate alpha using fiat-shamir
@@ -320,8 +319,8 @@ impl<P: Pairing> IPA<P> {
 
         // compute the target polynomial
         let ifft_domain = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(domain.size() * 2).unwrap();
-        let evals_left = polynomial_left.clone().evaluate_over_domain(ifft_domain);
-        let evals_right = polynomial_right.clone().evaluate_over_domain(ifft_domain);
+        let evals_left = polynomial_left.evaluate_over_domain_by_ref(ifft_domain);
+        let evals_right = polynomial_right.evaluate_over_domain_by_ref(ifft_domain);
         let evals_target = &evals_left * &evals_right;
         let polynomial_target = evals_target.interpolate();
 
@@ -355,8 +354,8 @@ impl<P: Pairing> IPA<P> {
 
         // compute the target polynomial
         let ifft_domain = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(domain.size() * 2).unwrap();
-        let evals_left = polynomial_left.clone().evaluate_over_domain(ifft_domain);
-        let evals_right = polynomial_right.clone().evaluate_over_domain(ifft_domain);
+        let evals_left = polynomial_left.evaluate_over_domain_by_ref(ifft_domain);
+        let evals_right = polynomial_right.evaluate_over_domain_by_ref(ifft_domain);
         let evals_target = &evals_left * &evals_right;
         let polynomial_target = evals_target.interpolate();
 

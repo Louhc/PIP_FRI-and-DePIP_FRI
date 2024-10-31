@@ -11,6 +11,7 @@ use ark_poly::polynomial::{
 use ark_poly::{EvaluationDomain, Evaluations, GeneralEvaluationDomain};
 use std::marker::PhantomData;
 use ark_std::rand::Rng;
+use crate::helper::generate_powers;
 use crate::Error;
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
@@ -64,7 +65,7 @@ impl<P: Pairing> KZG<P> {
         s: &P::ScalarField,
     ) -> Vec<P::G1> {
         assert!(num.is_power_of_two());
-        let evals_of_lagrange = EvaluationDomain::evaluate_all_lagrange_coefficients(&domain.clone(), *s);
+        let evals_of_lagrange = EvaluationDomain::evaluate_all_lagrange_coefficients(domain, *s);
     
         let window_size = FixedBase::get_mul_window_size(num);
         let scalar_bits = P::ScalarField::MODULUS_BIT_SIZE as usize;
@@ -84,8 +85,8 @@ impl<P: Pairing> KZG<P> {
         Ok((
             <P as Pairing>::G1::normalize_batch(&g_alpha_powers),
             UniVerifierSRS {
-                g: g.clone(),
-                h: h.clone(),
+                g,
+                h,
                 h_alpha: h * alpha,
             },
         ))
@@ -105,8 +106,8 @@ impl<P: Pairing> KZG<P> {
         Ok((
             <P as Pairing>::G1::normalize_batch(&g_alpha_powers),
             UniVerifierSRS {
-                g: g.clone(),
-                h: h.clone(),
+                g,
+                h,
                 h_alpha: h * alpha,
             },
         ))
@@ -117,11 +118,10 @@ impl<P: Pairing> KZG<P> {
         polynomial: &UnivariatePolynomial<P::ScalarField>,
     ) -> Result<P::G1, Error> {
         assert!(powers.len() >= polynomial.degree() + 1);
-        let coeffs = polynomial.coeffs.to_vec();
         // coeffs.resize(powers.len(), <P::ScalarField>::zero());
 
         // Can unwrap because coeffs.len() is guaranteed to be equal to powers.len()
-        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &coeffs).into().into())
+        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &polynomial.coeffs).into().into())
     }
 
     pub fn commit_lagrange(
@@ -129,11 +129,9 @@ impl<P: Pairing> KZG<P> {
         evals: &Evaluations<P::ScalarField>,
     ) -> Result<P::G1, Error> {
         assert!(powers.len() == evals.evals.len());
-        let mut evals = evals.evals.clone();
-        evals.resize(powers.len(), <P::ScalarField>::zero());
 
         // Can unwrap because coeffs.len() is guaranteed to be equal to powers.len()
-        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &evals).into().into())
+        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &evals.evals).into().into())
     }
 
     pub fn open(
@@ -149,10 +147,9 @@ impl<P: Pairing> KZG<P> {
                 -point.clone(),
                 P::ScalarField::one(),
             ]);
-        let quotient_coeffs = quotient_polynomial.coeffs.to_vec();
 
         // Can unwrap because quotient_coeffs.len() is guaranteed to be equal to powers.len()
-        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &quotient_coeffs).into().into())
+        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &quotient_polynomial.coeffs).into().into())
     }
 
     // Given the evaluations, compute the quotient polynomial evaluations
@@ -168,10 +165,7 @@ impl<P: Pairing> KZG<P> {
         // Make use of the batch inversion function
         // Compute (z - g^i)^-1
         let g = domain.group_gen();
-        let mut g_powers = vec![P::ScalarField::one(); evals.evals.len()];
-        g_powers.par_iter_mut().enumerate().for_each(|(i, val)| {
-            *val = g.pow([i as u64]);
-        });
+        let g_powers = generate_powers(&g, evals.evals.len());
         let mut divider_vec: Vec<P::ScalarField> = g_powers.par_iter().map(|g_power| *point - g_power).collect();
         batch_inversion(divider_vec.as_mut_slice());
 
@@ -240,10 +234,8 @@ impl<P: Pairing> DeKZG<P> {
         sub_polynomial: &UnivariatePolynomial<P::ScalarField>,
     ) -> Option<P::G1> {
         assert!(powers.len() >= sub_polynomial.degree() + 1);
-        let mut coeffs = sub_polynomial.coeffs.to_vec();
-        coeffs.resize(powers.len(), <P::ScalarField>::zero());
 
-        let sub_com = P::G1MSM::msm_unchecked_par_auto(powers, &coeffs).into();
+        let sub_com = P::G1MSM::msm_unchecked_par_auto(powers, &sub_polynomial.coeffs).into();
         let final_com_slice = Net::send_to_master(&sub_com);
 
         // guaranteed by the Net if delayed
@@ -283,10 +275,7 @@ impl<P: Pairing> DeKZG<P> {
                 -point.clone(),
                 P::ScalarField::one(),
             ]);
-        let mut quotient_coeffs = quotient_polynomial.coeffs.to_vec();
-        quotient_coeffs.resize(powers.len(), <P::ScalarField>::zero());
-
-        let sub_proof = P::G1MSM::msm_unchecked_par_auto(powers, &quotient_coeffs).into();
+        let sub_proof = P::G1MSM::msm_unchecked_par_auto(powers, &quotient_polynomial.coeffs).into();
         let final_proof_slice = Net::send_to_master(&sub_proof);
 
         if Net::am_master() {
@@ -310,11 +299,9 @@ impl<P: Pairing> DeKZG<P> {
                 -point.clone(),
                 P::ScalarField::one(),
             ]);
-        let mut quotient_coeffs = quotient_polynomial.coeffs.to_vec();
-        quotient_coeffs.resize(powers.len(), <P::ScalarField>::zero());
 
         let sub_eval = sub_polynomial.evaluate(point);
-        let sub_proof = P::G1MSM::msm_unchecked_par_auto(powers, &quotient_coeffs).into();
+        let sub_proof = P::G1MSM::msm_unchecked_par_auto(powers, &quotient_polynomial.coeffs).into();
         let final_proof_slice = Net::send_to_master(&(sub_eval, sub_proof));
 
         if Net::am_master() {

@@ -36,9 +36,11 @@ fn main() {
         evals.push(eval);
     }
 
+    let poly_refs : Vec<_> = polynomials.iter().collect();
+
     // Commit
     let com_start = Instant::now();
-    let coms = BatchKZG::<Bls12_381>::commit(&g_alpha_powers, &polynomials).unwrap();
+    let coms = BatchKZG::<Bls12_381>::commit(&g_alpha_powers, &poly_refs).unwrap();
     
     // let com = KZG::<Bls12_381>::commit(&g_alpha_powers, &polynomial).unwrap();
     println!("BatchKZG commi time, {:} log_degree: {:?} ms", log_degree, com_start.elapsed().as_millis());
@@ -49,7 +51,7 @@ fn main() {
     let open_start = Instant::now();
     let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
         &mut prover_transcript, b"batch_kzg_rlc_challenge");
-    let proofs = BatchKZG::<Bls12_381>::open(&g_alpha_powers, &polynomials, &point, &gamma).unwrap();
+    let proofs = BatchKZG::<Bls12_381>::open(&g_alpha_powers, &poly_refs, &point, &gamma).unwrap();
     // let proof = KZG::<Bls12_381>::open(&g_alpha_powers, &polynomial, &point,).unwrap();
     println!("BatchKZG open  time, {:} log_degree: {:?} ms", log_degree, open_start.elapsed().as_millis());
 

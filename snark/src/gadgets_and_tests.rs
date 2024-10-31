@@ -395,7 +395,7 @@ fn preprocessing_gadgetes_test_with_same_m_and_mprime() {
     let (upper_a_t_polys_2, upper_a_t_evals_2) = PreProver::<Bls12_381>::compute_upper_a_t_polys_from_rows(m, l, &x_domain, &m_domain, &row_2, &r);
     let (upper_b_t_polys_1, upper_b_t_evals_1) = PreProver::<Bls12_381>::compute_upper_b_t_polys_from_cols(m, &x_domain, &m_domain, &col_1, &alpha);
     let (upper_b_t_polys_2, upper_b_t_evals_2) = PreProver::<Bls12_381>::compute_upper_b_t_polys_from_cols(m, &x_domain, &m_domain, &col_2, &alpha);
-    let val_polys = Indexer::<Bls12_381>::compute_val_polys(l, &m_domain, &val_evals);
+    let val_polys = Indexer::<Bls12_381>::compute_val_polys(l, &m_domain, val_evals);
     let n_polys = Indexer::<Bls12_381>::compute_n_polys(&x_domain, &n);
     let upper_a_t_polys = vec![upper_a_t_polys_1, upper_a_t_polys_2];
     let upper_b_t_polys = vec![upper_b_t_polys_1, upper_b_t_polys_2];
@@ -465,19 +465,19 @@ fn preprocessing_gadgetes_test_with_same_m_and_mprime() {
     let ((t_row_low, eval_t_row_low), (t_row_high, eval_t_row_high)) = {
         rayon::join(
             || {
-                let t_low_evals = (0..m).into_par_iter().map(|i| r.pow([i as u64])).collect();
-                let t_row_low = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&t_low_evals, &x_domain);
+                let t_low_evals : Vec<_> = (0..m).into_par_iter().map(|i| r.pow([i as u64])).collect();
+                let t_row_low = DeIPA::<Bls12_381>::interpolate_from_eval_domain(t_low_evals.clone(), &x_domain);
                 (t_row_low, t_low_evals)
             },
             || {
-                let t_high_evals = (0..m).into_par_iter().map(|i| r_pow.pow([i as u64])).collect();
-                let t_row_high = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&t_high_evals, &x_domain);
+                let t_high_evals : Vec<_> = (0..m).into_par_iter().map(|i| r_pow.pow([i as u64])).collect();
+                let t_row_high = DeIPA::<Bls12_381>::interpolate_from_eval_domain(t_high_evals.clone(), &x_domain);
                 (t_row_high, t_high_evals)
             })
     };
     let (t_col, eval_t_col) = {
-        let t_col_evals = (0..m).into_par_iter().map(|i| alpha.pow([i as u64])).collect();
-        let t_col = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&t_col_evals, &x_domain);
+        let t_col_evals: Vec<_> = (0..m).into_par_iter().map(|i| alpha.pow([i as u64])).collect();
+        let t_col = DeIPA::<Bls12_381>::interpolate_from_eval_domain(t_col_evals.clone(), &x_domain);
         (t_col, t_col_evals)
     };
     assert_eq!(t_row_low.evaluate(&f_one), f_one);
@@ -498,13 +498,14 @@ fn preprocessing_gadgetes_test_with_same_m_and_mprime() {
         .zip(upper_b_t_evals_1.eval_b_pa.par_iter())
         .map(|(lower, upper)| (gamma + beta * lower + upper).inverse().unwrap())
         .collect();
-    let de_f1_b_pa_poly_1 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&de_f1_b_pa_evals_1, &m_domain);
+    let de_f1_b_pa_poly_1 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(de_f1_b_pa_evals_1, &m_domain);
     let de_f1_b_pa_evals_2: Vec<MyField> = lower_evals_2.eval_lb_pa.par_iter()
         .zip(upper_b_t_evals_2.eval_b_pa.par_iter())
         .map(|(lower, upper)| (gamma + beta * lower + upper).inverse().unwrap())
         .collect();
-    let de_f1_b_pa_poly_2 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&de_f1_b_pa_evals_2, &m_domain);
-    let f1_b_pa = BivariatePolynomial {x_polynomials: vec![de_f1_b_pa_poly_1, de_f1_b_pa_poly_2]};
+    let de_f1_b_pa_poly_2 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(de_f1_b_pa_evals_2, &m_domain);
+    let x_poly_refs = vec![&de_f1_b_pa_poly_1, &de_f1_b_pa_poly_2];
+    let f1_b_pa = BivariatePolynomial {x_polynomials: &x_poly_refs};
     let f1_zero_zero = f1_b_pa.evaluate_lagrange(&(f_zero, f_zero), &y_domain);
 
     // compute f_2 eval
@@ -515,7 +516,7 @@ fn preprocessing_gadgetes_test_with_same_m_and_mprime() {
         .zip(elements.par_iter())
         .map(|((n, t), y)| *n * (gamma + beta * *y + *t).inverse().unwrap())
         .collect();
-    let f2_b_pa = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&f2_evals, &x_domain);
+    let f2_b_pa = DeIPA::<Bls12_381>::interpolate_from_eval_domain(f2_evals, &x_domain);
     let f2_zero = f2_b_pa.evaluate(&f_zero);
     let mut left_poly_b_pa = &f2_b_pa * &(&UnivariatePolynomial::<MyField>::from_coefficients_vec(vec![gamma, beta]) + &t_col);
     left_poly_b_pa = &left_poly_b_pa - &n_polys.col_pa;
@@ -579,7 +580,7 @@ fn preprocessing_gadgetes_test_with_same_m_and_mprime() {
             .zip(evals_row_pc_low.par_iter()).zip(evals_row_pc_high.par_iter()).zip(evals_col_pa.par_iter()).zip(evals_col_pb.par_iter()).zip(evals_col_pc.par_iter())
             .map(|((((((((pa_low, pa_high), pb_low), pb_high), pc_low), pc_high), col_pa), col_pb), col_pc)| *pa_low + *pa_high + *pb_low + *pb_high + *pc_low + *pc_high + *col_pa + *col_pb + *col_pc).collect() 
     };
-    let poly_f2 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&f2_evals, &x_domain);
+    let poly_f2 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(f2_evals, &x_domain);
     let f2_zero = poly_f2.evaluate(&f_zero);
 
     // get f1
@@ -624,7 +625,7 @@ fn preprocessing_gadgetes_test_with_same_m_and_mprime() {
         .zip(evals_row_pc_low.par_iter()).zip(evals_row_pc_high.par_iter()).zip(evals_col_pa.par_iter()).zip(evals_col_pb.par_iter()).zip(evals_col_pc.par_iter())
         .map(|((((((((pa_low, pa_high), pb_low), pb_high), pc_low), pc_high), col_pa), col_pb), col_pc)| *pa_low + *pa_high + *pb_low + *pb_high + *pc_low + *pc_high + *col_pa + *col_pb + *col_pc).collect() 
     };
-    let f1_1 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&evals_f1_1, &m_domain);
+    let f1_1 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(evals_f1_1, &m_domain);
 
     let evals_f1_2: Vec<MyField> = {
         let evals_row_pa_low: Vec<MyField> = lower_evals_2.eval_la_pa_low.par_iter()
@@ -667,8 +668,9 @@ fn preprocessing_gadgetes_test_with_same_m_and_mprime() {
         .zip(evals_row_pc_low.par_iter()).zip(evals_row_pc_high.par_iter()).zip(evals_col_pa.par_iter()).zip(evals_col_pb.par_iter()).zip(evals_col_pc.par_iter())
         .map(|((((((((pa_low, pa_high), pb_low), pb_high), pc_low), pc_high), col_pa), col_pb), col_pc)| *pa_low + *pa_high + *pb_low + *pb_high + *pc_low + *pc_high + *col_pa + *col_pb + *col_pc).collect() 
     };
-    let f1_2 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&evals_f1_2, &m_domain);
-    let f1 = BivariatePolynomial{x_polynomials: vec![f1_1, f1_2]};
+    let f1_2 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(evals_f1_2, &m_domain);
+    let x_poly_refs = vec![&f1_1, &f1_2];
+    let f1 = BivariatePolynomial{x_polynomials: &x_poly_refs};
     let f1_zero_zero = f1.evaluate_lagrange(&(f_zero, f_zero), &y_domain);
     assert_eq!(f2_zero, f1_zero_zero * m_domain.size_as_field_element());
 }
@@ -704,7 +706,7 @@ fn preprocessing_gadgetes_test_with_distinct_m_and_mprime() {
     let (upper_a_t_polys_2, upper_a_t_evals_2) = PreProver::<Bls12_381>::compute_upper_a_t_polys_from_rows(m, l, &x_domain, &m_domain, &row[1], &r);
     let (upper_b_t_polys_1, upper_b_t_evals_1) = PreProver::<Bls12_381>::compute_upper_b_t_polys_from_cols(m, &x_domain, &m_domain, &col[0], &alpha);
     let (upper_b_t_polys_2, upper_b_t_evals_2) = PreProver::<Bls12_381>::compute_upper_b_t_polys_from_cols(m, &x_domain, &m_domain, &col[1], &alpha);
-    let val_polys = Indexer::<Bls12_381>::compute_val_polys(l, &m_domain, &val_evals);
+    let val_polys = Indexer::<Bls12_381>::compute_val_polys(l, &m_domain, val_evals);
     let upper_a_t_polys = vec![upper_a_t_polys_1, upper_a_t_polys_2];
     let upper_b_t_polys = vec![upper_b_t_polys_1, upper_b_t_polys_2];
     let poly_pa_alpha_beta: UnivariatePolynomial<MyField> = val_polys.par_iter().
@@ -773,19 +775,19 @@ fn preprocessing_gadgetes_test_with_distinct_m_and_mprime() {
     let ((t_row_low, eval_t_row_low), (t_row_high, eval_t_row_high)) = {
         rayon::join(
             || {
-                let t_low_evals = (0..m).into_par_iter().map(|i| r.pow([i as u64])).collect();
-                let t_row_low = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&t_low_evals, &x_domain);
+                let t_low_evals : Vec<_> = (0..m).into_par_iter().map(|i| r.pow([i as u64])).collect();
+                let t_row_low = DeIPA::<Bls12_381>::interpolate_from_eval_domain(t_low_evals.clone(), &x_domain);
                 (t_row_low, t_low_evals)
             },
             || {
-                let t_high_evals = (0..m).into_par_iter().map(|i| r_pow.pow([i as u64])).collect();
-                let t_row_high = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&t_high_evals, &x_domain);
+                let t_high_evals : Vec<_> = (0..m).into_par_iter().map(|i| r_pow.pow([i as u64])).collect();
+                let t_row_high = DeIPA::<Bls12_381>::interpolate_from_eval_domain(t_high_evals.clone(), &x_domain);
                 (t_row_high, t_high_evals)
             })
     };
     let (t_col, eval_t_col) = {
-        let t_col_evals = (0..m).into_par_iter().map(|i| alpha.pow([i as u64])).collect();
-        let t_col = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&t_col_evals, &x_domain);
+        let t_col_evals  : Vec<_> = (0..m).into_par_iter().map(|i| alpha.pow([i as u64])).collect();
+        let t_col = DeIPA::<Bls12_381>::interpolate_from_eval_domain(t_col_evals.clone(), &x_domain);
         (t_col, t_col_evals)
     };
     assert_eq!(t_row_low.evaluate(&f_one), f_one);
@@ -806,13 +808,14 @@ fn preprocessing_gadgetes_test_with_distinct_m_and_mprime() {
         .zip(upper_b_t_evals_1.eval_b_pa.par_iter())
         .map(|(lower, upper)| (gamma + beta * lower + upper).inverse().unwrap())
         .collect();
-    let de_f1_b_pa_poly_1 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&de_f1_b_pa_evals_1, &m_domain);
+    let de_f1_b_pa_poly_1 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(de_f1_b_pa_evals_1, &m_domain);
     let de_f1_b_pa_evals_2: Vec<MyField> = lower_evals_2.eval_lb_pa.par_iter()
         .zip(upper_b_t_evals_2.eval_b_pa.par_iter())
         .map(|(lower, upper)| (gamma + beta * lower + upper).inverse().unwrap())
         .collect();
-    let de_f1_b_pa_poly_2 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&de_f1_b_pa_evals_2, &m_domain);
-    let f1_b_pa = BivariatePolynomial {x_polynomials: vec![de_f1_b_pa_poly_1, de_f1_b_pa_poly_2]};
+    let de_f1_b_pa_poly_2 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(de_f1_b_pa_evals_2, &m_domain);
+    let x_poly_refs = vec![&de_f1_b_pa_poly_1, &de_f1_b_pa_poly_2];
+    let f1_b_pa = BivariatePolynomial {x_polynomials: &x_poly_refs};
     let f1_zero_zero = f1_b_pa.evaluate_lagrange(&(f_zero, f_zero), &y_domain);
 
     // compute f_2 eval
@@ -823,7 +826,7 @@ fn preprocessing_gadgetes_test_with_distinct_m_and_mprime() {
         .zip(elements.par_iter())
         .map(|((n, t), y)| *n * (gamma + beta * *y + *t).inverse().unwrap())
         .collect();
-    let f2_b_pa = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&f2_evals, &x_domain);
+    let f2_b_pa = DeIPA::<Bls12_381>::interpolate_from_eval_domain(f2_evals, &x_domain);
     let f2_zero = f2_b_pa.evaluate(&f_zero);
     assert_eq!(f1_zero_zero * MyField::from(m_prime as u64), f2_zero);
 
@@ -881,7 +884,7 @@ fn preprocessing_gadgetes_test_with_distinct_m_and_mprime() {
             .zip(evals_row_pc_low.par_iter()).zip(evals_row_pc_high.par_iter()).zip(evals_col_pa.par_iter()).zip(evals_col_pb.par_iter()).zip(evals_col_pc.par_iter())
             .map(|((((((((pa_low, pa_high), pb_low), pb_high), pc_low), pc_high), col_pa), col_pb), col_pc)| *pa_low + *pa_high + *pb_low + *pb_high + *pc_low + *pc_high + *col_pa + *col_pb + *col_pc).collect() 
     };
-    let poly_f2 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&f2_evals, &x_domain);
+    let poly_f2 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(f2_evals, &x_domain);
     let f2_zero = poly_f2.evaluate(&f_zero);
 
     // get f1
@@ -926,7 +929,7 @@ fn preprocessing_gadgetes_test_with_distinct_m_and_mprime() {
         .zip(evals_row_pc_low.par_iter()).zip(evals_row_pc_high.par_iter()).zip(evals_col_pa.par_iter()).zip(evals_col_pb.par_iter()).zip(evals_col_pc.par_iter())
         .map(|((((((((pa_low, pa_high), pb_low), pb_high), pc_low), pc_high), col_pa), col_pb), col_pc)| *pa_low + *pa_high + *pb_low + *pb_high + *pc_low + *pc_high + *col_pa + *col_pb + *col_pc).collect() 
     };
-    let f1_1 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&evals_f1_1, &m_domain);
+    let f1_1 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(evals_f1_1, &m_domain);
 
     let evals_f1_2: Vec<MyField> = {
         let evals_row_pa_low: Vec<MyField> = lower_evals_2.eval_la_pa_low.par_iter()
@@ -969,8 +972,9 @@ fn preprocessing_gadgetes_test_with_distinct_m_and_mprime() {
         .zip(evals_row_pc_low.par_iter()).zip(evals_row_pc_high.par_iter()).zip(evals_col_pa.par_iter()).zip(evals_col_pb.par_iter()).zip(evals_col_pc.par_iter())
         .map(|((((((((pa_low, pa_high), pb_low), pb_high), pc_low), pc_high), col_pa), col_pb), col_pc)| *pa_low + *pa_high + *pb_low + *pb_high + *pc_low + *pc_high + *col_pa + *col_pb + *col_pc).collect() 
     };
-    let f1_2 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(&evals_f1_2, &m_domain);
-    let f1 = BivariatePolynomial{x_polynomials: vec![f1_1, f1_2]};
+    let f1_2 = DeIPA::<Bls12_381>::interpolate_from_eval_domain(evals_f1_2, &m_domain);
+    let x_polys_ref = vec![&f1_1, &f1_2];
+    let f1 = BivariatePolynomial{x_polynomials: &x_polys_ref};
     let f1_zero_zero = f1.evaluate_lagrange(&(f_zero, f_zero), &y_domain);
     assert_eq!(f2_zero, f1_zero_zero * m_domain.size_as_field_element());
 }

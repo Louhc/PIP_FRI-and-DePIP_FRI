@@ -1,5 +1,5 @@
 use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, EvaluationDomain, Evaluations, GeneralEvaluationDomain};
-use std::{marker::PhantomData, time::Instant};
+use std::{marker::PhantomData, time::Instant, mem::take};
 use ark_ec::pairing::Pairing;
 use my_kzg::{
     biv_batch_kzg::BivBatchKZG, biv_trivial_kzg::{BivariateKZG, BivariatePolynomial}, par_join_3, uni_batch_kzg::BatchKZG 
@@ -199,17 +199,11 @@ impl<P: Pairing> Indexer<P> {
     ) -> (PreMesProver<P>, PreMesVerifier<P>) {
         let (de_row_index_vecs, de_col_index_vecs, de_val_evals_vecs, m_prime): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<P>::build_de_r1cs_index(l, m, &cs).unwrap();
         let (upper_r_polys, com_upper_r) = Indexer::<P>::compute_and_commit_poly_upper_r(&powers, l);
-        let val_polys = Indexer::<P>::compute_val_polys(l, &m_domain, &de_val_evals_vecs);
+        let val_polys = Indexer::<P>::compute_val_polys(l, &m_domain, de_val_evals_vecs);
         let coms_val = Indexer::<P>::commit_val_polys(&m_powers, &val_polys);
-        let total_lower_a_b_evals_and_polys: Vec<(DeLowerAandBEvals<P>, DeLowerAandBPolys<P>)> = {
-            (0..Net::n_parties()).into_par_iter().map(|i| Indexer::<P>::compute_lower_a_b_evals_and_polys(i, &de_row_index_vecs, &de_col_index_vecs, &m_domain, &x_domain)).collect()
-        };
-        let (total_lower_a_b_evals, total_lower_a_b_polys): (Vec<DeLowerAandBEvals<P>>, Vec<DeLowerAandBPolys<P>>) = {
-            (
-                total_lower_a_b_evals_and_polys.par_iter().map(|eval_poly| eval_poly.0.clone()).collect(), 
-                total_lower_a_b_evals_and_polys.par_iter().map(|eval_poly| eval_poly.1.clone()).collect(), 
-            )
-        };
+        let (total_lower_a_b_evals, total_lower_a_b_polys) = 
+            (0..Net::n_parties()).into_par_iter().map(|i| Indexer::<P>::compute_lower_a_b_evals_and_polys(i, &de_row_index_vecs, &de_col_index_vecs, &m_domain, &x_domain))
+            .unzip();
         let coms_lower_a_b = Indexer::<P>::commit_lower_a_b_polys(&m_powers, &total_lower_a_b_polys);
         let n_evals = Indexer::<P>::build_n_evals(&de_row_index_vecs, &de_col_index_vecs, l, m, m_prime);
         let n_polys = Indexer::<P>::compute_n_polys(&x_domain, &n_evals);
@@ -450,24 +444,18 @@ impl<P: Pairing> Indexer<P> {
     }
 
     pub fn compute_val_polys (
-        l: usize,
+        _l: usize,
         m_domain: &GeneralEvaluationDomain<P::ScalarField>,
-        val_evals: &Vec<DeValEvals<P>>,
+        val_evals: Vec<DeValEvals<P>>,
     ) -> Vec<DeValPolys<P>> {
-        (0..l).into_par_iter().map(|i| {
+        val_evals.into_par_iter().map(|mut evals| {
+            let eval_domain_val_pa = Evaluations::<P::ScalarField>::from_vec_and_domain(take(&mut evals.evals_val_pa), *m_domain);
+            let eval_domain_val_pb = Evaluations::<P::ScalarField>::from_vec_and_domain(take(&mut evals.evals_val_pb), *m_domain);
+            let eval_domain_val_pc = Evaluations::<P::ScalarField>::from_vec_and_domain(take(&mut evals.evals_val_pc), *m_domain);
             let (val_pa, val_pb, val_pc) = par_join_3!(
-                || {
-                    let eval_domain_val_pa = Evaluations::<P::ScalarField>::from_vec_and_domain(val_evals[i].evals_val_pa.clone(), *m_domain);
-                    eval_domain_val_pa.interpolate()
-                },
-                || {
-                    let eval_domain_val_pb = Evaluations::<P::ScalarField>::from_vec_and_domain(val_evals[i].evals_val_pb.clone(), *m_domain);
-                    eval_domain_val_pb.interpolate()
-                }, 
-                || {
-                    let eval_domain_val_pc = Evaluations::<P::ScalarField>::from_vec_and_domain(val_evals[i].evals_val_pc.clone(), *m_domain);
-                    eval_domain_val_pc.interpolate()
-                }
+                || eval_domain_val_pa.interpolate(),
+                || eval_domain_val_pb.interpolate(), 
+                || eval_domain_val_pc.interpolate()
             );
             DeValPolys { val_pa, val_pb, val_pc}
         }).collect()
@@ -477,13 +465,13 @@ impl<P: Pairing> Indexer<P> {
         m_powers: &Vec<Vec<P::G1Affine>>,
         val_total_polys: &Vec<DeValPolys<P>>,
     ) -> Vec<P::G1> {
-        let x_polys_val_a: Vec<UnivariatePolynomial<P::ScalarField>> = val_total_polys.par_iter().map(|polys| polys.val_pa.clone()).collect();
-        let x_polys_val_b: Vec<UnivariatePolynomial<P::ScalarField>> = val_total_polys.par_iter().map(|polys| polys.val_pb.clone()).collect();
-        let x_polys_val_c: Vec<UnivariatePolynomial<P::ScalarField>> = val_total_polys.par_iter().map(|polys| polys.val_pc.clone()).collect();
+        let x_polys_val_a: Vec<&UnivariatePolynomial<P::ScalarField>> = val_total_polys.iter().map(|polys| &polys.val_pa).collect();
+        let x_polys_val_b: Vec<&UnivariatePolynomial<P::ScalarField>> = val_total_polys.iter().map(|polys| &polys.val_pb).collect();
+        let x_polys_val_c: Vec<&UnivariatePolynomial<P::ScalarField>> = val_total_polys.iter().map(|polys| &polys.val_pc).collect();
 
-        let biv_poly_val_a = BivariatePolynomial{x_polynomials: x_polys_val_a};
-        let biv_poly_val_b = BivariatePolynomial{x_polynomials: x_polys_val_b};
-        let biv_poly_val_c = BivariatePolynomial{x_polynomials: x_polys_val_c};
+        let biv_poly_val_a = BivariatePolynomial{x_polynomials: &x_polys_val_a};
+        let biv_poly_val_b = BivariatePolynomial{x_polynomials: &x_polys_val_b};
+        let biv_poly_val_c = BivariatePolynomial{x_polynomials: &x_polys_val_c};
 
         let bivariate_polynomials = vec![biv_poly_val_a, biv_poly_val_b, biv_poly_val_c];
         let coms_val = BivBatchKZG::<P>::commit(&m_powers, &bivariate_polynomials).unwrap();
@@ -498,21 +486,21 @@ impl<P: Pairing> Indexer<P> {
 
         let ((row_pa_low, row_pa_high, row_pb_low), (row_pb_high, row_pc_low, row_pc_high), (col_pa, col_pb, col_pc)) = par_join_3!(
             || {
-                let row_pa_low = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.row_pa_low, &x_domain);
-                let row_pa_high = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.row_pa_high, &x_domain);
-                let row_pb_low = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.row_pb_low, &x_domain);
+                let row_pa_low = DeIPA::<P>::interpolate_from_eval_domain(n_evals.row_pa_low.clone(), &x_domain);
+                let row_pa_high = DeIPA::<P>::interpolate_from_eval_domain(n_evals.row_pa_high.clone(), &x_domain);
+                let row_pb_low = DeIPA::<P>::interpolate_from_eval_domain(n_evals.row_pb_low.clone(), &x_domain);
                 (row_pa_low, row_pa_high, row_pb_low)
             },
             || {
-                let row_pb_high = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.row_pb_high, &x_domain);
-                let row_pc_low = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.row_pc_low, &x_domain);
-                let row_pc_high = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.row_pc_high, &x_domain);
+                let row_pb_high = DeIPA::<P>::interpolate_from_eval_domain(n_evals.row_pb_high.clone(), &x_domain);
+                let row_pc_low = DeIPA::<P>::interpolate_from_eval_domain(n_evals.row_pc_low.clone(), &x_domain);
+                let row_pc_high = DeIPA::<P>::interpolate_from_eval_domain(n_evals.row_pc_high.clone(), &x_domain);
                 (row_pb_high, row_pc_low, row_pc_high)
             }, 
             || {
-                let col_pa = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.col_pa, &x_domain);
-                let col_pb = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.col_pb, &x_domain);
-                let col_pc = DeIPA::<P>::interpolate_from_eval_domain(&n_evals.col_pc, &x_domain);
+                let col_pa = DeIPA::<P>::interpolate_from_eval_domain(n_evals.col_pa.clone(), &x_domain);
+                let col_pb = DeIPA::<P>::interpolate_from_eval_domain(n_evals.col_pb.clone(), &x_domain);
+                let col_pc = DeIPA::<P>::interpolate_from_eval_domain(n_evals.col_pc.clone(), &x_domain);
                 (col_pa, col_pb, col_pc)
             }
         );
@@ -523,9 +511,9 @@ impl<P: Pairing> Indexer<P> {
         x_srs: &Vec<P::G1Affine>,
         n_polys: &NPolys<P>,
     ) -> Vec<P::G1> {
-        let polys = vec![n_polys.row_pa_low.clone(), n_polys.row_pa_high.clone(), n_polys.row_pb_low.clone(),
-            n_polys.row_pb_high.clone(), n_polys.row_pc_low.clone(), n_polys.row_pc_high.clone(), 
-            n_polys.col_pa.clone(), n_polys.col_pb.clone(), n_polys.col_pc.clone()];
+        let polys = vec![&n_polys.row_pa_low, &n_polys.row_pa_high, &n_polys.row_pb_low,
+            &n_polys.row_pb_high, &n_polys.row_pc_low, &n_polys.row_pc_high, 
+            &n_polys.col_pa, &n_polys.col_pb, &n_polys.col_pc];
         
         let coms_n = BatchKZG::<P>::commit(&x_srs, &polys).unwrap();
         coms_n
@@ -623,27 +611,27 @@ impl<P: Pairing> Indexer<P> {
         m_powers: &Vec<Vec<P::G1Affine>>,
         de_polys: &Vec<DeLowerAandBPolys<P>>,
     ) -> Vec<P::G1> {
-        let x_polys_la_pa_low: Vec<UnivariatePolynomial<P::ScalarField>> = de_polys.par_iter().map(|polys| polys.la_pa_low.clone()).collect();
-        let x_polys_la_pa_high = de_polys.par_iter().map(|polys| polys.la_pa_high.clone()).collect();
-        let x_polys_la_pb_low = de_polys.par_iter().map(|polys| polys.la_pb_low.clone()).collect();
-        let x_polys_la_pb_high = de_polys.par_iter().map(|polys| polys.la_pb_high.clone()).collect();
-        let x_polys_la_pc_low = de_polys.par_iter().map(|polys| polys.la_pc_low.clone()).collect();
-        let x_polys_la_pc_high = de_polys.par_iter().map(|polys| polys.la_pc_high.clone()).collect();
+        let x_polys_la_pa_low: Vec<_> = de_polys.iter().map(|polys| &polys.la_pa_low).collect();
+        let x_polys_la_pa_high : Vec<_> = de_polys.iter().map(|polys| &polys.la_pa_high).collect();
+        let x_polys_la_pb_low  : Vec<_>= de_polys.iter().map(|polys| &polys.la_pb_low).collect();
+        let x_polys_la_pb_high : Vec<_> = de_polys.iter().map(|polys| &polys.la_pb_high).collect();
+        let x_polys_la_pc_low  : Vec<_>= de_polys.iter().map(|polys| &polys.la_pc_low).collect();
+        let x_polys_la_pc_high : Vec<_> = de_polys.iter().map(|polys| &polys.la_pc_high).collect();
 
-        let x_polys_lb_pa = de_polys.par_iter().map(|polys| polys.lb_pa.clone()).collect();
-        let x_polys_lb_pb = de_polys.par_iter().map(|polys| polys.lb_pb.clone()).collect();
-        let x_polys_lb_pc = de_polys.par_iter().map(|polys| polys.lb_pc.clone()).collect();
+        let x_polys_lb_pa : Vec<_> = de_polys.iter().map(|polys| &polys.lb_pa).collect();
+        let x_polys_lb_pb : Vec<_> = de_polys.iter().map(|polys| &polys.lb_pb).collect();
+        let x_polys_lb_pc : Vec<_> = de_polys.iter().map(|polys| &polys.lb_pc).collect();
 
-        let biv_la_pa_low = BivariatePolynomial {x_polynomials: x_polys_la_pa_low};
-        let biv_la_pa_high = BivariatePolynomial {x_polynomials: x_polys_la_pa_high};
-        let biv_la_pb_low = BivariatePolynomial {x_polynomials: x_polys_la_pb_low};
-        let biv_la_pb_high = BivariatePolynomial {x_polynomials: x_polys_la_pb_high};
-        let biv_la_pc_low = BivariatePolynomial {x_polynomials: x_polys_la_pc_low};
-        let biv_la_pc_high = BivariatePolynomial {x_polynomials: x_polys_la_pc_high};
+        let biv_la_pa_low = BivariatePolynomial {x_polynomials: &x_polys_la_pa_low};
+        let biv_la_pa_high = BivariatePolynomial {x_polynomials:& x_polys_la_pa_high};
+        let biv_la_pb_low = BivariatePolynomial {x_polynomials: &x_polys_la_pb_low};
+        let biv_la_pb_high = BivariatePolynomial {x_polynomials:& x_polys_la_pb_high};
+        let biv_la_pc_low = BivariatePolynomial {x_polynomials: &x_polys_la_pc_low};
+        let biv_la_pc_high = BivariatePolynomial {x_polynomials:& x_polys_la_pc_high};
 
-        let biv_lb_pa = BivariatePolynomial {x_polynomials: x_polys_lb_pa};
-        let biv_lb_pb = BivariatePolynomial {x_polynomials: x_polys_lb_pb};
-        let biv_lb_pc = BivariatePolynomial {x_polynomials: x_polys_lb_pc};
+        let biv_lb_pa = BivariatePolynomial {x_polynomials: &x_polys_lb_pa};
+        let biv_lb_pb = BivariatePolynomial {x_polynomials: &x_polys_lb_pb};
+        let biv_lb_pc = BivariatePolynomial {x_polynomials: &x_polys_lb_pc};
 
         let biv_polys = vec![biv_la_pa_low, biv_la_pa_high, biv_la_pb_low, biv_la_pb_high, biv_la_pc_low, biv_la_pc_high, biv_lb_pa, biv_lb_pb, biv_lb_pc];
         // let total_x_polys = vec![x_polys_la_pa_low, x_polys_la_pa_high, x_polys_la_pb_low, x_polys_la_pb_high,
@@ -669,12 +657,12 @@ impl<P: Pairing> Indexer<P> {
             vec[i] = P::ScalarField::one();
             UnivariatePolynomial::from_coefficients_vec(vec)
         }).collect();
-        let x_polynomials_res = x_polynomials.clone();
+        let x_poly_refs : Vec<_> = x_polynomials.iter().collect();
 
-        let biv_poly = BivariatePolynomial{x_polynomials};
-        let com = BivariateKZG::<P>::commit(&powers, &biv_poly).unwrap();
+        let biv_poly = BivariatePolynomial{x_polynomials: &x_poly_refs};
+        let com = BivariateKZG::<P>::commit(&powers, biv_poly).unwrap();
 
-        (x_polynomials_res, com)
+        (x_polynomials, com)
     }
 
     // TODO: consider other approaches to be faster
@@ -688,11 +676,12 @@ impl<P: Pairing> Indexer<P> {
         let x_polynomials: Vec<UnivariatePolynomial<P::ScalarField>> = (0..l).into_par_iter().map(|i| {
             let mut vec_cur = vec.clone();
             vec_cur[i] = P::ScalarField::one();
-            DeIPA::<P>::interpolate_from_eval_domain(&vec_cur, &y_domain)
+            DeIPA::<P>::interpolate_from_eval_domain(vec_cur, &y_domain)
         }).collect();
+        let x_poly_refs : Vec<_> = x_polynomials.iter().collect();
 
-        let biv_poly = BivariatePolynomial{x_polynomials};
-        let com = BivariateKZG::<P>::commit(&powers, &biv_poly).unwrap();
+        let biv_poly = BivariatePolynomial{x_polynomials: &x_poly_refs};
+        let com = BivariateKZG::<P>::commit(&powers, biv_poly).unwrap();
 
         com
     }

@@ -9,10 +9,10 @@ pub struct DeIPA<P: Pairing> {
 impl<P: Pairing> DeIPA<P> {
 
     pub fn interpolate_from_eval_domain (
-        evals: &Vec<P::ScalarField>,
+        evals: Vec<P::ScalarField>,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> UnivariatePolynomial<P::ScalarField> {
-        let eval_domain = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(evals.clone(), *domain);
+        let eval_domain = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(evals, *domain);
         eval_domain.interpolate()
     }
 
