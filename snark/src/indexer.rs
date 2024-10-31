@@ -288,15 +288,15 @@ impl<P: Pairing> Indexer<P> {
     pub fn preprocess_from_file (
         m: usize,
         l: usize,
-    ) -> (PreMesProver<P>, PreMesVerifier<P>) {
+    ) -> Result<(PreMesProver<P>, PreMesVerifier<P>), Box<dyn Error>> {
         let pre_mes_prover_filepath = format!("./data/Pre_Mes_Prover-{}-{}.paras", m, l);
         let pre_mes_verifier_filepath = format!("./data/Pre_Mes_Verifier-{}-{}.paras", m, l);
 
         let time = Instant::now();
-        let (pre_mes_prover, pre_mes_verifier) = Self::read_from_file(&pre_mes_prover_filepath, &pre_mes_verifier_filepath).unwrap();
+        let (pre_mes_prover, pre_mes_verifier) = Self::read_from_file(&pre_mes_prover_filepath, &pre_mes_verifier_filepath)?;
         println!("Reads preprocessing from file time: {:?}", time.elapsed());
 
-        (pre_mes_prover, pre_mes_verifier)
+        Ok((pre_mes_prover, pre_mes_verifier))
     }
 
     fn decompose(
