@@ -9,9 +9,9 @@ use ark_ff::{Zero, One, Field};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use std::time::Instant;
 use rayon::prelude::*;
-use crate::{indexer::{DeRowIndex, DeColIndex, NEvals}, prover_nopre::NoPreProver};
+use crate::{indexer::{PreMesProver, PreMesVerifier}, prover_nopre::NoPreProver};
 use my_kzg::par_join_3;
-use crate::prover_pre::{PreProver, DeValPolys, NPolys, DeLowerAandBEvals, DeLowerAandBPolys};
+use crate::prover_pre::PreProver;
 use crate::par_join_4;
 
 pub struct DeSNARKLog<P: Pairing> {
@@ -64,14 +64,15 @@ impl<P: Pairing> DeSNARKLog<P> {
         m_srs: &Vec<P::G1Affine>,
         wit_polys: &R1CSWitnessPolys<P>,
         pub_polys: &R1CSPublicPolys<P>,
-        upper_r_poly: &UnivariatePolynomial<P::ScalarField>,
-        row_index_vec: &DeRowIndex,
-        col_index_vec: &DeColIndex,
-        val_polys: &DeValPolys<P>,
-        lower_a_b_evals: &DeLowerAandBEvals<P>,
-        lower_a_b_polys: &DeLowerAandBPolys<P>,
-        n_evals: &NEvals<P>,
-        n_polys: &NPolys<P>,
+        // upper_r_poly: &UnivariatePolynomial<P::ScalarField>,
+        // row_index_vec: &DeRowIndex,
+        // col_index_vec: &DeColIndex,
+        // val_polys: &DeValPolys<P>,
+        // lower_a_b_evals: &DeLowerAandBEvals<P>,
+        // lower_a_b_polys: &DeLowerAandBPolys<P>,
+        // n_evals: &NEvals<P>,
+        // n_polys: &NPolys<P>,
+        pre_mes_prover: &PreMesProver<P>,
         r: &P::ScalarField,
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
@@ -84,6 +85,15 @@ impl<P: Pairing> DeSNARKLog<P> {
         let m = x_srs.len();
         let l = Net::n_parties();
         // let m_prime = m_srs.len();
+
+        // Derive the message
+        let PreMesProver { upper_r_polys, de_row_index_vecs, de_col_index_vecs, val_polys, total_lower_a_b_evals, total_lower_a_b_polys, n_evals, n_polys } = pre_mes_prover;
+        let upper_r_poly = &upper_r_polys[sub_prover_id];
+        let row_index_vec = &de_row_index_vecs[sub_prover_id];
+        let col_index_vec = &de_col_index_vecs[sub_prover_id];
+        let val_polys = &val_polys[sub_prover_id];
+        let lower_a_b_evals = &total_lower_a_b_evals[sub_prover_id];
+        let lower_a_b_polys = &total_lower_a_b_polys[sub_prover_id];
 
         // commit secret polynomials
         let time = Instant::now();
@@ -476,11 +486,12 @@ impl<P: Pairing> DeSNARKLog<P> {
     pub fn r1cs_verify_preprocess(
         v_srs: &VerifierSRS<P>,
         m_v_srs: &VerifierSRS<P>,
-        com_upper_r: &P::G1,
-        coms_val: &Vec<P::G1>,
-        coms_lower_a_b: &Vec<P::G1>,
-        com_l: &P::G1,
-        coms_n: &Vec<P::G1>,
+        // com_upper_r: &P::G1,
+        // coms_val: &Vec<P::G1>,
+        // coms_lower_a_b: &Vec<P::G1>,
+        // com_l: &P::G1,
+        // coms_n: &Vec<P::G1>,
+        pre_mes_verifier: &PreMesVerifier<P>,
         proof: &SNARKProofLog<P>,
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
@@ -488,7 +499,8 @@ impl<P: Pairing> DeSNARKLog<P> {
         r: &P::ScalarField,
         transcript: &mut Transcript,
     ) -> bool {
-        // Self-test of evaluation validity
+        // Derive the verifier messages
+        let PreMesVerifier { com_upper_r, coms_val, coms_lower_a_b, com_l, coms_n } = pre_mes_verifier;
 
         let m = x_domain.size();
         let l = y_domain.size();
@@ -697,6 +709,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         println!("Verifier f1, L open check: {:?}", time.elapsed());
 
         // evaluation check of f_pa(alpha, beta), f_pb(alpha, beta), f_pc(alpha, beta)
+        let time = Instant::now();
         let z_m_prime_eval_delta = m_domain.evaluate_vanishing_polynomial(delta);
         let delta_minus_u3 = delta - u3;
         let eval_rlc = linear_combination_field::<P>(evals_p_alpha_beta, &w);
@@ -719,11 +732,13 @@ impl<P: Pairing> DeSNARKLog<P> {
         let left_hand = eval_rlc * eval_l[0] * zeta_minus_u4 * delta_minus_u3;
         let check11 = left_hand == right_hand;
         assert!(check11);
+        println!("Verifier f_pa, f_pb, f_pc evaluation check: {:?}", time.elapsed());
 
         // verify lookup evaluation validity
         // check T's evaluation validity
         // T_col
         // Note: id starts from zero
+        let time = Instant::now();
         let evals_t_col = evals_t_f2_q2_n[2].clone();
         let l_h_m_minums_1 = evaluate_one_lagrange::<P>(m-1, &x_domain, &delta);
         assert!(evals_t_col[0] == P::ScalarField::one());
@@ -738,6 +753,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         let power = ((m * l) as f64).sqrt().floor() as usize;
         let r_sqrt = r.pow([power as u64]);
         assert!(evals_t_row_high[2] == r_sqrt * evals_t_row_high[1] + l_h_m_minums_1 * (P::ScalarField::one() - r_sqrt.pow([m as u64])));
+        println!("Verfier T evaluation check: {:?}", time.elapsed());
 
         // check f1 evaluation validity
         let check12 = KZG::<P>::verify(&uni_m_v_srs_for_x, &com_q1, &delta, &eval_q1, &proof_q1).unwrap();

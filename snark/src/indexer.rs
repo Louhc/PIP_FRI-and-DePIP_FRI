@@ -10,9 +10,12 @@ use ark_ff::{Zero, Field, One};
 use rayon::prelude::*;
 use crate::prover_pre::{DeValPolys, NPolys, DeLowerAandBEvals, DeLowerAandBPolys};
 use my_ipa::de_ipa::DeIPA;
-
+use ark_std::error::Error;
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 use itertools::MultiUnzip;
+use de_network::{DeMultiNet as Net, DeNet};
+use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
+use serde::{Serialize, Deserialize};
 
 // Given public matrices Pa, Pb, Pc \in F^{ml} \times F^{ml}, split each of them into l sub-matrices
 // Each sub-matrix in \in F^{ml} \times F^{m}
@@ -29,7 +32,7 @@ use itertools::MultiUnzip;
 
 // The values should be field_elements, but we requre usize to do the pow operation
 // Luckily, [0, ml-1] is smaller enough on a field, so just transform it to usize directly
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct DeRowIndex {
     pub row_pa_low: Vec<usize>,
     pub row_pa_high: Vec<usize>,
@@ -73,7 +76,7 @@ impl DeRowIndex {
 // The original data of col non-zero entry index vectors for some **sub-prover**, ie, some **sub-matrix**
 // Note col has the same non-zero entry order with row
 // if some sub-matrix has m'' < m' non-zero entries, define arbitrary values for these (m' - m'') entries, here use 0
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct DeColIndex {
     pub col_pa: Vec<usize>,
     pub col_pb: Vec<usize>,
@@ -141,7 +144,7 @@ impl<P: Pairing> DeValEvals<P> {
 // For row, n_row_low(w^i) / n_row_high(w^i) = the times of {row_low(x)} / {row_high(x)} equals to i
 // For row, when m > i > sqrt{ml}, n_row_low(w^i) / n_row_high(w^i) = 0
 // Note that {col(x)}, {row_low(x)} / {row_high(x)} can equal to 0
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct NEvals<P: Pairing> {
     pub row_pa_low: Vec<P::ScalarField>,
     pub row_pa_high: Vec<P::ScalarField>,
@@ -154,11 +157,98 @@ pub struct NEvals<P: Pairing> {
     pub col_pc: Vec<P::ScalarField>,
 }
 
+
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize, serde::Serialize)]
+pub struct PreMesProver<P: Pairing> {
+    pub upper_r_polys: Vec<UnivariatePolynomial<P::ScalarField>>,
+    pub de_row_index_vecs: Vec<DeRowIndex>,
+    pub de_col_index_vecs: Vec<DeColIndex>,
+    pub val_polys: Vec<DeValPolys<P>>,
+    pub total_lower_a_b_evals: Vec<DeLowerAandBEvals<P>>,
+    pub total_lower_a_b_polys: Vec<DeLowerAandBPolys<P>>,
+    pub n_evals: NEvals<P>,
+    pub n_polys: NPolys<P>
+}
+
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
+pub struct PreMesVerifier<P: Pairing> {
+    pub com_upper_r: P::G1,
+    pub coms_val: Vec<P::G1>,
+    pub coms_lower_a_b: Vec<P::G1>,
+    pub com_l: P::G1,
+    pub coms_n: Vec<P::G1>
+}
+
 pub struct Indexer<P: Pairing> {
     _pairing: PhantomData<P>,
 }
 
 impl<P: Pairing> Indexer<P> {
+
+    pub fn preprocess (
+        m: usize,
+        l: usize,
+        cs: &ConstraintSystemRef<P::ScalarField>,
+        powers: &Vec<Vec<P::G1Affine>>,
+        m_powers: &Vec<Vec<P::G1Affine>>,
+        x_srs: &Vec<P::G1Affine>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        m_domain: &GeneralEvaluationDomain<P::ScalarField>,
+    ) -> (PreMesProver<P>, PreMesVerifier<P>) {
+        let (de_row_index_vecs, de_col_index_vecs, de_val_evals_vecs, m_prime): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<P>::build_de_r1cs_index(l, m, &cs).unwrap();
+        let (upper_r_polys, com_upper_r) = Indexer::<P>::compute_and_commit_poly_upper_r(&powers, l);
+        let val_polys = Indexer::<P>::compute_val_polys(l, &m_domain, &de_val_evals_vecs);
+        let coms_val = Indexer::<P>::commit_val_polys(&m_powers, &val_polys);
+        let total_lower_a_b_evals_and_polys: Vec<(DeLowerAandBEvals<P>, DeLowerAandBPolys<P>)> = {
+            (0..Net::n_parties()).into_par_iter().map(|i| Indexer::<P>::compute_lower_a_b_evals_and_polys(i, &de_row_index_vecs, &de_col_index_vecs, &m_domain, &x_domain)).collect()
+        };
+        let (total_lower_a_b_evals, total_lower_a_b_polys): (Vec<DeLowerAandBEvals<P>>, Vec<DeLowerAandBPolys<P>>) = {
+            (
+                total_lower_a_b_evals_and_polys.par_iter().map(|eval_poly| eval_poly.0.clone()).collect(), 
+                total_lower_a_b_evals_and_polys.par_iter().map(|eval_poly| eval_poly.1.clone()).collect(), 
+            )
+        };
+        let coms_lower_a_b = Indexer::<P>::commit_lower_a_b_polys(&m_powers, &total_lower_a_b_polys);
+        let n_evals = Indexer::<P>::build_n_evals(&de_row_index_vecs, &de_col_index_vecs, l, m, m_prime);
+        let n_polys = Indexer::<P>::compute_n_polys(&x_domain, &n_evals);
+        let coms_n = Indexer::<P>::commit_n_polys(&x_srs, &n_polys);
+        let com_l = Indexer::<P>::commit_poly_upper_l(&powers, l, &y_domain);
+
+        (
+            PreMesProver{upper_r_polys, de_row_index_vecs, de_col_index_vecs, val_polys, total_lower_a_b_evals, total_lower_a_b_polys, n_evals, n_polys}, 
+            PreMesVerifier{com_upper_r, coms_val, coms_lower_a_b, com_l, coms_n}
+        )
+    }
+
+    // Create a new `Preprocessing` from the cs and domains and write it to a file.
+    pub fn new_to_file(
+        m: usize,
+        l: usize,
+        cs: &ConstraintSystemRef<P::ScalarField>,
+        powers: &Vec<Vec<P::G1Affine>>,
+        m_powers: &Vec<Vec<P::G1Affine>>,
+        x_srs: &Vec<P::G1Affine>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        m_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        file_path: &str
+    ) -> Result<(), Box<dyn Error>> {
+        let (pre_mes_prover, pre_mes_verifier) = Self::preprocess(m, l, cs, powers, m_powers, x_srs, x_domain, y_domain, m_domain);
+        let file = std::fs::File::create(file_path)?;
+        let writer = std::io::BufWriter::new(file);
+        bincode::serialize_into(writer, &(pre_mes_prover, pre_mes_verifier))?;
+        Ok(())
+    }
+
+    pub fn read_from_file(
+        file_path: &str
+    ) -> Result<Self, Box<dyn Error>> {
+        let file = std::fs::File::open(file_path)?;
+        let reader = std::io::BufReader::new(file);
+        let setup = bincode::deserialize_from(reader)?;
+        Ok(setup)
+    }
 
     fn decompose(
         v: usize,
