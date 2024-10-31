@@ -1,7 +1,5 @@
-use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, EvaluationDomain, Evaluations, GeneralEvaluationDomain 
-    // Polynomial
-};
-use std::marker::PhantomData;
+use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, EvaluationDomain, Evaluations, GeneralEvaluationDomain};
+use std::{marker::PhantomData, time::Instant};
 use ark_ec::pairing::Pairing;
 use my_kzg::{
     biv_batch_kzg::BivBatchKZG, biv_trivial_kzg::{BivariateKZG, BivariatePolynomial}, par_join_3, uni_batch_kzg::BatchKZG 
@@ -15,7 +13,6 @@ use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 use itertools::MultiUnzip;
 use de_network::{DeMultiNet as Net, DeNet};
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
-// use serde::{Serialize, Deserialize};
 use crate::impl_serde_for_ark_serde_unchecked;
 
 // Given public matrices Pa, Pb, Pc \in F^{ml} \times F^{ml}, split each of them into l sub-matrices
@@ -236,22 +233,70 @@ impl<P: Pairing> Indexer<P> {
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         m_domain: &GeneralEvaluationDomain<P::ScalarField>,
-        file_path: &str
+        file_path_prover: &str, 
+        file_path_verifier: &str, 
     ) -> Result<(), Box<dyn Error>> {
         let (pre_mes_prover, pre_mes_verifier) = Self::preprocess(m, l, cs, powers, m_powers, x_srs, x_domain, y_domain, m_domain);
-        let file = std::fs::File::create(file_path)?;
-        let writer = std::io::BufWriter::new(file);
-        bincode::serialize_into(writer, &(pre_mes_prover, pre_mes_verifier))?;
+
+        let file_prover = std::fs::File::create(file_path_prover)?;
+        let writer_prover = std::io::BufWriter::new(file_prover);
+        bincode::serialize_into(writer_prover, &pre_mes_prover)?;
+
+        let file_verifier = std::fs::File::create(file_path_verifier)?;
+        let writer_verifier = std::io::BufWriter::new(file_verifier);
+        bincode::serialize_into(writer_verifier, &pre_mes_verifier)?;
         Ok(())
     }
 
     pub fn read_from_file(
-        file_path: &str,
+        file_path_prover: &str,
+        file_path_verifier: &str,
     ) -> Result<(PreMesProver<P>, PreMesVerifier<P>), Box<dyn Error>> {
-        let file = std::fs::File::open(file_path)?;
-        let reader = std::io::BufReader::new(file);
-        let (pre_mes_prover, pre_mes_verifier) = bincode::deserialize_from(reader)?;
+        let file_prover = std::fs::File::open(file_path_prover)?;
+        let reader_prover = std::io::BufReader::new(file_prover);
+        let pre_mes_prover = bincode::deserialize_from(reader_prover)?;
+
+        let file_verifier = std::fs::File::open(file_path_verifier)?;
+        let reader_verifier = std::io::BufReader::new(file_verifier);
+        let pre_mes_verifier = bincode::deserialize_from(reader_verifier)?;
         Ok((pre_mes_prover, pre_mes_verifier))
+    }
+
+    pub fn new_preprocess_to_file (
+        m: usize,
+        l: usize,
+        cs: &ConstraintSystemRef<P::ScalarField>,
+        powers: &Vec<Vec<P::G1Affine>>,
+        m_powers: &Vec<Vec<P::G1Affine>>,
+        x_srs: &Vec<P::G1Affine>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        m_domain: &GeneralEvaluationDomain<P::ScalarField>,
+    ) -> (PreMesProver<P>, PreMesVerifier<P>) {
+        let pre_mes_prover_filepath = format!("./data/Pre_Mes_Prover-{}-{}.paras", m, l);
+        let pre_mes_verifier_filepath = format!("./data/Pre_Mes_Verifier-{}-{}.paras", m, l);
+
+        let time = Instant::now();
+        let _ = Self::new_to_file(m, l, cs, powers, m_powers, x_srs, x_domain, y_domain, m_domain, &pre_mes_prover_filepath, &pre_mes_verifier_filepath);
+        println!("Indexer preprocessing and writes to file time: {:?}", time.elapsed());
+
+        let (pre_mes_prover, pre_mes_verifier) = Self::read_from_file(&pre_mes_prover_filepath, &pre_mes_verifier_filepath).unwrap();
+        
+        (pre_mes_prover, pre_mes_verifier)
+    }
+
+    pub fn preprocess_from_file (
+        m: usize,
+        l: usize,
+    ) -> (PreMesProver<P>, PreMesVerifier<P>) {
+        let pre_mes_prover_filepath = format!("./data/Pre_Mes_Prover-{}-{}.paras", m, l);
+        let pre_mes_verifier_filepath = format!("./data/Pre_Mes_Verifier-{}-{}.paras", m, l);
+
+        let time = Instant::now();
+        let (pre_mes_prover, pre_mes_verifier) = Self::read_from_file(&pre_mes_prover_filepath, &pre_mes_verifier_filepath).unwrap();
+        println!("Reads preprocessing from file time: {:?}", time.elapsed());
+
+        (pre_mes_prover, pre_mes_verifier)
     }
 
     fn decompose(

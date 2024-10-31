@@ -39,7 +39,7 @@ fn init() -> (usize, usize, usize) {
     Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
     let l = Net::n_parties();
     let sub_prover_id = Net::party_id();
-    let m = 1 << 12;
+    let m = 1 << 22;
     (m, l, sub_prover_id)
 }
 
@@ -89,11 +89,19 @@ fn main() {
     let m_srs = get_x_srs::<Bls12_381>(&m_powers);
     println!("Setup time: {:?}", time.elapsed());
 
-
     // indexer works
-    let time = Instant::now();
-    let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bls12_381>::preprocess(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
-    println!("Indexer time: {:?}", time.elapsed());
+    // common preprocess
+    // let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bls12_381>::preprocess(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
+    // new preprocess to file
+    // let (pre_mes_prover, pre_mes_verifier) = if Net::am_master() {
+    //      let time = Instant::now();
+    //      Indexer::<Bls12_381>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m)
+    //      println!("Prover {:?} Indexer time: {:?}", sub_prover_id, time.elapsed());
+    // } else {
+    //     Indexer::<Bls12_381>::preprocess_from_file(m, l)
+    // };
+    // preprocess from file
+    let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bls12_381>::preprocess_from_file(m, l);
 
     // prover
     println!("Prover {:?} starts to prove", sub_prover_id);
