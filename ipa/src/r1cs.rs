@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use my_kzg::{par_join_3, helper::generate_powers};
 use itertools::MultiUnzip;
 use ark_std::ops::AddAssign;
-use ark_std::cfg_iter;
+use ark_std::{cfg_iter, start_timer, end_timer};
 use ark_relations::{
     lc,
     r1cs::{ConstraintSystemRef, ConstraintSynthesizer, SynthesisError},
@@ -125,13 +125,18 @@ impl<P:Pairing> R1CSVectors<P> {
         challenge_r: P::ScalarField,
         cs: &ConstraintSystemRef<P::ScalarField>,
     )-> Result<Self, SynthesisError> {
+        let timer = start_timer!(|| "R1CSVector build");
     
         // Each sub-prover holds m constraints
         assert_eq!(m, cs.num_constraints() / l);
         let f_zero = P::ScalarField::zero();
     
+        let step = start_timer!(|| "CS to matrices");
         let cs = cs.borrow().unwrap();
         let cs_matrix = cs.to_matrices().unwrap();
+        end_timer!(step);
+
+        let step = start_timer!(|| "Evaluate constraints");
         let vec_w = [&cs.instance_assignment[..], &cs.witness_assignment[..]].concat();
     
         let start = m * sub_prover_id;
@@ -144,7 +149,10 @@ impl<P:Pairing> R1CSVectors<P> {
                 let c: P::ScalarField = evaluate_constraint(&cs_matrix.c[row_idx], &vec_w);
                 (a, b, c)
             }).multiunzip();
+        
+        end_timer!(step);
     
+        let step = start_timer!(|| "sub vec x y z");
         let vec_r = generate_powers(&challenge_r, m * l);
     
         let mut sub_vec_x = vec![f_zero; m];
@@ -186,6 +194,9 @@ impl<P:Pairing> R1CSVectors<P> {
                 }
             }
         );
+        end_timer!(step);
+
+        end_timer!(timer);
 
         Ok( Self {
             vec_x: sub_vec_x,
