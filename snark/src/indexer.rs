@@ -15,7 +15,8 @@ use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 use itertools::MultiUnzip;
 use de_network::{DeMultiNet as Net, DeNet};
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
-use serde::{Serialize, Deserialize};
+// use serde::{Serialize, Deserialize};
+use crate::impl_serde_for_ark_serde_unchecked;
 
 // Given public matrices Pa, Pb, Pc \in F^{ml} \times F^{ml}, split each of them into l sub-matrices
 // Each sub-matrix in \in F^{ml} \times F^{m}
@@ -158,7 +159,7 @@ pub struct NEvals<P: Pairing> {
 }
 
 
-#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize, serde::Serialize)]
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct PreMesProver<P: Pairing> {
     pub upper_r_polys: Vec<UnivariatePolynomial<P::ScalarField>>,
     pub de_row_index_vecs: Vec<DeRowIndex>,
@@ -178,6 +179,9 @@ pub struct PreMesVerifier<P: Pairing> {
     pub com_l: P::G1,
     pub coms_n: Vec<P::G1>
 }
+
+impl_serde_for_ark_serde_unchecked!(PreMesProver);
+impl_serde_for_ark_serde_unchecked!(PreMesVerifier);
 
 pub struct Indexer<P: Pairing> {
     _pairing: PhantomData<P>,
@@ -242,12 +246,12 @@ impl<P: Pairing> Indexer<P> {
     }
 
     pub fn read_from_file(
-        file_path: &str
-    ) -> Result<Self, Box<dyn Error>> {
+        file_path: &str,
+    ) -> Result<(PreMesProver<P>, PreMesVerifier<P>), Box<dyn Error>> {
         let file = std::fs::File::open(file_path)?;
         let reader = std::io::BufReader::new(file);
-        let setup = bincode::deserialize_from(reader)?;
-        Ok(setup)
+        let (pre_mes_prover, pre_mes_verifier) = bincode::deserialize_from(reader)?;
+        Ok((pre_mes_prover, pre_mes_verifier))
     }
 
     fn decompose(
