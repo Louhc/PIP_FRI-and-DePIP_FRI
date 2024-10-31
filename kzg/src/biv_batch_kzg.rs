@@ -15,9 +15,7 @@ use crate::{helper::{interpolate_on_trivial_domain, generator_numerator_polynomi
 use std::marker::PhantomData;
 use ark_std::rand::Rng;
 use crate::biv_trivial_kzg::{VerifierSRS, BivariatePolynomial};
-use crate::{
-    // transcript::ProofTranscript, 
-    Error};
+use crate::Error;
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use std::time::{
     Instant,

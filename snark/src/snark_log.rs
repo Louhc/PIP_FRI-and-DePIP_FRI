@@ -414,7 +414,7 @@ impl<P: Pairing> DeSNARKLog<P> {
             assert_eq!(evals_t_f2_q2_n[0].len(), 3);
             assert_eq!(evals_t_f2_q2_n[3].len(), 2);
         }
-        println!("Prover {:?} open t, f2 time: {:?}", sub_prover_id, time.elapsed());
+        println!("Prover {:?} open t, f2, n time: {:?}", sub_prover_id, time.elapsed());
 
         // open val_upper_lower_a_b at (delta, zeta)
         let time = Instant::now();
