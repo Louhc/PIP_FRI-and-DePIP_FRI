@@ -235,7 +235,7 @@ impl<P: Pairing> Indexer<P> {
         m_domain: &GeneralEvaluationDomain<P::ScalarField>,
         file_path_prover: &str, 
         file_path_verifier: &str, 
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(PreMesProver<P>, PreMesVerifier<P>), Box<dyn Error>> {
         let (pre_mes_prover, pre_mes_verifier) = Self::preprocess(m, l, cs, powers, m_powers, x_srs, x_domain, y_domain, m_domain);
 
         let file_prover = std::fs::File::create(file_path_prover)?;
@@ -245,7 +245,7 @@ impl<P: Pairing> Indexer<P> {
         let file_verifier = std::fs::File::create(file_path_verifier)?;
         let writer_verifier = std::io::BufWriter::new(file_verifier);
         bincode::serialize_into(writer_verifier, &pre_mes_verifier)?;
-        Ok(())
+        Ok((pre_mes_prover, pre_mes_verifier))
     }
 
     pub fn read_from_file(
@@ -277,10 +277,8 @@ impl<P: Pairing> Indexer<P> {
         let pre_mes_verifier_filepath = format!("./data/Pre_Mes_Verifier-{}-{}.paras", m, l);
 
         let time = Instant::now();
-        let _ = Self::new_to_file(m, l, cs, powers, m_powers, x_srs, x_domain, y_domain, m_domain, &pre_mes_prover_filepath, &pre_mes_verifier_filepath);
+        let (pre_mes_prover, pre_mes_verifier) = Self::new_to_file(m, l, cs, powers, m_powers, x_srs, x_domain, y_domain, m_domain, &pre_mes_prover_filepath, &pre_mes_verifier_filepath).unwrap();
         println!("Indexer preprocessing and writes to file time: {:?}", time.elapsed());
-
-        let (pre_mes_prover, pre_mes_verifier) = Self::read_from_file(&pre_mes_prover_filepath, &pre_mes_verifier_filepath).unwrap();
         
         (pre_mes_prover, pre_mes_verifier)
     }
