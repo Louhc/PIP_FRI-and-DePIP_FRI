@@ -30,6 +30,6 @@ csv = "1"
 
 [features]
 default = [ "parallel" ]
-parallel = [ "rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel"]
+parallel = [ "rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel", "ark-relations/parallel"]
 print-trace = [ "ark-std/print-trace" ]
 asm = [ "ark-ff" ]
