@@ -86,12 +86,15 @@ impl<P: Pairing> NoPreProver<P> {
         });
 
         let step = start_timer!(|| "target poly");
-        let evals_f1: Vec<P::ScalarField> = evals_f[0].par_iter().zip(evals_f[3].par_iter()).map(|(left, right)| *left * right - *eval_r * evals_r[0]).collect();
-        let evals_f2: Vec<P::ScalarField> = evals_f[1].par_iter().zip(evals_f[3].par_iter()).map(|(left, right)| (*left * right - *eval_r * eval_b_virtual) * v).collect();
-        let evals_f3: Vec<P::ScalarField> = evals_f[2].par_iter().zip(evals_f[3].par_iter()).map(|(left, right)| (*left * right - *eval_r * evals_r[3]) * v.square()).collect();
-        let evals_f4: Vec<P::ScalarField> = evals_f[4].par_iter().zip(evals_f[5].par_iter()).map(|(left, right)| (*left * right - evals_r[3]) * v.pow([3 as u64]) * eval_r).collect();
-        let evals_target: Vec<P::ScalarField> = evals_f1.par_iter().zip(evals_f2.par_iter()).zip(evals_f3.par_iter()).zip(evals_f4.par_iter()).
-            map(|(((&a, &b), &c), &d)| a + b + c + d).collect();
+        let evals_target = (&evals_f[0], &evals_f[1], &evals_f[2], &evals_f[3], &evals_f[4], &evals_f[5]).into_par_iter()
+            .map(|(f0, f1, f2, f3, f4, f5)| {
+                let eval1 = *f0 * f3 - *eval_r * evals_r[0];
+                let eval2 = (*f1 * f3 - *eval_r * eval_b_virtual) * v;
+                let eval3 = (*f2 * f3 - *eval_r * evals_r[3]) * v.square();
+                let eval4 = (*f4 * f5 - evals_r[3]) * v.square() * v * *eval_r;
+                eval1 + eval2 + eval3 + eval4
+            })
+            .collect::<Vec<_>>();
         let evals_domain_target = Evaluations::<P::ScalarField>::from_vec_and_domain(evals_target, domain_2x);
         let polynomial_target = evals_domain_target.interpolate();
         end_timer!(step);
@@ -192,18 +195,18 @@ impl<P: Pairing> NoPreProver<P> {
             // let evals_b_r_virtual = poly_b_r_virtual.evaluate_over_domain_by_ref(domain_2y).evals;
             // let evals_c_r = poly_c_r.evaluate_over_domain_by_ref(domain_2y).evals;
 
-            let (evals_pa_alpha, evals_pb_alpha, evals_pc_alpha) = par_join_3!(
+            let ((evals_pa_alpha, evals_pb_alpha, evals_pc_alpha),
+            (evals_w_alpha, evals_r, evals_a_r, evals_c_r)) = rayon::join(
+            || par_join_3!(
                 || polynomials_y[0].evaluate_over_domain_by_ref(domain_2y).evals,
                 || polynomials_y[1].evaluate_over_domain_by_ref(domain_2y).evals,
                 || polynomials_y[2].evaluate_over_domain_by_ref(domain_2y).evals
-            );
-
-            let (evals_w_alpha, evals_r, evals_a_r, evals_c_r) = par_join_4!(
+            ), || par_join_4!(
                 || polynomials_y[3].evaluate_over_domain_by_ref(domain_2y).evals,
                 || polynomials_y[10].evaluate_over_domain_by_ref(domain_2y).evals,
                 || polynomials_y[5].evaluate_over_domain_by_ref(domain_2y).evals,
                 || polynomials_y[9].evaluate_over_domain_by_ref(domain_2y).evals
-            );
+            ));
 
             // let evals_w_alpha = polynomials_y[3].evaluate_over_domain_by_ref(domain_2y).evals;
             // let evals_r = polynomials_y[10].evaluate_over_domain_by_ref(domain_2y).evals;

@@ -218,7 +218,7 @@ impl<P: Pairing> DeSNARKLog<P> {
             Vec::new()
         };
 
-        let time = Instant::now();
+        let step = start_timer!(|| "g1 h1, g2 h2");
         let (evals_g1_h1, proof_g1_h1, coms_g2_h2, evals_domain_g2_h2, polynomials_y, polys_g2_h2, com_b_t) = if Net::am_master() {
             // g1(alpha) and h1(alpha)  
             let (evals_g1_h1, proof_g1_h1) = NoPreProver::<P>::open_g1_h1(&message);
@@ -255,7 +255,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         } else {
             (Vec::new(), P::G1::zero(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), P::G1::zero())
         };
-        println!("Prover {:?} computes coms g2, h2, t: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // get challenge beta from fiat shamir
         let beta = if Net::am_master() {
@@ -271,7 +271,7 @@ impl<P: Pairing> DeSNARKLog<P> {
             Net::recv_from_master(None)
         };
 
-        let time = Instant::now();
+        let step = start_timer!(|| "g2, h2, fa, fb, fc, fw, R evals and proofs");
         let (evals_g1_h1, proof_g1_h1, evals_wit_upper_r_polys, evals_g2_h2, proof_g2_h2) = if Net::am_master() {
             // compute proof and evaluations to g2, h2low, h2high
             let proof_g2_h2 = BatchKZG::<P>::open_lagrange(&y_srs, &evals_domain_g2_h2, &beta, &y_domain, &gamma).unwrap();
@@ -298,21 +298,24 @@ impl<P: Pairing> DeSNARKLog<P> {
         } else {
             (Vec::new(), P::G1::zero(), Vec::new(), Vec::new(), P::G1::zero())
         };
-        println!("Prover {:?} computes g2, h2, fa, fb, fc, fw, R evals and proofs time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // compute public polys evaluations at (alpha, beta)
-        let time = Instant::now();
+        let step = start_timer!(|| "compute pub evals at (alpha, beta)");
         let eval_beta = evaluate_one_lagrange::<P>(sub_prover_id, &y_domain, &beta);
         let evals_p_alpha_beta: Vec<<P as Pairing>::ScalarField> = PreProver::<P>::compute_pub_evals_alpha_beta(&upper_a_t_polys, &upper_b_t_polys, &val_polys, &m_domain, &eval_beta);
         assert_eq!(evals_p_alpha_beta.len(), 3);
-        println!("Prover {:?} computes pub evals at (alpha, beta) time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // compute and commit f1 and f2
         // lower_evals describes ai, bi evals such that a_low(g^i) = w^{row_low(g^i)}
-        let time = Instant::now();
+        let step = start_timer!(|| "compute sub f1 f2");
         let (de_polys_f1, polys_f2) = PreProver::<P>::compute_sub_f1_and_f2(&lower_a_b_evals, &upper_a_t_evals, &upper_b_t_evals, &n_evals, &m_domain, &x_domain, &gamma, &beta);
+        end_timer!(step);
+
+        let step = start_timer!(|| "commit sub f1 f2");
         let (coms_f1, coms_f2) = PreProver::<P>::commit_f1_f2(sub_prover_id, &m_powers, &x_srs, &de_polys_f1, &polys_f2);
-        println!("Prover {:?} commits f1 and f2 time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // generate challenges w, u3
         let (w, u3) = if Net::am_master() {

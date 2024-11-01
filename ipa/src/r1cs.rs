@@ -100,7 +100,7 @@ where
 
     let res = cfg_iter!(terms).fold(zero, |mut sum, (coeff, index)| {
         let val = if *index >= instance.len() {
-            &witness[*index]
+            &witness[*index - instance.len()]
         } else {
             &instance[*index]
         };

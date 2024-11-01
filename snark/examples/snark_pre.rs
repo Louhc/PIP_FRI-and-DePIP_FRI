@@ -8,7 +8,7 @@ use ark_std::log2;
 use my_kzg::{biv_batch_kzg::BivBatchKZG, helper::get_x_srs};
 use merlin::Transcript;
 use my_ipa::{helper::generate_r1cs_de_polynomials, r1cs::RandomCircuit};
-use de_network::{DeMultiNet as Net, DeNet};
+use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use std::path::PathBuf;
 use structopt::StructOpt;
 use ark_std::rand::{rngs::StdRng, SeedableRng};
@@ -97,6 +97,13 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     //     Ok(pre) => pre,
     //     Err(_) => Indexer::<E>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m)
     // };
+
+    // Synchronize everyone
+    Net::recv_from_master(if Net::am_master() {
+        Some(vec![0usize; Net::n_parties()])
+    } else {
+        None
+    });
 
     // prover
     println!("Prover {:?} starts to prove", sub_prover_id);
