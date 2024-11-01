@@ -10,6 +10,7 @@ use my_ipa::helper::{
     R1CSWitnessPolys, 
 };
 use ark_ff::{Zero, One, Field};
+use ark_std::{start_timer, end_timer};
 use de_network::{DeMultiNet as Net, DeNet};
 use rayon::prelude::*;
 use my_kzg::par_join_3;
@@ -46,30 +47,45 @@ impl<P: Pairing> NoPreProver<P> {
         r_pow_m: &P::ScalarField,
         v: &P::ScalarField
     ) -> (Vec<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
+        let timer = start_timer!(|| "Compute evals r and first target poly");
 
+        let step = start_timer!(|| "generate powers");
         // get (1, r, r^{2} ..., r^{m-1})
         let r_m_powers = generate_powers(r, m);
+        end_timer!(step);
 
+        let step = start_timer!(|| "coeffs ar");
         // f_a(rX)
         let coeffs_ar: Vec<P::ScalarField> = wit_polys.poly_a.coeffs.par_iter().zip(r_m_powers.par_iter()).map(|(left, right)| *left * *right).collect();
         let poly_ar = UnivariatePolynomial::from_coefficients_vec(coeffs_ar);
+        end_timer!(step);
 
         // f1 - f4
-        let polys_r = vec![&wit_polys.poly_a, &wit_polys.poly_b, &wit_polys.poly_b, &wit_polys.poly_c];
-        let points_r = vec![*r, P::ScalarField::zero(), r.clone().inverse().unwrap(), *r];
-        let evals_r: Vec<P::ScalarField> = polys_r.par_iter().zip(points_r.par_iter()).map(|(poly, point)| poly.evaluate(&point)).collect();
-        let eval_b_virtual = evals_r[2] * r_pow_m + evals_r[1] * (P::ScalarField::one() - r_pow_m);
-
-        // let eval_a_r = wit_polys.poly_a.evaluate(r);
-        // let eval_b_0 = wit_polys.poly_b.evaluate(&P::ScalarField::zero());
-        // let eval_b_inverse = wit_polys.poly_b.evaluate(&r.clone().inverse().unwrap());
-        // let eval_b_virtual = eval_b_inverse * r_pow_m + eval_b_0 * (P::ScalarField::one() - r_pow_m);
-        // let eval_c_r = wit_polys.poly_c.evaluate(r);
-        // let eval_r_pow_m_mul_c_r = UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * eval_c_r]);
-
         let domain_2x = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(2 * m).unwrap();
-        let polys_f = vec![&pub_polys.poly_pa, &pub_polys.poly_pb, &pub_polys.poly_pc, &wit_polys.poly_w, &poly_ar, &wit_polys.poly_b];
-        let evals_f: Vec<Vec<P::ScalarField>> = polys_f.par_iter().map(|&poly| poly.evaluate_over_domain_by_ref(domain_2x).evals).collect();
+        let ((evals_r, eval_b_virtual), evals_f) = rayon::join(|| {
+            let step = start_timer!(|| "evals r");
+            let polys_r = vec![&wit_polys.poly_a, &wit_polys.poly_b, &wit_polys.poly_b, &wit_polys.poly_c];
+            let points_r = vec![*r, P::ScalarField::zero(), r.clone().inverse().unwrap(), *r];
+            let evals_r: Vec<P::ScalarField> = polys_r.par_iter().zip(points_r.par_iter()).map(|(poly, point)| poly.evaluate(&point)).collect();
+            let eval_b_virtual = evals_r[2] * r_pow_m + evals_r[1] * (P::ScalarField::one() - r_pow_m);
+            end_timer!(step);
+            (evals_r, eval_b_virtual)
+        }, || {
+            // let eval_a_r = wit_polys.poly_a.evaluate(r);
+            // let eval_b_0 = wit_polys.poly_b.evaluate(&P::ScalarField::zero());
+            // let eval_b_inverse = wit_polys.poly_b.evaluate(&r.clone().inverse().unwrap());
+            // let eval_b_virtual = eval_b_inverse * r_pow_m + eval_b_0 * (P::ScalarField::one() - r_pow_m);
+            // let eval_c_r = wit_polys.poly_c.evaluate(r);
+            // let eval_r_pow_m_mul_c_r = UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * eval_c_r]);
+            let step = start_timer!(|| "evals f");
+            let polys_f = vec![&pub_polys.poly_pa, &pub_polys.poly_pb, &pub_polys.poly_pc, &wit_polys.poly_w, &poly_ar, &wit_polys.poly_b];
+            let evals_f: Vec<Vec<P::ScalarField>> = polys_f.par_iter().map(|&poly| poly.evaluate_over_domain_by_ref(domain_2x).evals).collect();
+            end_timer!(step);
+
+            evals_f
+        });
+
+        let step = start_timer!(|| "target poly");
         let evals_f1: Vec<P::ScalarField> = evals_f[0].par_iter().zip(evals_f[3].par_iter()).map(|(left, right)| *left * right - *eval_r * evals_r[0]).collect();
         let evals_f2: Vec<P::ScalarField> = evals_f[1].par_iter().zip(evals_f[3].par_iter()).map(|(left, right)| (*left * right - *eval_r * eval_b_virtual) * v).collect();
         let evals_f3: Vec<P::ScalarField> = evals_f[2].par_iter().zip(evals_f[3].par_iter()).map(|(left, right)| (*left * right - *eval_r * evals_r[3]) * v.square()).collect();
@@ -78,6 +94,9 @@ impl<P: Pairing> NoPreProver<P> {
             map(|(((&a, &b), &c), &d)| a + b + c + d).collect();
         let evals_domain_target = Evaluations::<P::ScalarField>::from_vec_and_domain(evals_target, domain_2x);
         let polynomial_target = evals_domain_target.interpolate();
+        end_timer!(step);
+
+        end_timer!(timer);
 
         (evals_r, polynomial_target)
     }
