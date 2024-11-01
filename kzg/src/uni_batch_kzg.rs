@@ -12,7 +12,7 @@ use merlin::Transcript;
 use crate::transcript::ProofTranscript;
 use crate::uni_trivial_kzg::{KZG, structured_generators_scalar_power, UniVerifierSRS};
 use std::marker::PhantomData;
-use ark_std::rand::Rng;
+use ark_std::{rand::Rng, start_timer, end_timer};
 use crate::Error;
 use rayon::prelude::*;
 
@@ -96,21 +96,32 @@ impl<P: Pairing> BatchKZG<P> {
         point: &P::ScalarField,
         challenge: &P::ScalarField,
     ) -> Result<P::G1, Error> {
+        let timer = start_timer!(|| "batchKZG open");
         let linear_factors = generate_powers(challenge, polynomials.len());
 
+        let step = start_timer!(|| "combined polynomial");
         // an example of polynomial rlc using par_iter()
         let combined_polynomial = polynomials.par_iter().zip(linear_factors.par_iter())
             .map(|(poly, factor)| *poly * *factor)
             .reduce_with(|acc, poly| acc + poly)
             .unwrap_or(UnivariatePolynomial::zero());
+        end_timer!(step);
 
+        let step = start_timer!(|| "quotient polynomial");
         // Trick to calculate (p(x) - p(z)) / (x - z) as p(x) / (x - z) ignoring remainder p(z)
         let quotient_polynomial = &combined_polynomial
             / &UnivariatePolynomial::from_coefficients_vec(vec![
                 -point.clone(),
                 P::ScalarField::one(),
             ]);
-        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &quotient_polynomial.coeffs).into().into())
+        end_timer!(step);
+
+        let step = start_timer!(|| "msm");
+        let result = P::G1MSM::msm_unchecked_par_auto(powers, &quotient_polynomial.coeffs).into().into();
+        end_timer!(step);
+
+        end_timer!(timer);
+        Ok(result)
     }
 
     pub fn open_multiple_polys_and_points(

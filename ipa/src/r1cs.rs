@@ -1,5 +1,6 @@
 use ark_ff::{Zero, One};
 use ark_ec::pairing::Pairing;
+use ark_relations::r1cs::Variable;
 use rayon::prelude::*;
 use my_kzg::{par_join_3, helper::generate_powers};
 use itertools::MultiUnzip;
@@ -117,6 +118,43 @@ where
     return res;
 }
 
+pub fn evaluate_constraint_direct<'a, LHS, RHS, R>(terms: &'a [(LHS, Variable)], instance: &'a[RHS], witness: &'a [RHS]) -> R
+where
+    LHS: One + Send + Sync + PartialEq,
+    RHS: Send + Sync + core::ops::Mul<&'a LHS, Output = RHS> + Copy,
+    R: Zero + Send + Sync + AddAssign<RHS> + core::iter::Sum,
+{
+    // Need to wrap in a closure when using Rayon
+    #[cfg(feature = "parallel")]
+    let zero = || R::zero();
+    #[cfg(not(feature = "parallel"))]
+    let zero = R::zero();
+
+    let res = cfg_iter!(terms).fold(zero, |mut sum, (coeff, var)| {
+        let val = match var {
+            Variable::One => instance[0],
+            Variable::Instance(i) => instance[*i],
+            Variable::Witness(i) => witness[*i],
+            _ => panic!("Unexpected symoblic lc"),
+        };
+
+        if coeff.is_one() {
+            sum += val;
+        } else {
+            sum += val.mul(coeff);
+        }
+
+        sum
+    });
+
+    // Need to explicitly call `.sum()` when using Rayon
+    #[cfg(feature = "parallel")]
+    return res.sum();
+    #[cfg(not(feature = "parallel"))]
+    return res;
+}
+
+
 impl<P:Pairing> R1CSVectors<P> {
     pub fn build(
         sub_prover_id: usize,
@@ -131,24 +169,26 @@ impl<P:Pairing> R1CSVectors<P> {
         assert_eq!(m, cs.num_constraints() / l);
         let f_zero = P::ScalarField::zero();
     
-        let step = start_timer!(|| "CS to matrices");
         let cs = cs.borrow().unwrap();
-        let cs_matrix = cs.to_matrices().unwrap();
-        end_timer!(step);
-
         let step = start_timer!(|| "Evaluate constraints");
-        let vec_w = [&cs.instance_assignment[..], &cs.witness_assignment[..]].concat();
-    
         let start = m * sub_prover_id;
         let end = start + m;
 
-        let (sub_vec_a, sub_vec_b, sub_vec_c): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = (start..end)
-            .map(|row_idx| {
-                let a: P::ScalarField = evaluate_constraint(&cs_matrix.a[row_idx], &vec_w);
-                let b: P::ScalarField = evaluate_constraint(&cs_matrix.b[row_idx], &vec_w);
-                let c: P::ScalarField = evaluate_constraint(&cs_matrix.c[row_idx], &vec_w);
-                (a, b, c)
-            }).multiunzip();
+        // Due to RefCells the CS cannot be Send, so we have to borrow everything out.
+        let a_constraints = &cs.a_constraints;
+        let b_constraints = &cs.b_constraints;
+        let c_constraints = &cs.c_constraints;
+        let lc_map = &cs.lc_map;
+        let num_instance_variables = cs.num_instance_variables;
+        let instance_assignment = &cs.instance_assignment;
+        let witness_assignment = &cs.witness_assignment;
+
+        let (sub_vec_a, sub_vec_b, sub_vec_c): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = 
+        par_join_3!(
+            || a_constraints[start..end].par_iter().map(|constraint| evaluate_constraint_direct(lc_map.get(constraint).unwrap(), instance_assignment, witness_assignment)).collect(),
+            || b_constraints[start..end].par_iter().map(|constraint| evaluate_constraint_direct(lc_map.get(constraint).unwrap(), instance_assignment, witness_assignment)).collect(),
+            || c_constraints[start..end].par_iter().map(|constraint| evaluate_constraint_direct(lc_map.get(constraint).unwrap(), instance_assignment, witness_assignment)).collect()
+        );
         
         end_timer!(step);
     
@@ -162,33 +202,36 @@ impl<P:Pairing> R1CSVectors<P> {
         par_join_3!(
             || {
                 for row_idx in 0..m * l {
-                    cs_matrix.a[row_idx]
-                    .iter()
-                    .for_each(|(coeff, id)| {
-                        if start <= *id && *id < end {
-                            sub_vec_x[*id - start] += *coeff * vec_r[row_idx].clone();
+                    let lc = lc_map.get(&a_constraints[row_idx]).unwrap();
+                    lc.iter()
+                    .for_each(|(coeff, var)| {
+                        let id = var.get_index_unchecked(num_instance_variables).unwrap();
+                        if start <= id && id < end {
+                            sub_vec_x[id - start] += *coeff * vec_r[row_idx].clone();
                         }
                     });
                 }
             },
             || {
                 for row_idx in 0..m * l {
-                    cs_matrix.b[row_idx]
-                    .iter()
-                    .for_each(|(coeff, id)| {
-                        if start <= *id && *id < end {
-                            sub_vec_y[*id - start] += *coeff * vec_r[row_idx].clone();
+                    let lc = lc_map.get(&b_constraints[row_idx]).unwrap();
+                    lc.iter()
+                    .for_each(|(coeff, var)| {
+                        let id = var.get_index_unchecked(num_instance_variables).unwrap();
+                        if start <= id && id < end {
+                            sub_vec_y[id - start] += *coeff * vec_r[row_idx].clone();
                         }
                     });
                 }
             },
             || {
                 for row_idx in 0..m * l {
-                    cs_matrix.c[row_idx]
-                    .iter()
-                    .for_each(|(coeff, id)| {
-                        if start <= *id && *id < end {
-                            sub_vec_z[*id - start] += *coeff * vec_r[row_idx].clone();
+                    let lc = lc_map.get(&c_constraints[row_idx]).unwrap();
+                    lc.iter()
+                    .for_each(|(coeff, var)| {
+                        let id = var.get_index_unchecked(num_instance_variables).unwrap();
+                        if start <= id && id < end {
+                            sub_vec_z[id - start] += *coeff * vec_r[row_idx].clone();
                         }
                     });
                 }
@@ -202,7 +245,7 @@ impl<P:Pairing> R1CSVectors<P> {
             vec_x: sub_vec_x,
             vec_y: sub_vec_y,
             vec_z: sub_vec_z,
-            vec_w: vec_w[start..end].to_vec(),
+            vec_w: instance_assignment[start..end].to_vec(),
             vec_a: sub_vec_a,
             vec_b: sub_vec_b,
             vec_c: sub_vec_c

@@ -12,14 +12,13 @@ use de_network::{DeMultiNet as Net, DeNet};
 use std::path::PathBuf;
 use structopt::StructOpt;
 use ark_std::rand::{rngs::StdRng, SeedableRng};
-use ark_bls12_381::Bls12_381;
 use ark_ff::UniformRand;
-type MyField = <Bls12_381 as Pairing>::ScalarField;
 use std::time::Instant;
 use ark_relations::r1cs::{ConstraintSystem, ConstraintSynthesizer};
 use my_snark::snark_log::DeSNARKLog;
 use my_snark::indexer::Indexer;
 use my_ipa::r1cs::R1CSVectors;
+use ark_bn254::Bn254;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "example", about = "An example of StructOpt usage.")]
@@ -43,38 +42,36 @@ fn init() -> (usize, usize, usize) {
     (m, l, sub_prover_id)
 }
 
-fn main() {
-    let (m, l, sub_prover_id) = init();
-
+fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     let time = Instant::now();
-    let c = RandomCircuit::<Bls12_381>::new(m * l, m * l, m, l);
-    let cs = ConstraintSystem::<<Bls12_381 as Pairing>::ScalarField>::new_ref();
+    let c = RandomCircuit::<E>::new(m * l, m * l, m, l);
+    let cs = ConstraintSystem::<<E as Pairing>::ScalarField>::new_ref();
     c.generate_constraints(cs.clone()).unwrap();
     assert!(cs.is_satisfied().unwrap());
     println!("Generate R1CS instances time: {:?}", time.elapsed());
 
     let mut rng = StdRng::seed_from_u64(0u64);
-    let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, pow_of_two): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<Bls12_381>::build_de_r1cs_index(l, m, &cs).unwrap();
+    let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, pow_of_two): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<E>::build_de_r1cs_index(l, m, &cs).unwrap();
     let m_prime: usize = pow_of_two;
     println!("log m_prime: {:?}", log2(pow_of_two));
 
     let time = Instant::now();
-    let challenge_r = MyField::rand(&mut rng);
-    let domain_x = <GeneralEvaluationDomain<MyField> as EvaluationDomain<MyField>>::new(m).unwrap();
-    let domain_y = <GeneralEvaluationDomain<MyField> as EvaluationDomain<MyField>>::new(l).unwrap();
+    let challenge_r = E::ScalarField::rand(&mut rng);
+    let domain_x = <GeneralEvaluationDomain<E::ScalarField> as EvaluationDomain<E::ScalarField>>::new(m).unwrap();
+    let domain_y = <GeneralEvaluationDomain<E::ScalarField> as EvaluationDomain<E::ScalarField>>::new(l).unwrap();
     let domain_m = if m == m_prime {
         domain_x.clone()
     } else {
-        <GeneralEvaluationDomain<MyField> as EvaluationDomain<MyField>>::new(m_prime).unwrap()
+        <GeneralEvaluationDomain<E::ScalarField> as EvaluationDomain<E::ScalarField>>::new(m_prime).unwrap()
     };
 
     let x_degree = m - 1;
     let y_degree = l - 1;
     let m_degree = m_prime - 1;
-    let (powers, v_srs) = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, x_degree, y_degree, &domain_y).unwrap();
-    let x_srs = get_x_srs::<Bls12_381>(&powers);
+    let (powers, v_srs) = BivBatchKZG::<E>::setup_lagrange(&mut rng, x_degree, y_degree, &domain_y).unwrap();
+    let x_srs = get_x_srs::<E>(&powers);
     // Note that y_srs is lagrange-based
-    let y_srs: Vec<<Bls12_381 as Pairing>::G1Affine> = powers.iter()
+    let y_srs: Vec<<E as Pairing>::G1Affine> = powers.iter()
         .filter_map(|row| row.get(0))
         .cloned()
         .collect();
@@ -83,22 +80,22 @@ fn main() {
         if x_degree == m_degree {
             (powers.clone(), v_srs.clone())
         } else {
-            BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, m_degree, y_degree, &domain_y).unwrap()
+            BivBatchKZG::<E>::setup_lagrange(&mut rng, m_degree, y_degree, &domain_y).unwrap()
         }
     };
-    let m_srs = get_x_srs::<Bls12_381>(&m_powers);
+    let m_srs = get_x_srs::<E>(&m_powers);
     println!("Setup time: {:?}", time.elapsed());
 
     // indexer works
     // common preprocess
-    let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bls12_381>::preprocess(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
+    let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::preprocess(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
     // new preprocess to file
-    // let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bls12_381>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
+    // let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
     // println!("Prover {:?} Indexer time: {:?}", sub_prover_id, time.elapsed());
     // preprocess from file
-    // let (pre_mes_prover, pre_mes_verifier) = match Indexer::<Bls12_381>::preprocess_from_file(m, l) {
+    // let (pre_mes_prover, pre_mes_verifier) = match Indexer::<E>::preprocess_from_file(m, l) {
     //     Ok(pre) => pre,
-    //     Err(_) => Indexer::<Bls12_381>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m)
+    //     Err(_) => Indexer::<E>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m)
     // };
 
     // prover
@@ -106,29 +103,34 @@ fn main() {
     let total_time = Instant::now();
     let mut transcript : Transcript = Transcript::new(b"Random R1CS");
     let time = Instant::now();
-    let r1cs_de_vecs: R1CSVectors<Bls12_381> = R1CSVectors::<Bls12_381>::build(sub_prover_id, m, l, challenge_r, &cs).unwrap();
+    let r1cs_de_vecs: R1CSVectors<E> = R1CSVectors::<E>::build(sub_prover_id, m, l, challenge_r, &cs).unwrap();
     println!("Prover {:?} build time: {:?}", sub_prover_id, time.elapsed());
     let time = Instant::now();
-    let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<Bls12_381>(m, l, &r1cs_de_vecs);
+    let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<E>(m, l, &r1cs_de_vecs);
     println!("Prover {:?} generates de secret polynomials time: {:?}", sub_prover_id, time.elapsed());
-    let proof = DeSNARKLog::<Bls12_381>::de_r1cs_prove(sub_prover_id, &powers, 
+    let proof = DeSNARKLog::<E>::de_r1cs_prove(sub_prover_id, &powers, 
         &m_powers, &x_srs, &y_srs, &m_srs, &sub_wit_polys, &sub_pub_polys, &pre_mes_prover,
         &challenge_r, &domain_x, &domain_y, &domain_m, &mut transcript);
     println!("Prover {:?} prove total time: {:?}", sub_prover_id, total_time.elapsed());
 
     if Net::am_master() {
-        let proof_size = DeSNARKLog::<Bls12_381>::get_proof_size(proof.as_ref().unwrap());
+        let proof_size = DeSNARKLog::<E>::get_proof_size(proof.as_ref().unwrap());
         println!("Proof size is {:?} bytes", proof_size);
     }
 
     let time = Instant::now();
     if Net::am_master() {
         let mut transcript : Transcript = Transcript::new(b"Random R1CS");
-        let is_valid = DeSNARKLog::<Bls12_381>::r1cs_verify_preprocess(&v_srs, &m_v_srs, 
+        let is_valid = DeSNARKLog::<E>::r1cs_verify_preprocess(&v_srs, &m_v_srs, 
             &pre_mes_verifier, &proof.unwrap(), &domain_x, &domain_y, &domain_m, &challenge_r, &mut transcript);
         assert!(is_valid);
     }
     println!("Verify time: {:?}", time.elapsed());
+}
+
+fn main() {
+    let (m, l, sub_prover_id) = init();
+    test_helper::<Bn254>(m, l, sub_prover_id);
 
     Net::deinit();
 }

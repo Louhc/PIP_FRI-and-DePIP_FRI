@@ -14,6 +14,7 @@ use my_kzg::par_join_3;
 use crate::prover_pre::PreProver;
 use crate::par_join_4;
 use std::mem::take;
+use ark_std::{start_timer, end_timer};
 
 pub struct DeSNARKLog<P: Pairing> {
     _pairing: PhantomData<P>,
@@ -87,6 +88,8 @@ impl<P: Pairing> DeSNARKLog<P> {
         let l = Net::n_parties();
         // let m_prime = m_srs.len();
 
+        let timer = start_timer!(|| "de r1cs prove");
+
         // Derive the message
         let PreMesProver { upper_r_polys, de_row_index_vecs, de_col_index_vecs, val_polys, total_lower_a_b_evals, total_lower_a_b_polys, n_evals, n_polys } = pre_mes_prover;
         let upper_r_poly = &upper_r_polys[sub_prover_id];
@@ -97,9 +100,9 @@ impl<P: Pairing> DeSNARKLog<P> {
         let lower_a_b_polys = &total_lower_a_b_polys[sub_prover_id];
 
         // commit secret polynomials
-        let time = Instant::now();
+        let step = start_timer!(|| "commit witnesses");
         let coms_wit_polys = NoPreProver::<P>::commit_wit_polys(sub_prover_id, &powers, &wit_polys);
-        println!("Prover {:?} commit time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // generate challenges v and u1
         let (v, u1) = if Net::am_master() {
@@ -114,26 +117,27 @@ impl<P: Pairing> DeSNARKLog<P> {
         };
 
         // compute polynomials evaluated at r: evals_r and the first-round target polynomial: polynomial_target
-        let time = Instant::now();
+        let step = start_timer!(|| "compute evals r and target");
         // compute several auxiliary polys and evals about r 
         // R_i(X) = X^{i-1} and evals R_i(r^{m})
         let eval_r  = r.pow([(m * sub_prover_id) as u64]);
         let r_pow_m = r.pow([m as u64]);
         let (evals_r, polynomial_target) = NoPreProver::<P>::compute_evals_r_and_1st_target_poly(m, &wit_polys, &pub_polys, &r, &eval_r, &r_pow_m, &v);
-        println!("Prover {:?} compute evals_r and target polynomial time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // compute A, T, g1, h1 polys and commit them
-        let time = Instant::now();
         // After receiving r, compute A_high, A_low, T_high, T_low from rows
-        let time1 = Instant::now();
+        let step = start_timer!(|| "compute upper a t polys from rows");
         let (upper_a_t_polys, upper_a_t_evals) = PreProver::<P>::compute_upper_a_t_polys_from_rows(m, l, &x_domain, &m_domain, &row_index_vec, &r);
-        println!("FFT time: {:?}", time1.elapsed());
+        end_timer!(step);
         // get g1 and h1
+        let step = start_timer!(|| "get g1, h1");
         let (poly_g1, poly_h1) = IPA::<P>::get_g_mul_u_and_h(&polynomial_target, &u1, &x_domain);
+        end_timer!(step);
         // Note:: here coms_upper_a are de_commitments
-        let time1 = Instant::now();
+        let step = start_timer!(|| "commit g1 h1 upper a t");
         let (coms_upper_a, de_coms_g1_h1_t) = PreProver::commit_g1_h1_upper_a_t_polys(sub_prover_id, &m_powers, &x_srs, &poly_g1, &poly_h1, &upper_a_t_polys);
-        println!("commit time: {:?}", time1.elapsed());
+        end_timer!(step);
 
         // send com of A_low, A_high, g1, h1 to P0
         let mut com_g1_h1_slice = vec![de_coms_g1_h1_t[0]];
@@ -164,7 +168,6 @@ impl<P: Pairing> DeSNARKLog<P> {
         } else {
             Vec::new()
         };
-        println!("Prover {:?} compute and commit A, T, g1, h1 time: {:?}", sub_prover_id, time.elapsed());
 
         // generate new challenges alpha and u2
         let (alpha, u2, gamma) = if Net::am_master() {
@@ -183,20 +186,25 @@ impl<P: Pairing> DeSNARKLog<P> {
         };
 
         // compute upper B polys and t
-        let time = Instant::now();
+        let step = start_timer!(|| "compute upper b t polys");
         let (upper_b_t_polys, upper_b_t_evals) = PreProver::<P>::compute_upper_b_t_polys_from_cols(m, &x_domain, &m_domain, &col_index_vec, &alpha);
+        end_timer!(step);
+
+        let step = start_timer!(|| "commit upper b polys");
         let coms_upper_b = PreProver::<P>::commit_upper_b_polys(sub_prover_id, &m_powers, &upper_b_t_polys);
-        println!("Prover {:?} computes upper_b_t_polys and commits upper_b_polys: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // evaluate and send polynomial evaluations on alpha
         // also send g1(alpha) and h1(alpha)
-        let time = Instant::now();
+        let step = start_timer!(|| "evals alpha, g1, h1");
         let eval_r = eval_r;
         // pa, pb, pc, w, ar, b
         let evals_alpha = NoPreProver::<P>::compute_evals_alpha(&wit_polys, &pub_polys, &r, &alpha);
         // slices of g1(alpha) and h1(alpha)
         let eval_g1 = poly_g1.evaluate(&alpha);
         let eval_h1 = poly_h1.evaluate(&alpha);
+        end_timer!(step);
+
         let proof_g1_h1 = BatchKZG::<P>::open(&x_srs, &vec![&poly_g1, &poly_h1], &alpha, &gamma).unwrap();
 
         // pa_alpha, pb_alpha, pc_alpha, w_alpha, a_r_alpha, a_r, b_alpha, b_r_inverse, b_0, c_r, R
@@ -209,7 +217,6 @@ impl<P: Pairing> DeSNARKLog<P> {
         } else {
             Vec::new()
         };
-        println!("Prover {:?} computes and sends evaluations_alpha & de_proof_g1_h1 time: {:?}", sub_prover_id, time.elapsed());
 
         let time = Instant::now();
         let (evals_g1_h1, proof_g1_h1, coms_g2_h2, evals_domain_g2_h2, polynomials_y, polys_g2_h2, com_b_t) = if Net::am_master() {
@@ -442,6 +449,8 @@ impl<P: Pairing> DeSNARKLog<P> {
             assert_eq!(eval_l.len(), 1);
         }
         println!("Prover {:?} open L at (beta, zeta) time: {:?}", sub_prover_id, time.elapsed());
+
+        end_timer!(timer);
 
         if Net::am_master() {
             Some(SNARKProofLog {
