@@ -119,8 +119,6 @@ impl<P: Pairing> KZG<P> {
     ) -> Result<P::G1, Error> {
         assert!(powers.len() >= polynomial.degree() + 1);
         // coeffs.resize(powers.len(), <P::ScalarField>::zero());
-
-        // Can unwrap because coeffs.len() is guaranteed to be equal to powers.len()
         Ok(P::G1MSM::msm_unchecked_par_auto(powers, &polynomial.coeffs).into().into())
     }
 
@@ -129,8 +127,6 @@ impl<P: Pairing> KZG<P> {
         evals: &Evaluations<P::ScalarField>,
     ) -> Result<P::G1, Error> {
         assert!(powers.len() == evals.evals.len());
-
-        // Can unwrap because coeffs.len() is guaranteed to be equal to powers.len()
         Ok(P::G1MSM::msm_unchecked_par_auto(powers, &evals.evals).into().into())
     }
 

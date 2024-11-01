@@ -15,6 +15,7 @@ use std::marker::PhantomData;
 use ark_std::{rand::Rng, start_timer, end_timer};
 use crate::Error;
 use rayon::prelude::*;
+use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 
 // This is the batch KZG, a simple version of multiple polynomials on one point, and a more complicated version of multiple polynomials on multiple polynomials, from [https://eprint.iacr.org/2020/081.pdf]
 pub struct BatchKZG<P: Pairing> {
@@ -150,13 +151,6 @@ impl<P: Pairing> BatchKZG<P> {
             || points.par_iter().
             map(|row_points| &numerator_polynomial / &generator_numerator_polynomial::<P>(row_points)).collect()
         );
-        // let polys_r: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
-        //     zip(evals.par_iter()).
-        //     map(|(row_points, row_evals)| 
-        //     interpolate_on_trivial_domain::<P>(row_points, row_evals)
-        //     ).collect();
-        // let auxiliary_polys: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
-        //     map(|row_points| &numerator_polynomial / &generator_numerator_polynomial::<P>(row_points)).collect();
         
         let target_poly= polynomials.par_iter().
             zip(polys_r.par_iter()).
@@ -191,6 +185,100 @@ impl<P: Pairing> BatchKZG<P> {
         Ok((evals, (com_h, com_l)))
     }
 
+    pub fn de_open_multiple_polys_and_points(
+        sub_prover_id: usize,
+        powers: &[P::G1Affine],
+        polynomials: &[&UnivariatePolynomial<P::ScalarField>],
+        points: &Vec<Vec<P::ScalarField>>,
+        challenge: &P::ScalarField,
+        transcript: &mut Transcript,
+    ) -> Result<(Vec<Vec<P::ScalarField>>, (P::G1, P::G1)), Error> {
+        assert_eq!(polynomials.len(), points.len());
+        let gamma = *challenge;
+        let point_vec = points.par_iter().flatten().cloned().collect();
+        let numerator_polynomial = generator_numerator_polynomial::<P>(&point_vec);
+
+        let challenge_vector = generate_powers(&gamma, polynomials.len());
+
+        let evals: Vec<Vec<P::ScalarField>> = polynomials.par_iter().zip(points.par_iter()).map(|(poly, x_points)|{
+            x_points.par_iter().map(|point| poly.evaluate(&point)).collect()
+        }).collect();
+        let (polys_r, auxiliary_polys): (Vec<UnivariatePolynomial<P::ScalarField>>, Vec<UnivariatePolynomial<P::ScalarField>>) = rayon::join(
+            || points.par_iter().
+            zip(evals.par_iter()).
+            map(|(row_points, row_evals)| 
+            interpolate_on_trivial_domain::<P>(row_points, row_evals)
+            ).collect(), 
+            || points.par_iter().
+            map(|row_points| &numerator_polynomial / &generator_numerator_polynomial::<P>(row_points)).collect()
+        );
+        
+        let target_poly= polynomials.par_iter().
+            zip(polys_r.par_iter()).
+            zip(auxiliary_polys.par_iter()).
+            zip(challenge_vector.par_iter()).
+            map(|(((poly, poly_r), aux_poly), factor)| 
+            &(&(*poly - poly_r) * aux_poly) * *factor
+            )
+            .reduce_with(|acc, poly| acc + poly)
+            .unwrap_or_else(UnivariatePolynomial::zero);
+        let poly_h: UnivariatePolynomial<P::ScalarField> = &target_poly / &numerator_polynomial;
+        
+        // generate com_h distributedly
+        let size = powers.len() / Net::n_parties();
+        let start = sub_prover_id * size;
+        let end = start + size;
+        let mut coeff_h = poly_h.to_vec();
+        coeff_h.resize(powers.len(), P::ScalarField::zero());
+        let sub_coeff_h = &coeff_h[start..end];
+        let sub_powers = &powers[start..end];
+        let sub_com_h: P::G1Affine = P::G1MSM::msm_unchecked(sub_powers, &sub_coeff_h).into();
+        let sub_coms_h = Net::send_to_master(&sub_com_h);
+        let com_h = if Net::am_master() {
+            let sub_coms_h = sub_coms_h.unwrap();
+            sub_coms_h.par_iter().sum()
+        } else {
+            P::G1::zero()
+        };
+
+        // generate challenge z
+        let z = if Net::am_master() {
+            <Transcript as ProofTranscript<P>>::append_point(transcript, b"random_evaluate_point_z", &com_h);
+            let z = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluate_point_z");
+            Net::recv_from_master(Some(vec![z; Net::n_parties()]));
+            z
+        } else {
+            Net::recv_from_master(None)
+        };
+
+        // generate polynomial fz
+        let target_poly = polynomials.par_iter().
+            zip(polys_r.par_iter()).
+            zip(auxiliary_polys.par_iter()).
+            zip(challenge_vector.par_iter()).
+            map(|(((poly, poly_r), aux_poly), factor)| 
+            &(*poly + &UnivariatePolynomial::from_coefficients_vec(vec![-poly_r.evaluate(&z)])) * (*factor * aux_poly.evaluate(&z))
+            )
+            .reduce_with(|acc, poly| acc + poly)
+            .unwrap_or_else(UnivariatePolynomial::zero);
+        let poly_l = &(&target_poly - &(&poly_h * numerator_polynomial.evaluate(&z))) / 
+                                    &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);
+
+        // try to generate com_h and com_l distributedly
+        let mut coeff_l = poly_l.to_vec();
+        coeff_l.resize(powers.len(), P::ScalarField::zero());
+        let sub_coeff_l = &coeff_l[start..end];
+        let sub_com_l: P::G1Affine = P::G1MSM::msm_unchecked(sub_powers, &sub_coeff_l).into();
+        let sub_coms_l = Net::send_to_master(&sub_com_l);
+        let com_l = if Net::am_master() {
+            let sub_coms_l = sub_coms_l.unwrap();
+            sub_coms_l.par_iter().sum()
+        } else {
+            P::G1::zero()
+        };
+
+        Ok((evals, (com_h, com_l)))
+    }
 
     pub fn verify_multiple_polys_and_points(
         v_srs: &UniVerifierSRS<P>,
