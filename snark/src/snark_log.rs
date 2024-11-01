@@ -218,8 +218,8 @@ impl<P: Pairing> DeSNARKLog<P> {
             Vec::new()
         };
 
-        let step = start_timer!(|| "g1 h1, g2 h2");
-        let (evals_g1_h1, proof_g1_h1, coms_g2_h2, evals_domain_g2_h2, polynomials_y, polys_g2_h2, com_b_t) = if Net::am_master() {
+        let step = start_timer!(|| "g1 h1, g2 h2, t_col");
+        let (evals_g1_h1, proof_g1_h1, coms_g2_h2, evals_domain_g2_h2, polynomials_y, polys_g2_h2) = if Net::am_master() {
             // g1(alpha) and h1(alpha)  
             let (evals_g1_h1, proof_g1_h1) = NoPreProver::<P>::open_g1_h1(&message);
             // compute univariate polynomials evaluations at alpha and the target poly over Y for univariate sum-check
@@ -248,13 +248,11 @@ impl<P: Pairing> DeSNARKLog<P> {
             let evals_domain_g2_h2 = vec![evals_g2, evals_h2_low, evals_h2_high];
             let coms_g2_h2 = BatchKZG::<P>::commit_lagrange(&y_srs, &evals_domain_g2_h2).unwrap();
 
-            // get polynomial related to t
-            let com_b_t = KZG::<P>::commit(&x_srs, &upper_b_t_polys.t_col).unwrap();
-
-            (evals_g1_h1, proof_g1_h1, coms_g2_h2, evals_domain_g2_h2, polynomials_y, polys_g2_h2, com_b_t)
+            (evals_g1_h1, proof_g1_h1, coms_g2_h2, evals_domain_g2_h2, polynomials_y, polys_g2_h2)
         } else {
-            (Vec::new(), P::G1::zero(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), P::G1::zero())
+            (Vec::new(), P::G1::zero(), Vec::new(), Vec::new(), Vec::new(), Vec::new())
         };
+        let com_b_t = PreProver::<P>::commit_t_col(sub_prover_id, &x_srs, &upper_b_t_polys);
         end_timer!(step);
 
         // get challenge beta from fiat shamir

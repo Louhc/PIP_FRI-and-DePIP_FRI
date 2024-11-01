@@ -200,17 +200,42 @@ impl<P: Pairing> PreProver<P> {
             Vec::new()
         };
 
-        let coms_g1_h1_t_polys = {
-            let zero = UnivariatePolynomial::zero();
-            let g1_h1_t_polys = if Net::am_master() {
-                vec![&g1, &h1, &set.t_row_low, &set.t_row_high]
-            } else {
-                vec![&g1, &h1, &zero, &zero]
-            };
-            BatchKZG::<P>::commit(&x_srs, &g1_h1_t_polys).unwrap()
+        // commit t_row_low_high distributedly
+        let size = x_srs.len() / Net::n_parties();
+        let start = sub_prover_id * size;
+        let end = start + size;
+        let t_low_high = vec![&set.t_row_low, &set.t_row_high];
+        let coeffs_t_low_high: Vec<Vec<P::ScalarField>> = t_low_high.par_iter().map(|poly| {
+            let mut coeffs = poly.coeffs.to_vec();
+            coeffs.resize(x_srs.len(), P::ScalarField::zero());
+            coeffs
+        } ).collect();
+        let sub_coeffs_t_low_high: Vec<&[P::ScalarField]> = coeffs_t_low_high.par_iter().map(|coeff| {
+            &coeff[start..end]
+        }).collect();
+        let sub_powers = &x_srs[start..end];
+        let sub_coms_t_low_high: Vec<P::G1Affine> = sub_coeffs_t_low_high.into_par_iter().map(|sub_coeff| {
+            P::G1MSM::msm_unchecked(sub_powers, &sub_coeff).into()
+        }).collect();
+        let sub_coms_t_low_high = Net::send_to_master(&sub_coms_t_low_high);
+        let coms_t_low_high = if Net::am_master() {
+            let sub_coms_t_low_high = sub_coms_t_low_high.unwrap();
+            (0..2).into_par_iter()
+                .map(|col_index| {
+                    sub_coms_t_low_high.iter().map(|row| row[col_index])
+                    .fold(P::G1MSM::zero(), |acc, x| acc + x)
+                    .into().into()
+                }).collect()
+        } else {
+            vec![P::G1::zero(); 2]
         };
 
-        (coms_upper_a, coms_g1_h1_t_polys)
+        // commit g1, h1
+        let g1_h1 = vec![g1, h1];
+        let coms_g1_h1 = BatchKZG::<P>::commit(&x_srs, &g1_h1).unwrap();
+        let coms_g1_h1_t: Vec<P::G1> = coms_g1_h1.iter().chain(coms_t_low_high.iter()).copied().collect();
+
+        (coms_upper_a, coms_g1_h1_t)
     }
 
     pub fn compute_upper_b_t_polys_from_cols (
@@ -253,6 +278,30 @@ impl<P: Pairing> PreProver<P> {
 
         (DeBandTPolys {b_pa, b_pb, b_pc, t_col},
             DeBandTEvals {eval_b_pa, eval_b_pb, eval_b_pc, eval_t_col})
+    }
+
+    pub fn commit_t_col (
+        sub_prover_id: usize,
+        x_srs: &[P::G1Affine],
+        upper_b_t_polys: &DeBandTPolys<P>,
+    ) -> P::G1 {
+        let size = x_srs.len() / Net::n_parties();
+        let start = sub_prover_id * size;
+        let end = start + size;
+        let t_col = &upper_b_t_polys.t_col;
+        let mut coeff_t_col = t_col.to_vec();
+        coeff_t_col.resize(x_srs.len(), P::ScalarField::zero());
+        let sub_coeff_t_col = &coeff_t_col[start..end];
+        let sub_powers = &x_srs[start..end];
+        let sub_com_t_col: P::G1Affine = P::G1MSM::msm_unchecked(sub_powers, &sub_coeff_t_col).into();
+        let sub_coms_t_col = Net::send_to_master(&sub_com_t_col);
+        let com_t_col = if Net::am_master() {
+            let sub_coms_t_col = sub_coms_t_col.unwrap();
+            sub_coms_t_col.par_iter().sum()
+        } else {
+            P::G1::zero()
+        };
+        com_t_col
     }
 
     pub fn commit_upper_b_polys (
@@ -714,7 +763,7 @@ impl<P: Pairing> PreProver<P> {
         println!("Prover {:?} commits f1 time: {:?}", sub_prover_id, time.elapsed());
     
         // improved f2 commit method, each sub-prover only commits partial msm, and the master prover adds them
-        // let time = Instant::now();
+        let time = Instant::now();
         let size = x_srs.len() / Net::n_parties();
         let start = sub_prover_id * size;
         let end = start + size;
@@ -743,6 +792,7 @@ impl<P: Pairing> PreProver<P> {
         } else {
             vec![P::G1::zero(); 9]
         };
+        println!("Prover {:?} commits f2 time: {:?}", sub_prover_id, time.elapsed());
 
         let time = Instant::now();
         let coms_f1 = if Net::am_master() {
@@ -751,7 +801,7 @@ impl<P: Pairing> PreProver<P> {
         } else {
             vec![P::G1::zero(); 9]
         };
-        println!("Prover {:?} commits f2 time: {:?}", sub_prover_id, time.elapsed());
+        println!("Prover {:?} commits f1 time: {:?}", sub_prover_id, time.elapsed());
 
         (coms_f1, coms_f2)
     }
