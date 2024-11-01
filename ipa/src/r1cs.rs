@@ -241,11 +241,20 @@ impl<P:Pairing> R1CSVectors<P> {
 
         end_timer!(timer);
 
+        let vec_w = if end <= num_instance_variables {
+            instance_assignment[start..end].to_vec()
+        } else if start >= num_instance_variables {
+            witness_assignment[(start - num_instance_variables)..(end - num_instance_variables)].to_vec()
+        } else {
+            vec![&instance_assignment[start..],
+            &witness_assignment[..(end - num_instance_variables)]].concat()
+        };
+
         Ok( Self {
             vec_x: sub_vec_x,
             vec_y: sub_vec_y,
             vec_z: sub_vec_z,
-            vec_w: instance_assignment[start..end].to_vec(),
+            vec_w,
             vec_a: sub_vec_a,
             vec_b: sub_vec_b,
             vec_c: sub_vec_c
