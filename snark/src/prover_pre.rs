@@ -4,6 +4,7 @@ use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolyn
 use std::marker::PhantomData;
 use std::time::Instant;
 use ark_ec::pairing::Pairing;
+use ark_ec::VariableBaseMSM;
 use merlin::Transcript;
 use my_ipa::ipa::IPA;
 use my_kzg::{biv_batch_kzg::BivBatchKZG, par_join_3, uni_batch_kzg::BatchKZG};
@@ -152,23 +153,16 @@ impl<P: Pairing> PreProver<P> {
                 let poly = DeIPA::<P>::interpolate_from_eval_domain(evals.clone(), m_domain);
                 (poly, evals)
             }).unzip(),
+            // let all sub-provers have t_low and t_high
             || {
-                if Net::am_master() {
-                    let t_low_evals : Vec<_> = generate_powers(r, m);
-                    let t_row_low = DeIPA::<P>::interpolate_from_eval_domain(t_low_evals.clone(), x_domain);
-                    (t_row_low, t_low_evals)
-                } else {
-                    (UnivariatePolynomial::zero(), Vec::new())
-                }
+                let t_low_evals : Vec<_> = generate_powers(r, m);
+                let t_row_low = DeIPA::<P>::interpolate_from_eval_domain(t_low_evals.clone(), x_domain);
+                (t_row_low, t_low_evals)
             },
             || {
-                if Net::am_master() {
-                    let t_high_evals : Vec<_> = generate_powers(&r_pow, m);
-                    let t_row_high = DeIPA::<P>::interpolate_from_eval_domain(t_high_evals.clone(), x_domain);
-                    (t_row_high, t_high_evals)
-                } else {
-                    (UnivariatePolynomial::zero(), Vec::new())
-                }
+                let t_high_evals : Vec<_> = generate_powers(&r_pow, m);
+                let t_row_high = DeIPA::<P>::interpolate_from_eval_domain(t_high_evals.clone(), x_domain);
+                (t_row_high, t_high_evals)
             });
         
         (DeAandTPolys {a_pa_low: take(&mut polys[0]),
@@ -249,14 +243,11 @@ impl<P: Pairing> PreProver<P> {
                 let b_pc = DeIPA::<P>::interpolate_from_eval_domain(evals_b_pc.clone(), m_domain);
                 (b_pc, evals_b_pc)
             },
+            // let all sub-provers have t_col
             || {
-                if Net::am_master() {
-                    let t_col_evals : Vec<_> = (0..m).into_par_iter().map(|i| alpha.pow([i as u64])).collect();
-                    let t_col = DeIPA::<P>::interpolate_from_eval_domain(t_col_evals.clone(), x_domain);
-                    (t_col, t_col_evals)
-                } else {
-                    (UnivariatePolynomial::zero(), Vec::new())
-                }
+                let t_col_evals : Vec<_> = (0..m).into_par_iter().map(|i| alpha.pow([i as u64])).collect();
+                let t_col = DeIPA::<P>::interpolate_from_eval_domain(t_col_evals.clone(), x_domain);
+                (t_col, t_col_evals)
             }
         );
 
@@ -365,12 +356,11 @@ impl<P: Pairing> PreProver<P> {
         assert_eq!(m_domain.size(), a_t_evals.eval_a_pa_low.len());
 
         let w = x_domain.group_gen();
-        
-        // let factors: Vec<P::ScalarField> = (0..9).into_par_iter().map(|i| v.pow([i as u64])).collect();
 
+        // new method to compute f2, to make every prover has f2, and commit distributedly
         let (polys_f2, polys_f1) = 
         rayon::join(
-            || if Net::am_master() {
+            || {
             let elements: Vec<P::ScalarField> = generate_powers(&w, x_domain.size());
     
             let mut denom_high : Vec<_> = a_t_evals.eval_t_row_high.par_iter()
@@ -401,8 +391,6 @@ impl<P: Pairing> PreProver<P> {
                     DeIPA::<P>::interpolate_from_eval_domain(evals, &x_domain)
                 })
                 .collect::<Vec<_>>()
-        } else {
-            vec![UnivariatePolynomial::zero(); 9]
         }, || {
             let ((f1_row_pa_low, f1_row_pa_high, f1_row_pb_low),
             (f1_row_pb_high, f1_row_pc_low, f1_row_pc_high),
@@ -725,13 +713,43 @@ impl<P: Pairing> PreProver<P> {
         let coms_f1 = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &sub_polys_f1.iter().collect::<Vec<_>>());
         println!("Prover {:?} commits f1 time: {:?}", sub_prover_id, time.elapsed());
     
-        let time = Instant::now();
-        let (coms_f1, coms_f2) = if Net::am_master() {
-            let coms_f1 = coms_f1.unwrap();
-            let coms_f2 = BatchKZG::<P>::commit(&x_srs, &polys_f2.iter().collect::<Vec<_>>()).unwrap();
-            (coms_f1, coms_f2)
+        // improved f2 commit method, each sub-prover only commits partial msm, and the master prover adds them
+        // let time = Instant::now();
+        let size = x_srs.len() / Net::n_parties();
+        let start = sub_prover_id * size;
+        let end = start + size;
+
+        let coeffs_f2: Vec<Vec<P::ScalarField>> = polys_f2.par_iter().map(|poly| {
+            let mut coeffs = poly.coeffs.to_vec();
+            coeffs.resize(x_srs.len(), P::ScalarField::zero());
+            coeffs
+        } ).collect();
+        let sub_coeffs_f2: Vec<&[P::ScalarField]> = coeffs_f2.par_iter().map(|coeff| {
+            &coeff[start..end]
+        }).collect();
+        let sub_powers = &x_srs[start..end];
+        let sub_coms_f2: Vec<P::G1Affine> = sub_coeffs_f2.into_par_iter().map(|sub_coeff| {
+            P::G1MSM::msm_unchecked(sub_powers, &sub_coeff).into()
+        }).collect();
+        let sub_coms_f2 = Net::send_to_master(&sub_coms_f2);
+        let coms_f2 = if Net::am_master() {
+            let sub_coms_f2 = sub_coms_f2.unwrap();
+            (0..9).into_par_iter()
+                .map(|col_index| {
+                    sub_coms_f2.iter().map(|row| row[col_index])
+                    .fold(P::G1MSM::zero(), |acc, x| acc + x)
+                    .into().into()
+                }).collect()
         } else {
-            (vec![P::G1::zero(); 9], vec![P::G1::zero(); 9])
+            vec![P::G1::zero(); 9]
+        };
+
+        let time = Instant::now();
+        let coms_f1 = if Net::am_master() {
+            let coms_f1 = coms_f1.unwrap();
+            coms_f1
+        } else {
+            vec![P::G1::zero(); 9]
         };
         println!("Prover {:?} commits f2 time: {:?}", sub_prover_id, time.elapsed());
 
