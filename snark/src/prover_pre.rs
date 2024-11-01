@@ -19,6 +19,7 @@ use my_kzg::helper::{generate_powers, linear_combination_poly};
 use my_kzg::uni_trivial_kzg::DeKZG;
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use std::mem::take;
+use ark_ff::batch_inversion;
 
 #[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct DeLowerAandBEvals<P: Pairing> {
@@ -364,183 +365,122 @@ impl<P: Pairing> PreProver<P> {
         assert_eq!(m_domain.size(), a_t_evals.eval_a_pa_low.len());
 
         let w = x_domain.group_gen();
-        let elements: Vec<P::ScalarField> = (0..x_domain.size()).into_par_iter().map(|i| w.pow([i as u64])).collect();
+        
         // let factors: Vec<P::ScalarField> = (0..9).into_par_iter().map(|i| v.pow([i as u64])).collect();
 
-        let (f2_row_pa_low, f2_row_pa_high, f2_row_pb_low): (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) 
-            = if Net::am_master(){
-             par_join_3!(
-            || {
-                let evals_row_pa_low: Vec<P::ScalarField> = n_evals.row_pa_low.par_iter()
-                    .zip(a_t_evals.eval_t_row_low.par_iter())
-                    .zip(elements.par_iter())
-                    .map(|((n, t), y)| *n * (*gamma + *beta * y + t).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_row_pa_low, &x_domain)
-            }, 
-            || {
-                let evals_row_pa_high: Vec<P::ScalarField> = n_evals.row_pa_high.par_iter()
-                    .zip(a_t_evals.eval_t_row_high.par_iter())
-                    .zip(elements.par_iter())
-                    .map(|((n, t), y)| *n * (*gamma + *beta * y + t).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_row_pa_high, &x_domain)
-            }, 
-            || {
-                let evals_row_pb_low: Vec<P::ScalarField> = n_evals.row_pb_low.par_iter()
-                    .zip(a_t_evals.eval_t_row_low.par_iter())
-                    .zip(elements.par_iter())
-                    .map(|((n, t), y)| *n * (*gamma + *beta * y + t).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_row_pb_low, &x_domain)
-            }
-        )} else {
-            (UnivariatePolynomial::zero(), UnivariatePolynomial::zero(), UnivariatePolynomial::zero())
-        };
-
-        let (f2_row_pb_high, f2_row_pc_low, f2_row_pc_high): (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) 
-            = if Net::am_master(){par_join_3!(
-            || {
-                let evals_row_pb_high: Vec<P::ScalarField> = n_evals.row_pb_high.par_iter()
-                    .zip(a_t_evals.eval_t_row_high.par_iter())
-                    .zip(elements.par_iter())
-                    .map(|((n, t), y)| *n * (*gamma + *beta * y + t).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_row_pb_high, &x_domain)
-            }, 
-            || {
-                let evals_row_pc_low: Vec<P::ScalarField> = n_evals.row_pc_low.par_iter()
-                    .zip(a_t_evals.eval_t_row_low.par_iter())
-                    .zip(elements.par_iter())
-                    .map(|((n, t), y)| *n * (*gamma + *beta * y + t).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_row_pc_low, &x_domain)
-            }, 
-            || {
-                let evals_row_pc_high: Vec<P::ScalarField> = n_evals.row_pc_high.par_iter()
-                    .zip(a_t_evals.eval_t_row_high.par_iter())
-                    .zip(elements.par_iter())
-                    .map(|((n, t), y)| *n * (*gamma + *beta * y + t).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_row_pc_high, &x_domain)
-            }
-        )} else {
-            (UnivariatePolynomial::zero(), UnivariatePolynomial::zero(), UnivariatePolynomial::zero())
-        };
+        let (polys_f2, polys_f1) = 
+        rayon::join(
+            || if Net::am_master() {
+            let elements: Vec<P::ScalarField> = generate_powers(&w, x_domain.size());
     
-        let (f2_col_pa, f2_col_pb, f2_col_pc): (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) 
-            = if Net::am_master(){par_join_3!(
-            || {
-                let evals_col_pa: Vec<P::ScalarField> = n_evals.col_pa.par_iter()
-                    .zip(b_t_evals.eval_t_col.par_iter())
-                    .zip(elements.par_iter())
-                    .map(|((n, t), y)| *n * (*gamma + *beta * y + t).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_col_pa, &x_domain)
-            }, 
-            || {
-                let evals_col_pb: Vec<P::ScalarField> = n_evals.col_pb.par_iter()
-                    .zip(b_t_evals.eval_t_col.par_iter())
-                    .zip(elements.par_iter())
-                    .map(|((n, t), y)| *n * (*gamma + *beta * y + t).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_col_pb, &x_domain)
-            }, 
-            || {
-                let evals_col_pc: Vec<P::ScalarField> = n_evals.col_pc.par_iter()
-                    .zip(b_t_evals.eval_t_col.par_iter())
-                    .zip(elements.par_iter())
-                    .map(|((n, t), y)| *n * (*gamma + *beta * y + t).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_col_pc, &x_domain)
-            }
-        )} else {
-            (UnivariatePolynomial::zero(), UnivariatePolynomial::zero(), UnivariatePolynomial::zero())
-        };
+            let mut denom_high : Vec<_> = a_t_evals.eval_t_row_high.par_iter()
+            .zip(elements.par_iter())
+            .map(|(t, y)| (*gamma + *beta * y + t))
+            .collect();
+            batch_inversion(&mut denom_high);
+            let mut denom_low : Vec<_> = a_t_evals.eval_t_row_low.par_iter()
+            .zip(elements.par_iter())
+            .map(|(t, y)| (*gamma + *beta * y + t))
+            .collect();
+            batch_inversion(&mut denom_low);
+            let mut denom_t_col : Vec<_> = b_t_evals.eval_t_col.par_iter()
+            .zip(elements.par_iter())
+            .map(|(t, y)| (*gamma + *beta * y + t))
+            .collect();
+            batch_inversion(&mut denom_t_col);
 
-        let polys_f2 = if Net::am_master() {
-            vec![f2_row_pa_low, f2_row_pa_high, f2_row_pb_low, f2_row_pb_high, f2_row_pc_low, f2_row_pc_high, 
-            f2_col_pa, f2_col_pb, f2_col_pc]
+            let numerators = [&n_evals.row_pa_low, &n_evals.row_pa_high, &n_evals.row_pb_low,
+            &n_evals.row_pb_high, &n_evals.row_pc_low, &n_evals.row_pc_high, &n_evals.col_pa, &n_evals.col_pb, &n_evals.col_pc];
+            let denominators = [&denom_low, &denom_high, &denom_low, &denom_high, &denom_low, &denom_high, &denom_t_col, &denom_t_col, &denom_t_col];
+            numerators.par_iter().zip(denominators.par_iter())
+                .map(|(numerator, denominator)| {
+                    let evals = numerator.par_iter()
+                        .zip(denominator.par_iter())
+                        .map(|(n, d)| *n * d)
+                        .collect::<Vec<_>>();
+                    DeIPA::<P>::interpolate_from_eval_domain(evals, &x_domain)
+                })
+                .collect::<Vec<_>>()
         } else {
             vec![UnivariatePolynomial::zero(); 9]
-        };
+        }, || {
+            let ((f1_row_pa_low, f1_row_pa_high, f1_row_pb_low),
+            (f1_row_pb_high, f1_row_pc_low, f1_row_pc_high),
+            (f1_col_pa, f1_col_pb, f1_col_pc)) = par_join_3!(
+                || par_join_3!(
+                || {
+                    let evals_row_pa_low: Vec<P::ScalarField> = lower_evals.eval_la_pa_low.par_iter()
+                        .zip(a_t_evals.eval_a_pa_low.par_iter())
+                        .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
+                        .collect();
+                    DeIPA::<P>::interpolate_from_eval_domain(evals_row_pa_low, &m_domain)
+                }, 
+                || {
+                    let evals_row_pa_high: Vec<P::ScalarField> = lower_evals.eval_la_pa_high.par_iter()
+                        .zip(a_t_evals.eval_a_pa_high.par_iter())
+                        .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
+                        .collect();
+                    DeIPA::<P>::interpolate_from_eval_domain(evals_row_pa_high, &m_domain)
+                }, 
+                || {
+                    let evals_row_pb_low: Vec<P::ScalarField> = lower_evals.eval_la_pb_low.par_iter()
+                        .zip(a_t_evals.eval_a_pb_low.par_iter())
+                        .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
+                        .collect();
+                    DeIPA::<P>::interpolate_from_eval_domain(evals_row_pb_low, &m_domain)
+                }
+            ), || par_join_3!(
+                || {
+                    let evals_row_pb_high: Vec<P::ScalarField> = lower_evals.eval_la_pb_high.par_iter()
+                        .zip(a_t_evals.eval_a_pb_high.par_iter())
+                        .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
+                        .collect();
+                    DeIPA::<P>::interpolate_from_eval_domain(evals_row_pb_high, &m_domain)
+                }, 
+                || {
+                    let evals_row_pc_low: Vec<P::ScalarField> = lower_evals.eval_la_pc_low.par_iter()
+                        .zip(a_t_evals.eval_a_pc_low.par_iter())
+                        .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
+                        .collect();
+                    DeIPA::<P>::interpolate_from_eval_domain(evals_row_pc_low, &m_domain)
+                }, 
+                || {
+                    let evals_row_pc_high: Vec<P::ScalarField> = lower_evals.eval_la_pc_high.par_iter()
+                        .zip(a_t_evals.eval_a_pc_high.par_iter())
+                        .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
+                        .collect();
+                    DeIPA::<P>::interpolate_from_eval_domain(evals_row_pc_high, &m_domain)
+                }), || par_join_3!(
+                || {
+                    let evals_col_pa: Vec<P::ScalarField> = lower_evals.eval_lb_pa.par_iter()
+                        .zip(b_t_evals.eval_b_pa.par_iter())
+                        .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
+                        .collect();
+                    DeIPA::<P>::interpolate_from_eval_domain(evals_col_pa, &m_domain)
+                }, 
+                || {
+                    let evals_col_pb: Vec<P::ScalarField> = lower_evals.eval_lb_pb.par_iter()
+                        .zip(b_t_evals.eval_b_pb.par_iter())
+                        .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
+                        .collect();
+                    DeIPA::<P>::interpolate_from_eval_domain(evals_col_pb, &m_domain)
+                }, 
+                || {
+                    let evals_col_pc: Vec<P::ScalarField> = lower_evals.eval_lb_pc.par_iter()
+                        .zip(b_t_evals.eval_b_pc.par_iter())
+                        .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
+                        .collect();
+                    DeIPA::<P>::interpolate_from_eval_domain(evals_col_pc, &m_domain)
+                }
+            ));
 
-        let (f1_row_pa_low, f1_row_pa_high, f1_row_pb_low) = par_join_3!(
-            || {
-                let evals_row_pa_low: Vec<P::ScalarField> = lower_evals.eval_la_pa_low.par_iter()
-                    .zip(a_t_evals.eval_a_pa_low.par_iter())
-                    .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_row_pa_low, &m_domain)
-            }, 
-            || {
-                let evals_row_pa_high: Vec<P::ScalarField> = lower_evals.eval_la_pa_high.par_iter()
-                    .zip(a_t_evals.eval_a_pa_high.par_iter())
-                    .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_row_pa_high, &m_domain)
-            }, 
-            || {
-                let evals_row_pb_low: Vec<P::ScalarField> = lower_evals.eval_la_pb_low.par_iter()
-                    .zip(a_t_evals.eval_a_pb_low.par_iter())
-                    .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_row_pb_low, &m_domain)
-            }
-        );
-        let (f1_row_pb_high, f1_row_pc_low, f1_row_pc_high) = par_join_3!(
-            || {
-                let evals_row_pb_high: Vec<P::ScalarField> = lower_evals.eval_la_pb_high.par_iter()
-                    .zip(a_t_evals.eval_a_pb_high.par_iter())
-                    .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_row_pb_high, &m_domain)
-            }, 
-            || {
-                let evals_row_pc_low: Vec<P::ScalarField> = lower_evals.eval_la_pc_low.par_iter()
-                    .zip(a_t_evals.eval_a_pc_low.par_iter())
-                    .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_row_pc_low, &m_domain)
-            }, 
-            || {
-                let evals_row_pc_high: Vec<P::ScalarField> = lower_evals.eval_la_pc_high.par_iter()
-                    .zip(a_t_evals.eval_a_pc_high.par_iter())
-                    .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_row_pc_high, &m_domain)
-            }
-        );
-        let (f1_col_pa, f1_col_pb, f1_col_pc) = par_join_3!(
-            || {
-                let evals_col_pa: Vec<P::ScalarField> = lower_evals.eval_lb_pa.par_iter()
-                    .zip(b_t_evals.eval_b_pa.par_iter())
-                    .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_col_pa, &m_domain)
-            }, 
-            || {
-                let evals_col_pb: Vec<P::ScalarField> = lower_evals.eval_lb_pb.par_iter()
-                    .zip(b_t_evals.eval_b_pb.par_iter())
-                    .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_col_pb, &m_domain)
-            }, 
-            || {
-                let evals_col_pc: Vec<P::ScalarField> = lower_evals.eval_lb_pc.par_iter()
-                    .zip(b_t_evals.eval_b_pc.par_iter())
-                    .map(|(lower, upper)| (*gamma + *beta * lower + upper).inverse().unwrap())
-                    .collect();
-                DeIPA::<P>::interpolate_from_eval_domain(evals_col_pc, &m_domain)
-            }
-        );
+            vec![f1_row_pa_low, f1_row_pa_high,
+                f1_row_pb_low, f1_row_pb_high,
+                f1_row_pc_low, f1_row_pc_high,
+                f1_col_pa, f1_col_pb, f1_col_pc]
+        });
 
-        let sub_polys_f1 = vec![f1_row_pa_low, f1_row_pa_high,
-            f1_row_pb_low, f1_row_pb_high,
-            f1_row_pc_low, f1_row_pc_high,
-            f1_col_pa, f1_col_pb, f1_col_pc];
-
-        (sub_polys_f1, polys_f2)
+        (polys_f1, polys_f2)
     }
 
     // TODO: optimized par_iter
