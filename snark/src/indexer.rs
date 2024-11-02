@@ -107,7 +107,7 @@ impl DeColIndex {
 // Note val has the same non-zero entry order with row
 // Here we use Field elements
 // if some sub-matrix has m'' < m' non-zero entries, define arbitrary values for these (m' - m'') entries, here use 0
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct DeValEvals<P: Pairing> {
     pub evals_val_pa: Vec<P::ScalarField>,
     pub evals_val_pb: Vec<P::ScalarField>,
@@ -162,6 +162,7 @@ pub struct PreMesProver<P: Pairing> {
     pub upper_r_poly: UnivariatePolynomial<P::ScalarField>,
     pub de_row_index_vecs: Vec<DeRowIndex>,
     pub de_col_index_vecs: Vec<DeColIndex>,
+    pub val_evals: DeValEvals<P>,
     pub val_polys: DeValPolys<P>,
     pub lower_a_b_evals: DeLowerAandBEvals<P>,
     pub lower_a_b_polys: DeLowerAandBPolys<P>,
@@ -211,7 +212,7 @@ impl<P: Pairing> Indexer<P> {
         let coms_n = Indexer::<P>::commit_n_polys(&x_srs, &n_polys);
         let com_l = Indexer::<P>::commit_poly_upper_l(&powers, l, &y_domain);
         (
-            PreMesProver{upper_r_poly, de_row_index_vecs, de_col_index_vecs, val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys}, 
+            PreMesProver{upper_r_poly, de_row_index_vecs, de_col_index_vecs, val_evals: de_val_evals_vecs[sub_prover_id].clone(), val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys}, 
             PreMesVerifier{com_upper_r, coms_val, coms_lower_a_b, com_l, coms_n}
         )
     }

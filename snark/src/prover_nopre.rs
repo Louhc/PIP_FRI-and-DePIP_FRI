@@ -141,6 +141,7 @@ impl<P: Pairing> NoPreProver<P> {
         (evals_g1_h1, proof_g1_h1)
     }
 
+    // TODO: Very possible to save couple FFTs/IFFTs here, but it's too small to matter for now
     pub fn compute_y_polys_and_2nd_target_poly (
         l: usize,
         message: &Vec<(Vec<P::ScalarField>, P::G1)>,

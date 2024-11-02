@@ -91,7 +91,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         let timer = start_timer!(|| "de r1cs prove");
 
         // Derive the message
-        let PreMesProver { upper_r_poly, de_row_index_vecs, de_col_index_vecs, val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys } = pre_mes_prover;
+        let PreMesProver { upper_r_poly, de_row_index_vecs, de_col_index_vecs, val_evals, val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys } = pre_mes_prover;
         let row_index_vec = &de_row_index_vecs[sub_prover_id];
         let col_index_vec = &de_col_index_vecs[sub_prover_id];
 
@@ -297,7 +297,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         // compute public polys evaluations at (alpha, beta)
         let step = start_timer!(|| "compute pub evals at (alpha, beta)");
         let eval_beta = evaluate_one_lagrange::<P>(sub_prover_id, &y_domain, &beta);
-        let evals_p_alpha_beta: Vec<<P as Pairing>::ScalarField> = PreProver::<P>::compute_pub_evals_alpha_beta(&upper_a_t_polys, &upper_b_t_polys, &val_polys, &m_domain, &eval_beta);
+        let evals_p_alpha_beta: Vec<<P as Pairing>::ScalarField> = PreProver::<P>::compute_pub_evals_alpha_beta(&upper_a_t_evals, &upper_b_t_evals, &val_evals, &eval_beta);
         assert_eq!(evals_p_alpha_beta.len(), 3);
         end_timer!(step);
 
@@ -326,10 +326,13 @@ impl<P: Pairing> DeSNARKLog<P> {
         };
 
         // compute and commit polys g3, h3low, h3mid, h3high
-        let time = Instant::now();
+        let step = start_timer!(|| "compute g3 h3");
         let polys_g3_h3 = PreProver::<P>::compute_g3_h3(&val_polys, &upper_a_t_polys, &upper_b_t_polys, &m_domain, &eval_beta, &w, &u3);
+        end_timer!(step);
+
+        let step = start_timer!(|| "commit g3 h3");
         let coms_g3_h3 = PreProver::<P>::commit_g3_h3(&m_srs, &polys_g3_h3);
-        println!("Prover {:?} commits g3 h3 time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // generate challenges delta and u4
         let (delta, u4) = if Net::am_master() {
@@ -344,18 +347,21 @@ impl<P: Pairing> DeSNARKLog<P> {
         };
 
         // compute evals at delta (or beta for L_i(beta)) of upper and lower polys
-        let time = Instant::now();
+        let step = start_timer!(|| "compute evals at delta beta");
         let (val_upper_and_l_evals, lower_evals, evals_g3_h3, proof_g3_h3) = PreProver::<P>::compute_evals_at_delta_beta_and_g3_h3_proofs(
             &m_srs, &val_polys, &upper_a_t_polys, &upper_b_t_polys, &lower_a_b_polys, &eval_beta, &polys_g3_h3, &delta, &gamma);
         // send them to P_0, compute proofs and evals of g3, h3
         let (val_upper_and_l_total_evals, evals_g3_h3, proof_g3_h3) = PreProver::<P>::send_evals_at_delta_beta_and_g3_h3_proofs(&val_upper_and_l_evals, &evals_g3_h3, &proof_g3_h3);
-        println!("Prover {:?} compute evals at beta and proofs/evals of g3,h3 time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // compute and commit polys g4,h4
-        let time = Instant::now();
+        let step = start_timer!(|| "compute g4 h4");
         let polys_g4_h4 = PreProver::<P>::compute_g4_h4(&val_upper_and_l_total_evals, &y_domain, &delta, &w, &u3, &u4);
+        end_timer!(step);
+
+        let step = start_timer!(|| "commit g4 h4");
         let coms_g4_h4 = PreProver::<P>::commit_g4_h4(&y_srs, &y_domain, &polys_g4_h4);
-        println!("Prover {:?} commits g4, h4 time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // compute and commit q2
         let time = Instant::now();
