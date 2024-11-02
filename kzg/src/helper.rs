@@ -135,6 +135,20 @@ pub fn linear_combination_poly<P: Pairing> (
     combined_polynomial
 }
 
+pub fn linear_combination_poly_by_ref<P: Pairing> (
+    polynomials: &Vec<&UnivariatePolynomial<P::ScalarField>>,
+    challenge: &P::ScalarField,
+) -> UnivariatePolynomial<P::ScalarField> {
+    let linear_factors = generate_powers(challenge, polynomials.len());
+    // an example of polynomial rlc using par_iter()
+    let combined_polynomial = polynomials.par_iter().zip(linear_factors.par_iter())
+        .map(|(&poly, factor)| poly * *factor)
+        .reduce_with(|acc, poly| acc + poly)
+        .unwrap_or(UnivariatePolynomial::zero());
+
+    combined_polynomial
+}
+
 pub fn linear_combination_field<P: Pairing> (
     values: &Vec<P::ScalarField>,
     challenge: &P::ScalarField,

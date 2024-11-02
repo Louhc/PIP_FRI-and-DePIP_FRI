@@ -39,7 +39,7 @@ fn init() -> (usize, usize, usize) {
     Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
     let l = Net::n_parties();
     let sub_prover_id = Net::party_id();
-    let m = 1 << 22;
+    let m = 1 << 12;
     (m, l, sub_prover_id)
 }
 

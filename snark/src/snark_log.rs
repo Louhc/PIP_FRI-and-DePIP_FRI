@@ -363,8 +363,8 @@ impl<P: Pairing> DeSNARKLog<P> {
 
         // compute and commit q2
         let time = Instant::now();
-        let (poly_q2, com_q2) = PreProver::<P>::compute_and_commit_q2(&x_srs, &polys_f2, &x_domain, &n_polys, &upper_a_t_polys, &upper_b_t_polys, &v, &gamma, &beta);
-        println!("Prover {:?} computes and commits q2 time: {:?}", sub_prover_id, time.elapsed());
+        let (poly_q2, com_q2) = PreProver::<P>::compute_and_commit_q2(sub_prover_id, &x_srs, &polys_f2, &x_domain, &n_polys, &upper_a_t_polys, &upper_b_t_polys, &v, &gamma, &beta);
+        println!("Prover {:?} computes/commits q2 time: {:?}", sub_prover_id, time.elapsed());
 
         // compute and commit q1, compute and commit g5 h5
         let time = Instant::now();
