@@ -273,7 +273,7 @@ impl<P: Pairing> PreProver<P> {
             },
             // let all sub-provers have t_col
             || {
-                let t_col_evals : Vec<_> = (0..m).into_par_iter().map(|i| alpha.pow([i as u64])).collect();
+                let t_col_evals : Vec<_> = generate_powers(alpha, m);
                 let t_col = DeIPA::<P>::interpolate_from_eval_domain(t_col_evals.clone(), x_domain);
                 (t_col, t_col_evals)
             }

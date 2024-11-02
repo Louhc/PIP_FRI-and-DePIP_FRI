@@ -1,9 +1,11 @@
 use ark_ec::pairing::Pairing;
 use ark_ff::{One, Zero, UniformRand};
 use ark_std::rand::{rngs::StdRng, SeedableRng};
+use ark_std::{start_timer, end_timer};
 use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial};
 use super::r1cs::{R1CSVectors, R1CSPubVectors};
 use rayon::prelude::*;
+use std::mem::take;
 
 // This is a simple tests for generatiing random r1cs inner product products
 #[derive(Clone)]
@@ -89,16 +91,19 @@ pub fn generate_r1cs_de_vectors<P: Pairing> (
 pub fn generate_r1cs_de_polynomials<P: Pairing> (
     m: usize,
     l: usize,
-    r1cs_vecs: &R1CSVectors<P>,
+    mut r1cs_vecs: R1CSVectors<P>,
 ) -> (R1CSPublicPolys<P>, R1CSWitnessPolys<P>) {
+    let timer = start_timer!(|| "generate r1cs de polynomials");
     assert!(m.is_power_of_two());
     assert!(l.is_power_of_two());
 
-    let (polynomial_x, polynomial_w) = generate_polynomials_from_vectors::<P>(&r1cs_vecs.vec_x, &r1cs_vecs.vec_w);
-    let polynomial_y = generate_polynomials_from_left_vector::<P>(&r1cs_vecs.vec_y);
-    let polynomial_z = generate_polynomials_from_left_vector::<P>(&r1cs_vecs.vec_z);
-    let (polynomial_a, polynomial_b) = generate_polynomials_from_vectors::<P>(&r1cs_vecs.vec_a, &r1cs_vecs.vec_b);
-    let polynomial_c = generate_polynomials_from_left_vector::<P>(&r1cs_vecs.vec_c);
+    let (polynomial_x, polynomial_w) = generate_polynomials_from_vectors::<P>(take(&mut r1cs_vecs.vec_x), take(&mut r1cs_vecs.vec_w));
+    let polynomial_y = generate_polynomials_from_left_vector::<P>(take(&mut r1cs_vecs.vec_y));
+    let polynomial_z = generate_polynomials_from_left_vector::<P>(take(&mut r1cs_vecs.vec_z));
+    let (polynomial_a, polynomial_b) = generate_polynomials_from_vectors::<P>(take(&mut r1cs_vecs.vec_a), take(&mut r1cs_vecs.vec_b));
+    let polynomial_c = generate_polynomials_from_left_vector::<P>(take(&mut r1cs_vecs.vec_c));
+
+    end_timer!(timer);
 
     (R1CSPublicPolys {
         poly_pa: polynomial_x,
@@ -147,28 +152,21 @@ pub fn generate_r1cs_pub_polynomials<P: Pairing> (
 }
 
 pub fn generate_polynomials_from_vectors<P: Pairing> (
-    vector_left: &Vec<P::ScalarField>,
-    vector_right: &Vec<P::ScalarField>,
+    vector_left: Vec<P::ScalarField>,
+    mut vector_right: Vec<P::ScalarField>,
 ) -> (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
-    let polynomial_left = UnivariatePolynomial::from_coefficients_vec(vector_left.clone());
-    let mut coeffs_right = vec![vector_right[0].clone()];
-    let mut rest = vector_right.clone().split_off(1);
-    rest.reverse();
-    coeffs_right.extend(rest);
-    assert!(vector_left.len() == coeffs_right.len());
-    assert_eq!(vector_right[0], coeffs_right[0]);
-    assert_eq!(coeffs_right[1], vector_right[vector_right.len()-1]);
+    let polynomial_left = UnivariatePolynomial::from_coefficients_vec(vector_left);
+    (&mut vector_right[1..]).reverse();
     
-    let polynomial_right = UnivariatePolynomial::from_coefficients_vec(coeffs_right);
+    let polynomial_right = UnivariatePolynomial::from_coefficients_vec(vector_right);
 
     (polynomial_left, polynomial_right)
 }
 
 pub fn generate_polynomials_from_left_vector<P: Pairing> (
-    vector_left: &Vec<P::ScalarField>,
+    vector_left: Vec<P::ScalarField>,
 ) -> UnivariatePolynomial<P::ScalarField> {
-    let polynomial_left = UnivariatePolynomial::from_coefficients_vec(vector_left.clone());
-
+    let polynomial_left = UnivariatePolynomial::from_coefficients_vec(vector_left);
     polynomial_left
 }
 

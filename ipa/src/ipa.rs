@@ -7,8 +7,8 @@ use ark_ec::pairing::Pairing;
 use my_kzg::{uni_batch_kzg::BatchKZG, transcript::ProofTranscript, uni_trivial_kzg::{KZG, UniVerifierSRS}};
 use crate::Error;
 use merlin::Transcript;
-use ark_ff::{Zero, One};
-use std::mem::take;
+use ark_ff::Zero;
+use rayon::prelude::*;
 
 pub struct IPA<P: Pairing> {
     _pairing: PhantomData<P>,
@@ -53,18 +53,20 @@ impl<P: Pairing> IPA<P> {
         domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
         let u = *challenge;
-        let (h, reminder_polynomial) = polynomial.divide_by_vanishing_poly(*domain).unwrap();
-        // let constant_term = *sum / domain.size_as_field_element();
-        let constant_term = reminder_polynomial.coeffs[0];
-        // test over
-        let mut g_prime = reminder_polynomial + UnivariatePolynomial::from_coefficients_vec(vec![-constant_term]);
-        // Check the correctness of sum, the constant coefficient of g_prime should be zero
-        assert_eq!(g_prime.coeffs[0], P::ScalarField::zero());
-        let mut coeffs_g = take(&mut g_prime.coeffs);
-        coeffs_g.remove(0);
-        // let g = &g_prime / &UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero(), P::ScalarField::one()]);
-        let g = UnivariatePolynomial::from_coefficients_vec(coeffs_g);
-        let g_u = &g * &UnivariatePolynomial::from_coefficients_vec(vec![-u, P::ScalarField::one()]);
+        let (h, mut g_u) = polynomial.divide_by_vanishing_poly(*domain).unwrap();
+
+        g_u.coeffs[0] = P::ScalarField::zero();
+        // We need g_u (x - u) / x
+
+        let mut coeffs_g = g_u.coeffs.clone();
+        coeffs_g.par_iter_mut().enumerate()
+            .for_each(|(i, out)| {
+                if i != g_u.coeffs.len() - 1 {
+                    *out -= u * g_u.coeffs[i + 1];
+                }
+            });
+
+        let g_u = UnivariatePolynomial::from_coefficients_vec(coeffs_g);
 
         (g_u, h)
     }
