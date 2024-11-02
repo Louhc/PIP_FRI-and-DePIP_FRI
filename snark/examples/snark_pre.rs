@@ -1,5 +1,5 @@
 // usage
-// RAYON_NUM_THREADS=32 cargo build --release --example snark_pre --no-default-features --features "parallel asm"RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu-native' cargo build --release --example snark_pre --no-default-features --features "parallel asm"
+// RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' cargo build --release --example snark_pre --no-default-features --features "parallel asm"
 // RAYON_NUM_THREADS=32 ./snark_linear_verifier_test 2 ../../../snark/data/4
 
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};

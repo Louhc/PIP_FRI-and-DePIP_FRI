@@ -369,14 +369,19 @@ impl<P: Pairing> DeSNARKLog<P> {
         // compute and commit q1, compute and commit g5 h5
         let time = Instant::now();
         let (sub_poly_q1, com_q1) = PreProver::<P>::compute_and_commit_q1(&m_srs, &m_domain, &de_polys_f1, &upper_a_t_polys, &upper_b_t_polys, &lower_a_b_polys, &v, &gamma, &beta);
+        println!("Prover {:?} commits q1 time: {:?}", sub_prover_id, time.elapsed());
+        let time = Instant::now();
         let (eval_q1, proof_q1) = PreProver::<P>::open_q1(&m_srs, &sub_poly_q1, &delta);
+        println!("Prover {:?} opens q1 time: {:?}", sub_prover_id, time.elapsed());
+
+        let time = Instant::now();
         let (polys_g5_h5, coms_g5_h5) = PreProver::<P>::compute_and_commit_g5_h5(&y_srs, &de_polys_f1, &val_upper_and_l_total_evals, &lower_evals, &y_domain, &delta, &beta, &gamma, &v, &u4,
             &eval_q1, &m_domain);
         assert_eq!(polys_g5_h5.len(), 2);
         assert_eq!(coms_g5_h5.len(), 2);
         let mut coms_g4_h4_g5_h5 = coms_g4_h4.clone();
         coms_g4_h4_g5_h5.extend(&coms_g5_h5);
-        println!("Prover {:?} commits and open q1 time: {:?}", sub_prover_id, time.elapsed());
+        println!("Prover {:?} opens g5/h5 time: {:?}", sub_prover_id, time.elapsed());
 
         // generate challenge zeta
         let zeta = if Net::am_master() {

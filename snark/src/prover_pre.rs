@@ -535,23 +535,38 @@ impl<P: Pairing> PreProver<P> {
         beta: &P::ScalarField,
     ) -> (UnivariatePolynomial<P::ScalarField>, P::G1) {
 
-        let poly_one = UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::one()]);
-        let poly_gamma = UnivariatePolynomial::from_coefficients_vec(vec![*gamma]);
+        let time = Instant::now();
+        let m_prime = m_domain.size();
+        let domain = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(2 * m_prime).unwrap();
+        let f1_evals: Vec<Vec<P::ScalarField>> = sub_polys_f1.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(domain).evals).collect();
+        let lower_polys = vec![&lower_a_b_polys.la_pa_low, &lower_a_b_polys.la_pa_high, &lower_a_b_polys.la_pb_low, &lower_a_b_polys.la_pb_high,
+            &lower_a_b_polys.la_pc_low, &lower_a_b_polys.la_pc_high, &lower_a_b_polys.lb_pa, &lower_a_b_polys.lb_pb, &lower_a_b_polys.lb_pc];
+        let upper_polys = vec![&upper_a_t_polys.a_pa_low, &upper_a_t_polys.a_pa_high, &upper_a_t_polys.a_pb_low,
+            &upper_a_t_polys.a_pb_high, &upper_a_t_polys.a_pc_low, &upper_a_t_polys.a_pc_high,
+            &upper_b_t_polys.b_pa, &upper_b_t_polys.b_pb, &upper_b_t_polys.b_pc];
+        let virtual_polys: Vec<UnivariatePolynomial<P::ScalarField>> = lower_polys.into_par_iter().zip(upper_polys.into_par_iter())
+            .map(|(lower, upper)| &(lower * *beta) + upper)
+            .collect();
+        let virtual_evals: Vec<Vec<P::ScalarField>> = virtual_polys.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(domain).evals).collect();
 
-        let sub_f1_row_pa_low = &(&sub_polys_f1[0] * &(&(&poly_gamma + &(&lower_a_b_polys.la_pa_low * *beta)) + &upper_a_t_polys.a_pa_low)) - &poly_one;
-        let sub_f1_row_pa_high = &(&sub_polys_f1[1] * &(&(&poly_gamma + &(&lower_a_b_polys.la_pa_high * *beta)) + &upper_a_t_polys.a_pa_high)) - &poly_one;
-        let sub_f1_row_pb_low = &(&sub_polys_f1[2] * &(&(&poly_gamma + &(&lower_a_b_polys.la_pb_low * *beta)) + &upper_a_t_polys.a_pb_low)) - &poly_one;
-        let sub_f1_row_pb_high = &(&sub_polys_f1[3] * &(&(&poly_gamma + &(&lower_a_b_polys.la_pb_high * *beta)) + &upper_a_t_polys.a_pb_high)) - &poly_one;
-        let sub_f1_row_pc_low = &(&sub_polys_f1[4] * &(&(&poly_gamma + &(&lower_a_b_polys.la_pc_low * *beta)) + &upper_a_t_polys.a_pc_low)) - &poly_one;
-        let sub_f1_row_pc_high = &(&sub_polys_f1[5] * &(&(&poly_gamma + &(&lower_a_b_polys.la_pc_high * *beta)) + &upper_a_t_polys.a_pc_high)) - &poly_one;
-        let sub_f1_col_pa = &(&sub_polys_f1[6] * &(&(&poly_gamma + &(&lower_a_b_polys.lb_pa * *beta)) + &upper_b_t_polys.b_pa)) - &poly_one;
-        let sub_f1_col_pb = &(&sub_polys_f1[7] * &(&(&poly_gamma + &(&lower_a_b_polys.lb_pb * *beta)) + &upper_b_t_polys.b_pb)) - &poly_one;
-        let sub_f1_col_pc = &(&sub_polys_f1[8] * &(&(&poly_gamma + &(&lower_a_b_polys.lb_pc * *beta)) + &upper_b_t_polys.b_pc)) - &poly_one;
+        let linear_factors = generate_powers(v, 9);
+        let evals_max: Vec<Vec<P::ScalarField>> = f1_evals.par_iter()
+            .zip(virtual_evals.par_iter())
+            .zip(linear_factors.par_iter())
+            .map(|((f1_eval, aux_eval), factor)|{
+                f1_eval.par_iter().zip(aux_eval.par_iter())
+                    .map(|(f1, aux)|{
+                        (*f1 * (*gamma + aux) - P::ScalarField::one()) * factor
+                    }).collect()
+            }).collect();
+        let evals_target: Vec<P::ScalarField> = (0..domain.size()).into_par_iter().map(|row_index|{
+            evals_max.par_iter().map(|eval| eval[row_index]).sum()
+        }).collect();
+        let poly_target = DeIPA::<P>::interpolate_from_eval_domain(evals_target, &domain);
 
-        let polys_vec = vec![sub_f1_row_pa_low, sub_f1_row_pa_high, sub_f1_row_pb_low, sub_f1_row_pb_high, sub_f1_row_pc_low, sub_f1_row_pc_high,
-            sub_f1_col_pa, sub_f1_col_pb, sub_f1_col_pc];
-        let (sub_poly_q1, remainder) = linear_combination_poly::<P>(&polys_vec, &v).divide_by_vanishing_poly(*m_domain).unwrap();
+        let (sub_poly_q1, remainder) = poly_target.divide_by_vanishing_poly(*m_domain).unwrap();
         assert_eq!(remainder, UnivariatePolynomial::zero());
+        println!("compute sub_poly_q1 time: {:?}", time.elapsed());
 
         let sub_com_q1 = KZG::<P>::commit(&m_srs, &sub_poly_q1).unwrap();
         let com_q1 = Net::send_to_master(&sub_com_q1);
