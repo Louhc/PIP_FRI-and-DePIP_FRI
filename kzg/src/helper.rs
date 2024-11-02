@@ -60,28 +60,30 @@ pub fn interpolate_on_trivial_domain<P: Pairing> (
 ) -> UnivariatePolynomial<P::ScalarField> {
     assert_eq!(points.len(), evals.len());
     // let mut result_polynomial = UnivariatePolynomial::zero();
+    if points.len() == 1 {
+        UnivariatePolynomial::from_coefficients_vec(evals.clone())
+    } else {
+        let numerator_polynomial = generator_numerator_polynomial::<P>(&points);
 
-    let numerator_polynomial = generator_numerator_polynomial::<P>(&points);
-
-    points.par_iter().enumerate().map(|(i, &point_i)| {
-        let mut constant_term = P::ScalarField::one();
-        for (j, &point_j) in points.iter().enumerate() {
-            if i != j {
-                constant_term *= point_i - point_j;
+        points.par_iter().enumerate().map(|(i, &point_i)| {
+            let mut constant_term = P::ScalarField::one();
+            for (j, &point_j) in points.iter().enumerate() {
+                if i != j {
+                    constant_term *= point_i - point_j;
+                }
             }
-        }
-        constant_term = constant_term.inverse().unwrap();
-        constant_term *= evals[i];
-        
-        let divider_polynomial = &UnivariatePolynomial::from_coefficients_vec(vec![
-            -point_i.clone(),
-            P::ScalarField::one()
-            ]);
-        let quotient_polynomial = &numerator_polynomial / &divider_polynomial;
-        &quotient_polynomial * constant_term
-    }).reduce_with(|acc, poly| acc + poly)
-        .unwrap_or(UnivariatePolynomial::zero())
-    
+            constant_term = constant_term.inverse().unwrap();
+            constant_term *= evals[i];
+            
+            let divider_polynomial = &UnivariatePolynomial::from_coefficients_vec(vec![
+                -point_i.clone(),
+                P::ScalarField::one()
+                ]);
+            let quotient_polynomial = &numerator_polynomial / &divider_polynomial;
+            &quotient_polynomial * constant_term
+        }).reduce_with(|acc, poly| acc + poly)
+            .unwrap_or(UnivariatePolynomial::zero())
+    }
 }
 
 // evaluate one evaluation of the id-th lagrange polynomial at the given point

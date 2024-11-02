@@ -706,7 +706,8 @@ impl<P: Pairing> DeSNARKLog<P> {
         let mut coms_t_f2_q2_n = coms_t_f2_q2.clone();
         assert!(coms_t_f2_q2_n.len() == 13);
         coms_t_f2_q2_n.extend(coms_n);
-        let check8 = BatchKZG::<P>::verify_multiple_polys_and_points(&uni_v_srs_for_x, &coms_t_f2_q2_n, &points, &(evals_t_f2_q2_n.clone(), proof_t_f2_q2_n.clone()), &gamma, transcript).unwrap();
+        // try to
+        let check8 = BatchKZG::<P>::verify_multiple_polys_and_points_no_repeat(&uni_v_srs_for_x, &coms_t_f2_q2_n, &points, &delta, &x_domain.group_gen(), &(evals_t_f2_q2_n.clone(), proof_t_f2_q2_n.clone()), &gamma, transcript).unwrap();
         assert!(check8);
         println!("Verifier t_f2 open check: {:?}", time.elapsed());
 

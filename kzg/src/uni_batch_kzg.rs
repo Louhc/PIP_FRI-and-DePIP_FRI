@@ -317,10 +317,13 @@ impl<P: Pairing> BatchKZG<P> {
         Ok((evals, (com_h, com_l)))
     }
 
-    pub fn verify_multiple_polys_and_points(
+    // only used for snark_pre
+    pub fn verify_multiple_polys_and_points_no_repeat(
         v_srs: &UniVerifierSRS<P>,
         coms: &Vec<P::G1>,
         points: &Vec<Vec<P::ScalarField>>,
+        delta: &P::ScalarField,
+        w: &P::ScalarField,
         proof: &(Vec<Vec<P::ScalarField>>, (P::G1, P::G1)),
         challenge: &P::ScalarField,
         transcript: &mut Transcript
@@ -335,18 +338,28 @@ impl<P: Pairing> BatchKZG<P> {
         let z = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluate_point_z");
 
         // generate auxiliary_evals
-        let point_vec: Vec<P::ScalarField> = points.par_iter().flatten().cloned().collect();
-        let numerator_polynomial = generator_numerator_polynomial::<P>(&point_vec);
-        let eval_zt = numerator_polynomial.evaluate(&z);
+        let num_eval_3 = z - delta;
+        let num_eval_1 = (z - P::ScalarField::one()) * num_eval_3 * (z - *w * *delta);
+        let num_eval_2 = z * num_eval_3;
+        let num_evals = vec![num_eval_1, num_eval_1, num_eval_1,
+        num_eval_2, num_eval_2, num_eval_2,
+        num_eval_2, num_eval_2, num_eval_2,
+        num_eval_2, num_eval_2, num_eval_2,
+        num_eval_3, 
+        num_eval_3, num_eval_3, num_eval_3,
+        num_eval_3, num_eval_3, num_eval_3,
+        num_eval_3, num_eval_3, num_eval_3];
+
+        let eval_zt = num_eval_1 * z;
         let polys_r: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
             zip(evals.par_iter()).
             map(|(row_points, row_evals)| 
             interpolate_on_trivial_domain::<P>(row_points, row_evals)
             ).collect();
-        let auxiliary_evals: Vec<P::ScalarField> = points.par_iter().
+        let auxiliary_evals: Vec<P::ScalarField> = num_evals.par_iter().
             zip(challenge_vector.par_iter()).
-            map(|(row_points, linear_factor)|
-            *linear_factor * eval_zt / generator_numerator_polynomial::<P>(row_points).evaluate(&z)
+            map(|(eval, linear_factor)|
+            *linear_factor * eval_zt / eval
             ).collect();
 
         // generate evals_r
@@ -366,6 +379,66 @@ impl<P: Pairing> BatchKZG<P> {
             || P::pairing(f, v_srs.h),
             || P::pairing(com_l, v_srs.h_alpha - v_srs.h * z)
         );
+        Ok(left == right)
+    }
+
+    pub fn verify_multiple_polys_and_points(
+        v_srs: &UniVerifierSRS<P>,
+        coms: &Vec<P::G1>,
+        points: &Vec<Vec<P::ScalarField>>,
+        proof: &(Vec<Vec<P::ScalarField>>, (P::G1, P::G1)),
+        challenge: &P::ScalarField,
+        transcript: &mut Transcript
+    ) -> Result<bool, Error> {
+        let (evals, (com_h, com_l)) = proof;
+        assert_eq!(coms.len(), points.len());
+        assert!(coms.len() == evals.len());
+
+        let challenge_vector = generate_powers(challenge, points.len());
+        // generate challenge z
+        <Transcript as ProofTranscript<P>>::append_point(transcript, b"random_evaluate_point_z", &com_h);
+        let z = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluate_point_z");
+
+        // generate auxiliary_evals
+        let time = Instant::now();
+        let point_vec: Vec<P::ScalarField> = points.par_iter().flatten().cloned().collect();
+        let numerator_polynomial = generator_numerator_polynomial::<P>(&point_vec);
+        let eval_zt = numerator_polynomial.evaluate(&z);
+        let polys_r: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
+            zip(evals.par_iter()).
+            map(|(row_points, row_evals)| 
+            interpolate_on_trivial_domain::<P>(row_points, row_evals)
+            ).collect();
+        let auxiliary_evals: Vec<P::ScalarField> = points.par_iter().
+            zip(challenge_vector.par_iter()).
+            map(|(row_points, linear_factor)|
+            *linear_factor * eval_zt / generator_numerator_polynomial::<P>(row_points).evaluate(&z)
+            ).collect();
+        println!("generate auxiliary_evals: {:?}", time.elapsed());
+
+        // generate evals_r
+        let time = Instant::now();
+        let exps: Vec<P::G1> = polys_r.par_iter().
+            zip(coms.par_iter()).
+            map(|(poly_r, com)| 
+            *com - v_srs.g.clone() * poly_r.evaluate(&z)
+            ).collect();
+        println!("generate r_evals: {:?}", time.elapsed());
+
+        // generate F
+        let time = Instant::now();
+        let f: P::G1 = auxiliary_evals.par_iter().zip(exps.par_iter()).
+            map(|(eval, exp)| *exp * *eval).sum();
+        let f = f - *com_h * eval_zt;
+        println!("generate F: {:?}", time.elapsed());
+        
+        // final check
+        let time = Instant::now();
+        let (left, right) = rayon::join(
+            || P::pairing(f, v_srs.h),
+            || P::pairing(com_l, v_srs.h_alpha - v_srs.h * z)
+        );
+        println!("pairing: {:?}", time.elapsed());
         Ok(left == right)
     }
 

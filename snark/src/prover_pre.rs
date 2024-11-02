@@ -1261,27 +1261,15 @@ impl<P: Pairing> PreProver<P> {
             &n_points, &n_points, &n_points, &n_points, 
             &n_points, &n_points, &n_points, &n_points, &n_points];
 
-        // let points_text = vec![t_points.clone(), t_points.clone(), t_points.clone(),
-        //     f2_points.clone(), f2_points.clone(), f2_points.clone(),
-        //     f2_points.clone(), f2_points.clone(), f2_points.clone(),
-        //     f2_points.clone(), f2_points.clone(), f2_points.clone(),
-        //     q_points.clone(), 
-        //     n_points.clone(), n_points.clone(), n_points.clone(),
-        //     n_points.clone(), n_points.clone(), n_points.clone(),
-        //     n_points.clone(), n_points.clone(), n_points.clone()];
-
         // maunnly invoke batch KZG for efficiency
         let point_vec = vec![P::ScalarField::one(), *delta, w * delta, P::ScalarField::zero()];
         let numerator_polynomial = generator_numerator_polynomial_no_repeat::<P>(&point_vec);
         let challenge_vector = generate_powers(gamma, polys.len());
 
-        let time = Instant::now();
         let evals: Vec<Vec<P::ScalarField>> = polys.par_iter().zip(points.par_iter()).map(|(poly, x_points)|{
             x_points.par_iter().map(|point| poly.evaluate(&point)).collect()
         }).collect();
-        println!("compute target evals time: {:?}", time.elapsed());
 
-        let time = Instant::now();
         // compute numerator_polynomial non-repeatedly
         let numerator_poly1 = generator_numerator_polynomial_no_repeat::<P>(&t_points);
         let numerator_poly2 = generator_numerator_polynomial_no_repeat::<P>(&f2_points);
@@ -1295,19 +1283,13 @@ impl<P: Pairing> PreProver<P> {
             &numerator_poly3, &numerator_poly3, &numerator_poly3,
             &numerator_poly3, &numerator_poly3, &numerator_poly3];
 
-        let (polys_r, auxiliary_polys): (Vec<UnivariatePolynomial<P::ScalarField>>, Vec<UnivariatePolynomial<P::ScalarField>>) = rayon::join(
-            || points.par_iter().
+        let polys_r: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
             zip(evals.par_iter()).
             map(|(row_points, row_evals)| 
                 interpolate_on_trivial_domain::<P>(row_points, &row_evals)
-            ).collect(), 
-            || numerator_polys.par_iter().
-            map(|poly| &numerator_polynomial / &poly).collect()
-        );
-        println!("compute poly_r and auciliary_polys: {:?}", time.elapsed());
+            ).collect();
 
-        let time = Instant::now();
-        let target_poly= polys.par_iter().
+        let poly_h= polys.par_iter().
             zip(polys_r.par_iter()).
             zip(numerator_polys.par_iter()).
             zip(challenge_vector.par_iter()).
@@ -1316,11 +1298,8 @@ impl<P: Pairing> PreProver<P> {
             )
             .reduce_with(|acc, poly| acc + poly)
             .unwrap_or_else(UnivariatePolynomial::zero);
-        let poly_h = target_poly;
-        println!("compute poly_h: {:?}", time.elapsed());
 
         // generate com_h distributedly
-        let time = Instant::now();
         let size = x_srs.len() / Net::n_parties();
         let start = sub_prover_id * size;
         let end = start + size;
@@ -1336,7 +1315,6 @@ impl<P: Pairing> PreProver<P> {
         } else {
             P::G1::zero()
         };
-        println!("compute com_h: {:?}", time.elapsed());
 
         // generate challenge z
         let z = if Net::am_master() {
@@ -1348,23 +1326,33 @@ impl<P: Pairing> PreProver<P> {
             Net::recv_from_master(None)
         };
 
+        let num_eval_1 = numerator_poly1.evaluate(&z);
+        let num_eval_2 = numerator_poly2.evaluate(&z);
+        let num_eval_3 = numerator_poly3.evaluate(&z);
+        let num_evals = vec![&num_eval_1, &num_eval_1, &num_eval_1,
+            &num_eval_2, &num_eval_2, &num_eval_2, 
+            &num_eval_2, &num_eval_2, &num_eval_2, 
+            &num_eval_2, &num_eval_2, &num_eval_2,
+            &num_eval_3,
+            &num_eval_3, &num_eval_3, &num_eval_3,
+            &num_eval_3, &num_eval_3, &num_eval_3,
+            &num_eval_3, &num_eval_3, &num_eval_3];
+        let num_eval = numerator_polynomial.evaluate(&z);
+
         // generate polynomial fz
-        let time = Instant::now();
         let target_poly = polys.par_iter().
             zip(polys_r.par_iter()).
-            zip(auxiliary_polys.par_iter()).
+            zip(num_evals.par_iter()).
             zip(challenge_vector.par_iter()).
-            map(|(((poly, poly_r), aux_poly), factor)| 
-            &(*poly + &UnivariatePolynomial::from_coefficients_vec(vec![-poly_r.evaluate(&z)])) * (*factor * aux_poly.evaluate(&z))
+            map(|(((poly, poly_r), eval), factor)| 
+            &(*poly + &UnivariatePolynomial::from_coefficients_vec(vec![-poly_r.evaluate(&z)])) * (*factor / *eval)
             )
             .reduce_with(|acc, poly| acc + poly)
             .unwrap_or_else(UnivariatePolynomial::zero);
-        let poly_l = &(&target_poly - &(&poly_h * numerator_polynomial.evaluate(&z))) / 
+        let poly_l = &(&(&target_poly - &poly_h) * num_eval) / 
                                     &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);
-        println!("compute poly_l: {:?}", time.elapsed());   
 
         // try to generate com_h and com_l distributedly
-        let time = Instant::now();
         let mut coeff_l = poly_l.to_vec();
         coeff_l.resize(x_srs.len(), P::ScalarField::zero());
         let sub_coeff_l = &coeff_l[start..end];
@@ -1376,7 +1364,6 @@ impl<P: Pairing> PreProver<P> {
         } else {
             P::G1::zero()
         };
-        println!("commit poly_l: {:?}", time.elapsed());  
 
         (evals, (com_h, com_l))
     }
