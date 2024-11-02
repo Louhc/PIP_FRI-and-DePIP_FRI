@@ -90,7 +90,7 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     // indexer works
     // common preprocess
     let time = Instant::now();
-    let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::preprocess(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
+    let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::preprocess(sub_prover_id, m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
     // new preprocess to file
     // let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
     // println!("Prover {:?} Indexer time: {:?}", sub_prover_id, time.elapsed());

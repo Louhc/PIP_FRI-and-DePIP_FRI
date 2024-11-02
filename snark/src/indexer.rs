@@ -1,4 +1,5 @@
 use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, EvaluationDomain, Evaluations, GeneralEvaluationDomain};
+use structopt::clap::SubCommand;
 use std::{marker::PhantomData, time::Instant, mem::take};
 use ark_ec::pairing::Pairing;
 use my_kzg::{
@@ -158,12 +159,12 @@ pub struct NEvals<P: Pairing> {
 
 #[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct PreMesProver<P: Pairing> {
-    pub upper_r_polys: Vec<UnivariatePolynomial<P::ScalarField>>,
+    pub upper_r_poly: UnivariatePolynomial<P::ScalarField>,
     pub de_row_index_vecs: Vec<DeRowIndex>,
     pub de_col_index_vecs: Vec<DeColIndex>,
-    pub val_polys: Vec<DeValPolys<P>>,
-    pub total_lower_a_b_evals: Vec<DeLowerAandBEvals<P>>,
-    pub total_lower_a_b_polys: Vec<DeLowerAandBPolys<P>>,
+    pub val_polys: DeValPolys<P>,
+    pub lower_a_b_evals: DeLowerAandBEvals<P>,
+    pub lower_a_b_polys: DeLowerAandBPolys<P>,
     pub n_evals: NEvals<P>,
     pub n_polys: NPolys<P>
 }
@@ -186,7 +187,9 @@ pub struct Indexer<P: Pairing> {
 
 impl<P: Pairing> Indexer<P> {
 
+    // TODO: can still be distributed like coms_n and com_l
     pub fn preprocess (
+        sub_prover_id: usize,
         m: usize,
         l: usize,
         cs: &ConstraintSystemRef<P::ScalarField>,
@@ -197,27 +200,25 @@ impl<P: Pairing> Indexer<P> {
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         m_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (PreMesProver<P>, PreMesVerifier<P>) {
-        let (de_row_index_vecs, de_col_index_vecs, de_val_evals_vecs, m_prime): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<P>::build_de_r1cs_index(l, m, &cs).unwrap();
-        let (upper_r_polys, com_upper_r) = Indexer::<P>::compute_and_commit_poly_upper_r(&powers, l);
-        let val_polys = Indexer::<P>::compute_val_polys(l, &m_domain, de_val_evals_vecs);
-        let coms_val = Indexer::<P>::commit_val_polys(&m_powers, &val_polys);
-        let (total_lower_a_b_evals, total_lower_a_b_polys) = 
-            (0..Net::n_parties()).into_par_iter().map(|i| Indexer::<P>::compute_lower_a_b_evals_and_polys(i, &de_row_index_vecs, &de_col_index_vecs, &m_domain, &x_domain))
-            .unzip();
-        let coms_lower_a_b = Indexer::<P>::commit_lower_a_b_polys(&m_powers, &total_lower_a_b_polys);
+        let (de_row_index_vecs, de_col_index_vecs, de_val_evals_vecs, m_prime) = Indexer::<P>::build_de_r1cs_index(l, m, &cs).unwrap();
+        let (upper_r_poly, com_upper_r) = Indexer::<P>::compute_and_commit_poly_upper_r(sub_prover_id, &powers);
+        let val_polys = Indexer::<P>::de_compute_val_polys(&m_domain, &de_val_evals_vecs[sub_prover_id]);
+        let coms_val = Indexer::<P>::de_commit_val_polys(sub_prover_id, &m_powers, &val_polys);
+        let (lower_a_b_evals, lower_a_b_polys) = Indexer::<P>::compute_lower_a_b_evals_and_polys(sub_prover_id, &de_row_index_vecs, &de_col_index_vecs, &m_domain, &x_domain);
+        let coms_lower_a_b = Indexer::<P>::de_commit_lower_a_b_polys(sub_prover_id, &m_powers, &lower_a_b_polys);
         let n_evals = Indexer::<P>::build_n_evals(&de_row_index_vecs, &de_col_index_vecs, l, m, m_prime);
         let n_polys = Indexer::<P>::compute_n_polys(&x_domain, &n_evals);
         let coms_n = Indexer::<P>::commit_n_polys(&x_srs, &n_polys);
         let com_l = Indexer::<P>::commit_poly_upper_l(&powers, l, &y_domain);
-
         (
-            PreMesProver{upper_r_polys, de_row_index_vecs, de_col_index_vecs, val_polys, total_lower_a_b_evals, total_lower_a_b_polys, n_evals, n_polys}, 
+            PreMesProver{upper_r_poly, de_row_index_vecs, de_col_index_vecs, val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys}, 
             PreMesVerifier{com_upper_r, coms_val, coms_lower_a_b, com_l, coms_n}
         )
     }
 
     // Create a new `Preprocessing` from the cs and domains and write it to a file.
     pub fn new_to_file(
+        sub_prover_id: usize,
         m: usize,
         l: usize,
         cs: &ConstraintSystemRef<P::ScalarField>,
@@ -230,7 +231,7 @@ impl<P: Pairing> Indexer<P> {
         file_path_prover: &str, 
         file_path_verifier: &str, 
     ) -> Result<(PreMesProver<P>, PreMesVerifier<P>), Box<dyn Error>> {
-        let (pre_mes_prover, pre_mes_verifier) = Self::preprocess(m, l, cs, powers, m_powers, x_srs, x_domain, y_domain, m_domain);
+        let (pre_mes_prover, pre_mes_verifier) = Self::preprocess(sub_prover_id, m, l, cs, powers, m_powers, x_srs, x_domain, y_domain, m_domain);
 
         let file_prover = std::fs::File::create(file_path_prover)?;
         let writer_prover = std::io::BufWriter::new(file_prover);
@@ -257,6 +258,7 @@ impl<P: Pairing> Indexer<P> {
     }
 
     pub fn new_preprocess_to_file (
+        sub_prover_id: usize,
         m: usize,
         l: usize,
         cs: &ConstraintSystemRef<P::ScalarField>,
@@ -271,7 +273,7 @@ impl<P: Pairing> Indexer<P> {
         let pre_mes_verifier_filepath = format!("./data/Pre_Mes_Verifier-{}-{}.paras", m, l);
 
         let time = Instant::now();
-        let (pre_mes_prover, pre_mes_verifier) = Self::new_to_file(m, l, cs, powers, m_powers, x_srs, x_domain, y_domain, m_domain, &pre_mes_prover_filepath, &pre_mes_verifier_filepath).unwrap();
+        let (pre_mes_prover, pre_mes_verifier) = Self::new_to_file(sub_prover_id, m, l, cs, powers, m_powers, x_srs, x_domain, y_domain, m_domain, &pre_mes_prover_filepath, &pre_mes_verifier_filepath).unwrap();
         println!("Indexer preprocessing and writes to file time: {:?}", time.elapsed());
         
         (pre_mes_prover, pre_mes_verifier)
@@ -384,6 +386,76 @@ impl<P: Pairing> Indexer<P> {
         Ok((de_row_index_vecs, de_col_index_vecs, de_val_evals_vecs, pow_of_two))
     }
 
+    pub fn de_build_de_r1cs_index(
+        sub_prover_id: usize,
+        l: usize,
+        m: usize,
+        cs: &ConstraintSystemRef<P::ScalarField>,
+        m_prime: usize,
+    )-> Result<(DeRowIndex, DeColIndex, DeValEvals<P>), SynthesisError> {
+        let cs = cs.borrow().unwrap();
+        let cs_matrix = cs.to_matrices().unwrap();
+        let ml = m * l;
+        let sqrt_ml = (ml as f64).sqrt() as usize;
+        assert_eq!(cs_matrix.a.len(), ml);
+
+        let (mut de_row_index_vecs, mut de_col_index_vecs, mut de_val_evals_vecs) = (
+            DeRowIndex::new(),
+            DeColIndex::new(),
+            DeValEvals::<P>::new());
+
+        for row_id in 0..ml {
+            cs_matrix.a[row_id].iter().for_each(|(val, col_id)| {
+                // current entry: ((row_id, col_id), val)
+                if sub_prover_id == col_id / m {
+                            
+                    let (low, high) = Self::decompose(row_id, sqrt_ml);
+                    de_row_index_vecs.row_pa_low.push(low);
+                    de_row_index_vecs.row_pa_high.push(high);
+
+                    de_col_index_vecs.col_pa.push(*col_id % m);
+
+                    de_val_evals_vecs.evals_val_pa.push(P::ScalarField::from(*val));
+
+                }
+            });
+                
+            cs_matrix.b[row_id].iter().for_each(|(val, col_id)| {
+                if sub_prover_id == col_id / m {
+                        
+                    let (low, high) = Self::decompose(row_id, sqrt_ml);
+                    de_row_index_vecs.row_pb_low.push(low);
+                    de_row_index_vecs.row_pb_high.push(high);
+
+                    de_col_index_vecs.col_pb.push(*col_id % m);
+
+                    de_val_evals_vecs.evals_val_pb.push(P::ScalarField::from(*val));
+                }
+            });
+                    
+            cs_matrix.c[row_id].iter().for_each(|(val, col_id)| {
+                if sub_prover_id == col_id / m {
+                            
+                    let (low, high) = Self::decompose(row_id, sqrt_ml);
+                    de_row_index_vecs.row_pc_low.push(low);
+                    de_row_index_vecs.row_pc_high.push(high);
+
+                    de_col_index_vecs.col_pc.push(*col_id % m);
+
+                    de_val_evals_vecs.evals_val_pc.push(P::ScalarField::from(*val));
+                }
+            });
+        }
+
+        let pow_of_two = m_prime;
+
+        de_row_index_vecs.padding(pow_of_two);
+        de_col_index_vecs.padding(pow_of_two);
+        de_val_evals_vecs.padding(pow_of_two);
+
+        Ok((de_row_index_vecs, de_col_index_vecs, de_val_evals_vecs))
+    }
+
     pub fn build_n_evals(
         de_row_index_vecs: &Vec<DeRowIndex>, 
         de_col_index_vecs: &Vec<DeColIndex>,
@@ -475,6 +547,36 @@ impl<P: Pairing> Indexer<P> {
 
         let bivariate_polynomials = vec![biv_poly_val_a, biv_poly_val_b, biv_poly_val_c];
         let coms_val = BivBatchKZG::<P>::commit(&m_powers, &bivariate_polynomials).unwrap();
+
+        coms_val
+    }
+
+    pub fn de_compute_val_polys (
+        m_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        val_evals: &DeValEvals<P>,
+    ) -> DeValPolys<P> {
+
+        let (val_pa, val_pb, val_pc) = par_join_3!(
+            || DeIPA::<P>::interpolate_from_eval_domain(val_evals.evals_val_pa.clone(), m_domain),
+            || DeIPA::<P>::interpolate_from_eval_domain(val_evals.evals_val_pb.clone(), m_domain), 
+            || DeIPA::<P>::interpolate_from_eval_domain(val_evals.evals_val_pc.clone(), m_domain)
+        );
+        DeValPolys { val_pa, val_pb, val_pc}
+    }
+
+    pub fn de_commit_val_polys (
+        sub_prover_id: usize,
+        m_powers: &Vec<Vec<P::G1Affine>>,
+        val_polys: &DeValPolys<P>,
+    ) -> Vec<P::G1> {
+        let vecs = &[&val_polys.val_pa, &val_polys.val_pb, &val_polys.val_pc];
+
+        let coms_val = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, vecs);
+        let coms_val = if Net::am_master() {
+            coms_val.unwrap()
+        } else {
+            vec![P::G1::zero(); 3]
+        };
 
         coms_val
     }
@@ -634,35 +736,51 @@ impl<P: Pairing> Indexer<P> {
         let biv_lb_pc = BivariatePolynomial {x_polynomials: &x_polys_lb_pc};
 
         let biv_polys = vec![biv_la_pa_low, biv_la_pa_high, biv_la_pb_low, biv_la_pb_high, biv_la_pc_low, biv_la_pc_high, biv_lb_pa, biv_lb_pb, biv_lb_pc];
-        // let total_x_polys = vec![x_polys_la_pa_low, x_polys_la_pa_high, x_polys_la_pb_low, x_polys_la_pb_high,
-        //                                         x_polys_la_pc_low, x_polys_la_pc_high, x_polys_lb_pa, x_polys_lb_pb, x_polys_lb_pc];
-        // let coms: Vec<P::G1> = total_x_polys.par_iter().map(|x_polys| {
-        //     x_polys.par_iter().zip(m_powers.par_iter()).map(|(poly, power)|{
-        //         let mut coeffs = poly.coeffs.to_vec();
-        //         coeffs.resize(power.len(), <P::ScalarField>::zero());
-        //         P::G1::msm(&power, &coeffs).unwrap()
-        //     }).sum()
-        // }).collect();
         let coms = BivBatchKZG::<P>::commit(&m_powers, &biv_polys).unwrap();
 
         coms
     }
 
+    pub fn de_commit_lower_a_b_polys (
+        sub_prover_id: usize,
+        m_powers: &Vec<Vec<P::G1Affine>>,
+        de_polys: &DeLowerAandBPolys<P>,
+    ) -> Vec<P::G1> {
+        let x_polys = &[&de_polys.la_pa_low, &de_polys.la_pa_high, &de_polys.la_pb_low,
+            &de_polys.la_pb_high, &de_polys.la_pc_low, &de_polys.la_pc_high, 
+            &de_polys.lb_pa, &de_polys.lb_pb, &de_polys.lb_pc];
+
+        let coms = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, x_polys);
+        if Net::am_master() {
+            coms.unwrap()
+        } else {
+            vec![P::G1::zero(); 9]
+        }
+    }
+
     pub fn compute_and_commit_poly_upper_r (
-        powers: &Vec<Vec<P::G1Affine>>,
-        l: usize,
-    ) -> (Vec<UnivariatePolynomial<P::ScalarField>>, P::G1) {
-        let x_polynomials: Vec<UnivariatePolynomial<P::ScalarField>> = (0..l).into_par_iter().map(|i| {
-            let mut vec = vec![P::ScalarField::zero(); i+1];
-            vec[i] = P::ScalarField::one();
-            UnivariatePolynomial::from_coefficients_vec(vec)
-        }).collect();
-        let x_poly_refs : Vec<_> = x_polynomials.iter().collect();
+        sub_prover_id: usize,
+        powers: &Vec<Vec<P::G1Affine>>
+    ) -> (UnivariatePolynomial<P::ScalarField>, P::G1) {
+        // let x_polynomials: Vec<UnivariatePolynomial<P::ScalarField>> = (0..l).into_par_iter().map(|i| {
+        //     let mut vec = vec![P::ScalarField::zero(); i+1];
+        //     vec[i] = P::ScalarField::one();
+        //     UnivariatePolynomial::from_coefficients_vec(vec)
+        // }).collect();
+        // let x_polynomials_res = x_polynomials.clone();
+        let mut vec = vec![P::ScalarField::zero(); sub_prover_id + 1];
+        vec[sub_prover_id] = P::ScalarField::one();
+        let x_polynomial = UnivariatePolynomial::from_coefficients_vec(vec);
 
-        let biv_poly = BivariatePolynomial{x_polynomials: &x_poly_refs};
-        let com = BivariateKZG::<P>::commit(&powers, biv_poly).unwrap();
+        // let biv_poly = BivariatePolynomial{x_polynomials};
+        let com = BivBatchKZG::<P>::de_commit(sub_prover_id, &powers, &[&x_polynomial]);
+        let com = if Net::am_master() {
+            com.unwrap()[0]
+        } else {
+            P::G1::zero()
+        };
 
-        (x_polynomials, com)
+        (x_polynomial, com)
     }
 
     // TODO: consider other approaches to be faster

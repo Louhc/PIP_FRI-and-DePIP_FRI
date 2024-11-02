@@ -91,13 +91,9 @@ impl<P: Pairing> DeSNARKLog<P> {
         let timer = start_timer!(|| "de r1cs prove");
 
         // Derive the message
-        let PreMesProver { upper_r_polys, de_row_index_vecs, de_col_index_vecs, val_polys, total_lower_a_b_evals, total_lower_a_b_polys, n_evals, n_polys } = pre_mes_prover;
-        let upper_r_poly = &upper_r_polys[sub_prover_id];
+        let PreMesProver { upper_r_poly, de_row_index_vecs, de_col_index_vecs, val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys } = pre_mes_prover;
         let row_index_vec = &de_row_index_vecs[sub_prover_id];
         let col_index_vec = &de_col_index_vecs[sub_prover_id];
-        let val_polys = &val_polys[sub_prover_id];
-        let lower_a_b_evals = &total_lower_a_b_evals[sub_prover_id];
-        let lower_a_b_polys = &total_lower_a_b_polys[sub_prover_id];
 
         // commit secret polynomials
         let step = start_timer!(|| "commit witnesses");
