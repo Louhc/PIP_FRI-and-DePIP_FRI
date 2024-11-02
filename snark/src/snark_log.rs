@@ -415,6 +415,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         } else {
             Vec::new()
         };
+        // TODO: try to make a novel use of repeated points
         let (evals_t_f2_q2_n, proof_t_f2_q2_n) = PreProver::<P>::open_t_f2_q2_n(sub_prover_id, &x_srs, &upper_a_t_polys, &upper_b_t_polys, &polys_f2, &poly_q2, &n_polys, &x_domain, &delta, &gamma, transcript);
         if Net::am_master() {
             assert_eq!(evals_t_f2_q2_n.len(), 22);

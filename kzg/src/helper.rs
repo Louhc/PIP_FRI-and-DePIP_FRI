@@ -15,22 +15,36 @@ pub fn generator_numerator_polynomial<P: Pairing> (
     points: &Vec<P::ScalarField>
 ) -> UnivariatePolynomial<P::ScalarField> {
 
-    let mut points_without_repeat: Vec<P::ScalarField> = Vec::new();
-    let mut unique_points = HashSet::new();
+    // let mut points_without_repeat: Vec<P::ScalarField> = Vec::new();
+    // let mut unique_points = HashSet::new();
 
-    for point in points {
-        if !unique_points.contains(point) {
-            unique_points.insert(*point);
-            points_without_repeat.push(*point);
-        }
-    }
+    let mut seen  = HashSet::new(); 
+    let points_without_repeat: Vec<P::ScalarField> = points.iter().filter(|&&x| seen.insert(x)).cloned().collect();
 
     let mut numerator_polynomial = UnivariatePolynomial::from_coefficients_vec(vec![
         -points_without_repeat[0],
         P::ScalarField::one()
     ]);
-    for i in 1..points.len() {
+    for i in 1..points_without_repeat.len() {
         let current_polynomial = UnivariatePolynomial::from_coefficients_vec(vec![
+            -points_without_repeat[i],
+            P::ScalarField::one()
+        ]); 
+        numerator_polynomial = &numerator_polynomial * &current_polynomial;
+    }
+    numerator_polynomial
+}
+
+pub fn generator_numerator_polynomial_no_repeat<P: Pairing> (
+    points: &Vec<P::ScalarField>
+) -> UnivariatePolynomial<P::ScalarField> {
+
+    let mut numerator_polynomial = UnivariatePolynomial::from_coefficients_vec(vec![
+        -points[0],
+        P::ScalarField::one()
+    ]);
+    for i in 1..points.len() {
+        let current_polynomial: UnivariatePolynomial<<P as Pairing>::ScalarField> = UnivariatePolynomial::from_coefficients_vec(vec![
             -points[i],
             P::ScalarField::one()
         ]); 

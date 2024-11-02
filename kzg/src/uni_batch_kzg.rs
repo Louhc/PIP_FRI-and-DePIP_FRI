@@ -16,6 +16,7 @@ use ark_std::{rand::Rng, start_timer, end_timer};
 use crate::Error;
 use rayon::prelude::*;
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
+use std::time::Instant;
 
 // This is the batch KZG, a simple version of multiple polynomials on one point, and a more complicated version of multiple polynomials on multiple polynomials, from [https://eprint.iacr.org/2020/081.pdf]
 pub struct BatchKZG<P: Pairing> {
@@ -139,9 +140,13 @@ impl<P: Pairing> BatchKZG<P> {
 
         let challenge_vector = generate_powers(&gamma, polynomials.len());
 
+        let time = Instant::now();
         let evals: Vec<Vec<P::ScalarField>> = polynomials.par_iter().zip(points.par_iter()).map(|(poly, x_points)|{
             x_points.par_iter().map(|point| poly.evaluate(&point)).collect()
         }).collect();
+        println!("compute target evals time: {:?}", time.elapsed());
+
+        let time = Instant::now();
         let (polys_r, auxiliary_polys): (Vec<UnivariatePolynomial<P::ScalarField>>, Vec<UnivariatePolynomial<P::ScalarField>>) = rayon::join(
             || points.par_iter().
             zip(evals.par_iter()).
@@ -151,7 +156,9 @@ impl<P: Pairing> BatchKZG<P> {
             || points.par_iter().
             map(|row_points| &numerator_polynomial / &generator_numerator_polynomial::<P>(row_points)).collect()
         );
+        println!("compute poly_r and auciliary_polys: {:?}", time.elapsed());
         
+        let time = Instant::now();
         let target_poly= polynomials.par_iter().
             zip(polys_r.par_iter()).
             zip(auxiliary_polys.par_iter()).
@@ -162,6 +169,7 @@ impl<P: Pairing> BatchKZG<P> {
             .reduce_with(|acc, poly| acc + poly)
             .unwrap_or_else(UnivariatePolynomial::zero);
         let poly_h = &target_poly / &numerator_polynomial;
+        println!("compute poly_hs: {:?}", time.elapsed());
         let com_h = KZG::<P>::commit(&powers, &poly_h).unwrap();
 
         // generate challenge z
@@ -169,6 +177,7 @@ impl<P: Pairing> BatchKZG<P> {
         let z = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluate_point_z");
 
         // generate polynomial fz
+        let time = Instant::now();
         let target_poly = polynomials.par_iter().
             zip(polys_r.par_iter()).
             zip(auxiliary_polys.par_iter()).
@@ -180,11 +189,13 @@ impl<P: Pairing> BatchKZG<P> {
             .unwrap_or_else(UnivariatePolynomial::zero);
         let poly_l = &(&target_poly - &(&poly_h * numerator_polynomial.evaluate(&z))) / 
                                     &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);
+        println!("compute poly_l: {:?}", time.elapsed());                            
         let com_l = KZG::<P>::commit(&powers, &poly_l).unwrap();
 
         Ok((evals, (com_h, com_l)))
     }
 
+    // TODO: try to make a novel use of repeated points
     pub fn de_open_multiple_polys_and_points(
         sub_prover_id: usize,
         powers: &[P::G1Affine],
@@ -200,9 +211,19 @@ impl<P: Pairing> BatchKZG<P> {
 
         let challenge_vector = generate_powers(&gamma, polynomials.len());
 
+        let time = Instant::now();
         let evals: Vec<Vec<P::ScalarField>> = polynomials.par_iter().zip(points.par_iter()).map(|(poly, x_points)|{
             x_points.par_iter().map(|point| poly.evaluate(&point)).collect()
         }).collect();
+        println!("compute target evals time: {:?}", time.elapsed());
+
+        let time = Instant::now();
+        // let polys_r: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
+        //     zip(evals.par_iter()).
+        //     map(|(row_points, row_evals)| 
+        //     interpolate_on_trivial_domain::<P>(row_points, row_evals)
+        //     ).collect();
+
         let (polys_r, auxiliary_polys): (Vec<UnivariatePolynomial<P::ScalarField>>, Vec<UnivariatePolynomial<P::ScalarField>>) = rayon::join(
             || points.par_iter().
             zip(evals.par_iter()).
@@ -212,19 +233,30 @@ impl<P: Pairing> BatchKZG<P> {
             || points.par_iter().
             map(|row_points| &numerator_polynomial / &generator_numerator_polynomial::<P>(row_points)).collect()
         );
-        
+        if Net::am_master() {
+            println!("polys_r: {:?}", polys_r);
+            println!("auciliary_polys: {:?}", auxiliary_polys);
+        }
+        println!("compute poly_r and auciliary_polys: {:?}", time.elapsed());
+
+        let time = Instant::now();
         let target_poly= polynomials.par_iter().
             zip(polys_r.par_iter()).
-            zip(auxiliary_polys.par_iter()).
+            zip(points.par_iter()).
             zip(challenge_vector.par_iter()).
-            map(|(((poly, poly_r), aux_poly), factor)| 
-            &(&(*poly - poly_r) * aux_poly) * *factor
+            map(|(((poly, poly_r), row_points), factor)| 
+            &(&(*poly - poly_r) / &generator_numerator_polynomial::<P>(row_points)) * *factor
             )
             .reduce_with(|acc, poly| acc + poly)
             .unwrap_or_else(UnivariatePolynomial::zero);
-        let poly_h: UnivariatePolynomial<P::ScalarField> = &target_poly / &numerator_polynomial;
+        let poly_h = target_poly;
+        if Net::am_master() {
+            println!("poly_h: {:?}", poly_h);
+        }
+        println!("compute poly_h: {:?}", time.elapsed());
         
         // generate com_h distributedly
+        let time = Instant::now();
         let size = powers.len() / Net::n_parties();
         let start = sub_prover_id * size;
         let end = start + size;
@@ -240,6 +272,7 @@ impl<P: Pairing> BatchKZG<P> {
         } else {
             P::G1::zero()
         };
+        println!("compute com_h: {:?}", time.elapsed());
 
         // generate challenge z
         let z = if Net::am_master() {
@@ -252,6 +285,7 @@ impl<P: Pairing> BatchKZG<P> {
         };
 
         // generate polynomial fz
+        let time = Instant::now();
         let target_poly = polynomials.par_iter().
             zip(polys_r.par_iter()).
             zip(auxiliary_polys.par_iter()).
@@ -263,8 +297,10 @@ impl<P: Pairing> BatchKZG<P> {
             .unwrap_or_else(UnivariatePolynomial::zero);
         let poly_l = &(&target_poly - &(&poly_h * numerator_polynomial.evaluate(&z))) / 
                                     &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);
+        println!("compute poly_l: {:?}", time.elapsed());   
 
         // try to generate com_h and com_l distributedly
+        let time = Instant::now();
         let mut coeff_l = poly_l.to_vec();
         coeff_l.resize(powers.len(), P::ScalarField::zero());
         let sub_coeff_l = &coeff_l[start..end];
@@ -276,6 +312,7 @@ impl<P: Pairing> BatchKZG<P> {
         } else {
             P::G1::zero()
         };
+        println!("commit poly_l: {:?}", time.elapsed());  
 
         Ok((evals, (com_h, com_l)))
     }
@@ -298,7 +335,7 @@ impl<P: Pairing> BatchKZG<P> {
         let z = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluate_point_z");
 
         // generate auxiliary_evals
-        let point_vec = points.par_iter().flatten().cloned().collect();
+        let point_vec: Vec<P::ScalarField> = points.par_iter().flatten().cloned().collect();
         let numerator_polynomial = generator_numerator_polynomial::<P>(&point_vec);
         let eval_zt = numerator_polynomial.evaluate(&z);
         let polys_r: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().

@@ -21,6 +21,8 @@ use my_kzg::uni_trivial_kzg::DeKZG;
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use std::mem::take;
 use ark_ff::batch_inversion;
+use my_kzg::helper::{generator_numerator_polynomial_no_repeat, interpolate_on_trivial_domain};
+use my_kzg::transcript::ProofTranscript;
 
 #[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct DeLowerAandBEvals<P: Pairing> {
@@ -1221,7 +1223,7 @@ impl<P: Pairing> PreProver<P> {
         (poly_q2, com_q2)
     }
 
-    // only work for P0
+    // TODO: try to make a novel use of repeated points
     pub fn open_t_f2_q2_n (
         sub_prover_id: usize,
         x_srs: &[P::G1Affine],
@@ -1251,15 +1253,132 @@ impl<P: Pairing> PreProver<P> {
             &n_polys.row_pa_low, &n_polys.row_pa_high, &n_polys.row_pb_low,
             &n_polys.row_pb_high,& n_polys.row_pc_low, &n_polys.row_pc_high, 
             &n_polys.col_pa, &n_polys.col_pb, &n_polys.col_pc];
-        let points = vec![t_points.clone(), t_points.clone(), t_points,
-            f2_points.clone(), f2_points.clone(), f2_points.clone(),
-            f2_points.clone(), f2_points.clone(), f2_points.clone(),
-            f2_points.clone(), f2_points.clone(), f2_points,
-            q_points, 
-            n_points.clone(), n_points.clone(), n_points.clone(), n_points.clone(), 
-            n_points.clone(), n_points.clone(), n_points.clone(), n_points.clone(), n_points];
-        let proof = BatchKZG::<P>::de_open_multiple_polys_and_points(sub_prover_id, &x_srs, &polys, &points, &gamma, transcript).unwrap();
-        proof
+        let points = vec![&t_points, &t_points, &t_points,
+            &f2_points, &f2_points, &f2_points,
+            &f2_points, &f2_points, &f2_points,
+            &f2_points, &f2_points, &f2_points,
+            &q_points, 
+            &n_points, &n_points, &n_points, &n_points, 
+            &n_points, &n_points, &n_points, &n_points, &n_points];
+
+        // let points_text = vec![t_points.clone(), t_points.clone(), t_points.clone(),
+        //     f2_points.clone(), f2_points.clone(), f2_points.clone(),
+        //     f2_points.clone(), f2_points.clone(), f2_points.clone(),
+        //     f2_points.clone(), f2_points.clone(), f2_points.clone(),
+        //     q_points.clone(), 
+        //     n_points.clone(), n_points.clone(), n_points.clone(),
+        //     n_points.clone(), n_points.clone(), n_points.clone(),
+        //     n_points.clone(), n_points.clone(), n_points.clone()];
+
+        // maunnly invoke batch KZG for efficiency
+        let point_vec = vec![P::ScalarField::one(), *delta, w * delta, P::ScalarField::zero()];
+        let numerator_polynomial = generator_numerator_polynomial_no_repeat::<P>(&point_vec);
+        let challenge_vector = generate_powers(gamma, polys.len());
+
+        let time = Instant::now();
+        let evals: Vec<Vec<P::ScalarField>> = polys.par_iter().zip(points.par_iter()).map(|(poly, x_points)|{
+            x_points.par_iter().map(|point| poly.evaluate(&point)).collect()
+        }).collect();
+        println!("compute target evals time: {:?}", time.elapsed());
+
+        let time = Instant::now();
+        // compute numerator_polynomial non-repeatedly
+        let numerator_poly1 = generator_numerator_polynomial_no_repeat::<P>(&t_points);
+        let numerator_poly2 = generator_numerator_polynomial_no_repeat::<P>(&f2_points);
+        let numerator_poly3 = generator_numerator_polynomial_no_repeat::<P>(&n_points);
+        let numerator_polys = vec![&numerator_poly1, &numerator_poly1, &numerator_poly1,
+            &numerator_poly2, &numerator_poly2, &numerator_poly2,
+            &numerator_poly2, &numerator_poly2, &numerator_poly2,
+            &numerator_poly2, &numerator_poly2, &numerator_poly2,
+            &numerator_poly3, 
+            &numerator_poly3, &numerator_poly3, &numerator_poly3,
+            &numerator_poly3, &numerator_poly3, &numerator_poly3,
+            &numerator_poly3, &numerator_poly3, &numerator_poly3];
+
+        let (polys_r, auxiliary_polys): (Vec<UnivariatePolynomial<P::ScalarField>>, Vec<UnivariatePolynomial<P::ScalarField>>) = rayon::join(
+            || points.par_iter().
+            zip(evals.par_iter()).
+            map(|(row_points, row_evals)| 
+                interpolate_on_trivial_domain::<P>(row_points, &row_evals)
+            ).collect(), 
+            || numerator_polys.par_iter().
+            map(|poly| &numerator_polynomial / &poly).collect()
+        );
+        println!("compute poly_r and auciliary_polys: {:?}", time.elapsed());
+
+        let time = Instant::now();
+        let target_poly= polys.par_iter().
+            zip(polys_r.par_iter()).
+            zip(numerator_polys.par_iter()).
+            zip(challenge_vector.par_iter()).
+            map(|(((poly, poly_r), numerator_poly), factor)| 
+            &(&(*poly - poly_r) / &numerator_poly) * *factor
+            )
+            .reduce_with(|acc, poly| acc + poly)
+            .unwrap_or_else(UnivariatePolynomial::zero);
+        let poly_h = target_poly;
+        println!("compute poly_h: {:?}", time.elapsed());
+
+        // generate com_h distributedly
+        let time = Instant::now();
+        let size = x_srs.len() / Net::n_parties();
+        let start = sub_prover_id * size;
+        let end = start + size;
+        let mut coeff_h = poly_h.to_vec();
+        coeff_h.resize(x_srs.len(), P::ScalarField::zero());
+        let sub_coeff_h = &coeff_h[start..end];
+        let sub_powers = &x_srs[start..end];
+        let sub_com_h: P::G1Affine = P::G1MSM::msm_unchecked(sub_powers, &sub_coeff_h).into();
+        let sub_coms_h = Net::send_to_master(&sub_com_h);
+        let com_h = if Net::am_master() {
+            let sub_coms_h = sub_coms_h.unwrap();
+            sub_coms_h.par_iter().sum()
+        } else {
+            P::G1::zero()
+        };
+        println!("compute com_h: {:?}", time.elapsed());
+
+        // generate challenge z
+        let z = if Net::am_master() {
+            <Transcript as ProofTranscript<P>>::append_point(transcript, b"random_evaluate_point_z", &com_h);
+            let z = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluate_point_z");
+            Net::recv_from_master(Some(vec![z; Net::n_parties()]));
+            z
+        } else {
+            Net::recv_from_master(None)
+        };
+
+        // generate polynomial fz
+        let time = Instant::now();
+        let target_poly = polys.par_iter().
+            zip(polys_r.par_iter()).
+            zip(auxiliary_polys.par_iter()).
+            zip(challenge_vector.par_iter()).
+            map(|(((poly, poly_r), aux_poly), factor)| 
+            &(*poly + &UnivariatePolynomial::from_coefficients_vec(vec![-poly_r.evaluate(&z)])) * (*factor * aux_poly.evaluate(&z))
+            )
+            .reduce_with(|acc, poly| acc + poly)
+            .unwrap_or_else(UnivariatePolynomial::zero);
+        let poly_l = &(&target_poly - &(&poly_h * numerator_polynomial.evaluate(&z))) / 
+                                    &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);
+        println!("compute poly_l: {:?}", time.elapsed());   
+
+        // try to generate com_h and com_l distributedly
+        let time = Instant::now();
+        let mut coeff_l = poly_l.to_vec();
+        coeff_l.resize(x_srs.len(), P::ScalarField::zero());
+        let sub_coeff_l = &coeff_l[start..end];
+        let sub_com_l: P::G1Affine = P::G1MSM::msm_unchecked(sub_powers, &sub_coeff_l).into();
+        let sub_coms_l = Net::send_to_master(&sub_com_l);
+        let com_l = if Net::am_master() {
+            let sub_coms_l = sub_coms_l.unwrap();
+            sub_coms_l.par_iter().sum()
+        } else {
+            P::G1::zero()
+        };
+        println!("commit poly_l: {:?}", time.elapsed());  
+
+        (evals, (com_h, com_l))
     }
 
     // TODO: here the evals are sent again

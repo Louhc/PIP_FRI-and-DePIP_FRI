@@ -39,7 +39,7 @@ fn init() -> (usize, usize, usize) {
     Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
     let l = Net::n_parties();
     let sub_prover_id = Net::party_id();
-    let m = 1 << 22;
+    let m = 1 << 18;
     (m, l, sub_prover_id)
 }
 
@@ -89,6 +89,7 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
 
     // indexer works
     // common preprocess
+    let time = Instant::now();
     let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::preprocess(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
     // new preprocess to file
     // let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
@@ -98,6 +99,7 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     //     Ok(pre) => pre,
     //     Err(_) => Indexer::<E>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m)
     // };
+    println!("Indexer time: {:?}", time.elapsed());
 
     // Synchronize everyone
     Net::recv_from_master(if Net::am_master() {
