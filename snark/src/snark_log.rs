@@ -364,17 +364,18 @@ impl<P: Pairing> DeSNARKLog<P> {
         end_timer!(step);
 
         // compute and commit q2
-        let time = Instant::now();
+        let step = start_timer!(|| "compute & commit q2");
         let (poly_q2, com_q2) = PreProver::<P>::compute_and_commit_q2(sub_prover_id, &x_srs, &polys_f2, &x_domain, &n_polys, &upper_a_t_polys, &upper_b_t_polys, &v, &gamma, &beta);
-        println!("Prover {:?} computes/commits q2 time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // compute and commit q1, compute and commit g5 h5
-        let time = Instant::now();
+        let step = start_timer!(|| "compute & commit q1");
         let (sub_poly_q1, com_q1) = PreProver::<P>::compute_and_commit_q1(&m_srs, &m_domain, &de_polys_f1, &upper_a_t_polys, &upper_b_t_polys, &lower_a_b_polys, &v, &gamma, &beta);
-        println!("Prover {:?} commits q1 time: {:?}", sub_prover_id, time.elapsed());
-        let time = Instant::now();
+        end_timer!(step);
+
+        let step = start_timer!(|| "open q1");
         let (eval_q1, proof_q1) = PreProver::<P>::open_q1(&m_srs, &sub_poly_q1, &delta);
-        println!("Prover {:?} opens q1 time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         let time = Instant::now();
         let (polys_g5_h5, coms_g5_h5) = PreProver::<P>::compute_and_commit_g5_h5(&y_srs, &de_polys_f1, &val_upper_and_l_total_evals, &lower_evals, &y_domain, &delta, &beta, &gamma, &v, &u4,
