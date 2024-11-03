@@ -312,7 +312,7 @@ impl<P: Pairing> Indexer<P> {
         let cs_matrix = cs.to_matrices().unwrap();
         let ml = m * l;
         let sqrt_ml = (ml as f64).sqrt() as usize;
-        assert_eq!(cs_matrix.a.len(), ml);
+        assert_eq!(cs_matrix.a.1.len(), ml);
 
         let (mut de_row_index_vecs, mut de_col_index_vecs, mut de_val_evals_vecs): (Vec<_>, Vec<_>, Vec<_>) = 
             (0..l).map(|_| {(
@@ -326,7 +326,14 @@ impl<P: Pairing> Indexer<P> {
         let mut m_prime_c_vecs = vec![0usize; l];
 
         for row_id in 0..ml {
-            cs_matrix.a[row_id].iter().for_each(|(val, col_id)| {
+            let start = if row_id == 0 {
+                0
+            } else {
+                cs_matrix.a.1[row_id - 1]
+            };
+            let end = cs_matrix.a.1[row_id];
+            
+            cs_matrix.a.0[start..end].iter().for_each(|(val, col_id)| {
                 // current entry: ((row_id, col_id), val)
                 let sub_prover_id = col_id / m;
                         
@@ -341,7 +348,14 @@ impl<P: Pairing> Indexer<P> {
                 m_prime_a_vecs[sub_prover_id] += 1;
             });
                 
-            cs_matrix.b[row_id].iter().for_each(|(val, col_id)| {
+            let start = if row_id == 0 {
+                0
+            } else {
+                cs_matrix.b.1[row_id - 1]
+            };
+            let end = cs_matrix.b.1[row_id];
+            
+            cs_matrix.b.0[start..end].iter().for_each(|(val, col_id)| {
                 let sub_prover_id = col_id / m;
                         
                 let (low, high) = Self::decompose(row_id, sqrt_ml);
@@ -355,7 +369,14 @@ impl<P: Pairing> Indexer<P> {
                 m_prime_b_vecs[sub_prover_id] += 1;
             });
                     
-            cs_matrix.c[row_id].iter().for_each(|(val, col_id)| {
+            let start = if row_id == 0 {
+                0
+            } else {
+                cs_matrix.c.1[row_id - 1]
+            };
+            let end = cs_matrix.c.1[row_id];
+            
+            cs_matrix.c.0[start..end].iter().for_each(|(val, col_id)| {
                 let sub_prover_id = col_id / m;
                         
                 let (low, high) = Self::decompose(row_id, sqrt_ml);
@@ -398,7 +419,7 @@ impl<P: Pairing> Indexer<P> {
         let cs_matrix = cs.to_matrices().unwrap();
         let ml = m * l;
         let sqrt_ml = (ml as f64).sqrt() as usize;
-        assert_eq!(cs_matrix.a.len(), ml);
+        assert_eq!(cs_matrix.a.1.len(), ml);
 
         let (mut de_row_index_vecs, mut de_col_index_vecs, mut de_val_evals_vecs) = (
             DeRowIndex::new(),
@@ -406,7 +427,14 @@ impl<P: Pairing> Indexer<P> {
             DeValEvals::<P>::new());
 
         for row_id in 0..ml {
-            cs_matrix.a[row_id].iter().for_each(|(val, col_id)| {
+            let start = if row_id == 0 {
+                0
+            } else {
+                cs_matrix.a.1[row_id - 1]
+            };
+            let end = cs_matrix.a.1[row_id];
+            
+            cs_matrix.a.0[start..end].iter().for_each(|(val, col_id)| {
                 // current entry: ((row_id, col_id), val)
                 if sub_prover_id == col_id / m {
                             
@@ -420,8 +448,15 @@ impl<P: Pairing> Indexer<P> {
 
                 }
             });
-                
-            cs_matrix.b[row_id].iter().for_each(|(val, col_id)| {
+            
+            let start = if row_id == 0 {
+                0
+            } else {
+                cs_matrix.b.1[row_id - 1]
+            };
+            let end = cs_matrix.b.1[row_id];
+            
+            cs_matrix.b.0[start..end].iter().for_each(|(val, col_id)| {
                 if sub_prover_id == col_id / m {
                         
                     let (low, high) = Self::decompose(row_id, sqrt_ml);
@@ -434,7 +469,14 @@ impl<P: Pairing> Indexer<P> {
                 }
             });
                     
-            cs_matrix.c[row_id].iter().for_each(|(val, col_id)| {
+            let start = if row_id == 0 {
+                0
+            } else {
+                cs_matrix.c.1[row_id - 1]
+            };
+            let end = cs_matrix.c.1[row_id];
+            
+            cs_matrix.c.0[start..end].iter().for_each(|(val, col_id)| {
                 if sub_prover_id == col_id / m {
                             
                     let (low, high) = Self::decompose(row_id, sqrt_ml);

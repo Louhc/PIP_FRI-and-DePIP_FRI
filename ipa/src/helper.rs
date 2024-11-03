@@ -110,8 +110,6 @@ pub fn generate_r1cs_de_polynomials<P: Pairing> (
     let (polynomial_a, polynomial_b) = generate_polynomials_from_vectors::<P>(take(&mut r1cs_vecs.vec_a), take(&mut r1cs_vecs.vec_b));
     let polynomial_c = generate_polynomials_from_left_vector::<P>(take(&mut r1cs_vecs.vec_c));
 
-    drop_in_background_thread(r1cs_vecs);
-
     end_timer!(timer);
 
     (R1CSPublicPolys {

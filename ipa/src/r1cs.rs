@@ -1,8 +1,8 @@
 use ark_ff::{Zero, One};
 use ark_ec::pairing::Pairing;
+use ark_relations::r1cs::Matrix;
 use rayon::prelude::*;
 use my_kzg::{par_join_3, helper::generate_powers};
-use crate::helper::drop_in_background_thread;
 use itertools::MultiUnzip;
 use ark_std::ops::AddAssign;
 use ark_std::{cfg_iter, start_timer, end_timer};
@@ -149,11 +149,27 @@ impl<P:Pairing> R1CSVectors<P> {
         let instance_assignment = &cs.instance_assignment;
         let witness_assignment = &cs.witness_assignment;
 
+        let get_sub_vec = |matrix: &Matrix<P::ScalarField>, i: usize| {
+            let start = if i == 0 {
+                0
+            } else {
+                matrix.1[i - 1]
+            };
+            let end = matrix.1[i];
+            evaluate_constraint(&matrix.0[start..end], instance_assignment, witness_assignment)
+        };
+
         let (sub_vec_a, sub_vec_b, sub_vec_c): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = 
         par_join_3!(
-            || cs_matrix.a[start..end].par_iter().map(|row| evaluate_constraint(&row, instance_assignment, witness_assignment)).collect(),
-            || cs_matrix.b[start..end].par_iter().map(|row| evaluate_constraint(&row, instance_assignment, witness_assignment)).collect(),
-            || cs_matrix.c[start..end].par_iter().map(|row| evaluate_constraint(&row, instance_assignment, witness_assignment)).collect()
+            || (start..end).into_par_iter()
+                .map(|i| get_sub_vec(&cs_matrix.a, i))
+                .collect(),
+            || (start..end).into_par_iter()
+                .map(|i| get_sub_vec(&cs_matrix.b, i))
+                .collect(),
+            || (start..end).into_par_iter()
+                .map(|i| get_sub_vec(&cs_matrix.c, i))
+                .collect()
         );
         
         end_timer!(step);
@@ -164,45 +180,31 @@ impl<P:Pairing> R1CSVectors<P> {
         let mut sub_vec_x = vec![f_zero; m];
         let mut sub_vec_y = vec![f_zero; m];
         let mut sub_vec_z = vec![f_zero; m];
+
+        let generate_sub_vec = |out: &mut Vec<P::ScalarField>, matrix: &Matrix<P::ScalarField>| {
+            for row_idx in 0..m * l {
+                let data_start = if row_idx == 0 {
+                    0
+                } else {
+                    matrix.1[row_idx - 1]
+                };
+                let data_end = matrix.1[row_idx];
+                matrix.0[data_start..data_end]
+                    .iter()
+                    .for_each(|(coeff, id)| {
+                        if start <= *id && *id < end {
+                            out[*id - start] += *coeff * vec_r[row_idx];
+                        }
+                    });
+            }
+        };
     
         par_join_3!(
-            || {
-                for row_idx in 0..m * l {
-                    cs_matrix.a[row_idx]
-                    .iter()
-                    .for_each(|(coeff, id)| {
-                        if start <= *id && *id < end {
-                            sub_vec_x[*id - start] += *coeff * vec_r[row_idx].clone();
-                        }
-                    });
-                }
-            },
-            || {
-                for row_idx in 0..m * l {
-                    cs_matrix.b[row_idx]
-                    .iter()
-                    .for_each(|(coeff, id)| {
-                        if start <= *id && *id < end {
-                            sub_vec_y[*id - start] += *coeff * vec_r[row_idx].clone();
-                        }
-                    });
-                }
-            },
-            || {
-                for row_idx in 0..m * l {
-                    cs_matrix.c[row_idx]
-                    .iter()
-                    .for_each(|(coeff, id)| {
-                        if start <= *id && *id < end {
-                            sub_vec_z[*id - start] += *coeff * vec_r[row_idx].clone();
-                        }
-                    });
-                }
-            }
+            || generate_sub_vec(&mut sub_vec_x, &cs_matrix.a),
+            || generate_sub_vec(&mut sub_vec_y, &cs_matrix.b),
+            || generate_sub_vec(&mut sub_vec_z, &cs_matrix.c)
         );
         end_timer!(step);
-
-        drop_in_background_thread(cs_matrix);
 
         let vec_w = if end <= num_instance_variables {
             instance_assignment[start..end].to_vec()
@@ -254,35 +256,27 @@ impl<P:Pairing> R1CSPubVectors<P> {
         let mut vec_x = vec![f_zero; m * l];
         let mut vec_y = vec![f_zero; m * l];
         let mut vec_z = vec![f_zero; m * l];
+
+        let generate_sub_vec = |out: &mut Vec<P::ScalarField>, matrix: &Matrix<P::ScalarField>| {
+            for row_idx in 0..m * l {
+                let data_start = if row_idx == 0 {
+                    0
+                } else {
+                    matrix.1[row_idx - 1]
+                };
+                let data_end = matrix.1[row_idx];
+                matrix.0[data_start..data_end]
+                    .iter()
+                    .for_each(|(coeff, id)| {
+                        out[*id] += *coeff * vec_r[row_idx];
+                    });
+            }
+        };
     
         par_join_3!(
-            || {
-                for row_idx in 0..m * l {
-                    cs_matrix.a[row_idx]
-                    .iter()
-                    .for_each(|(coeff, id)| {
-                        vec_x[*id] += *coeff * vec_r[row_idx];
-                    });
-                }
-            },
-            || {
-                for row_idx in 0..m * l {
-                    cs_matrix.b[row_idx]
-                    .iter()
-                    .for_each(|(coeff, id)| {
-                        vec_y[*id] += *coeff * vec_r[row_idx];
-                    });
-                }
-            },
-            || {
-                for row_idx in 0..m * l {
-                    cs_matrix.c[row_idx]
-                    .iter()
-                    .for_each(|(coeff, id)| {
-                        vec_z[*id] += *coeff * vec_r[row_idx];
-                    });
-                }
-            }
+            || generate_sub_vec(&mut vec_x, &cs_matrix.a),
+            || generate_sub_vec(&mut vec_y, &cs_matrix.b),
+            || generate_sub_vec(&mut vec_z, &cs_matrix.c)
         );
     
         Ok( Self {
