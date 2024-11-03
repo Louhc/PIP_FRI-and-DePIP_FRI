@@ -19,6 +19,7 @@ use my_snark::snark_log::DeSNARKLog;
 use my_snark::indexer::Indexer;
 use my_ipa::r1cs::R1CSVectors;
 use ark_bn254::Bn254;
+use ark_std::{start_timer, end_timer};
 // use ark_bls12_381::Bls12_381;
 
 #[derive(Debug, StructOpt)]
@@ -112,9 +113,11 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     println!("Prover {:?} starts to prove", sub_prover_id);
     let total_time = Instant::now();
     let mut transcript : Transcript = Transcript::new(b"Random R1CS");
+    let timer = start_timer!(|| "Build r1cs vecs and polys");
     let time = Instant::now();
     let r1cs_de_vecs: R1CSVectors<E> = R1CSVectors::<E>::build(sub_prover_id, m, l, challenge_r, &cs).unwrap();
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<E>(m, l, r1cs_de_vecs);
+    end_timer!(timer);
     println!("Prover {:?} build r1cs vecs and polys time: {:?}", sub_prover_id, time.elapsed());
     let proof = DeSNARKLog::<E>::de_r1cs_prove(sub_prover_id, &powers, 
         &m_powers, &x_srs, &y_srs, &m_srs, &sub_wit_polys, &sub_pub_polys, &pre_mes_prover,
