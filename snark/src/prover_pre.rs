@@ -2,6 +2,7 @@ use ark_poly::domain;
 use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, 
     EvaluationDomain, Evaluations, GeneralEvaluationDomain, Polynomial
 };
+use ark_std::{start_timer, end_timer};
 use std::marker::PhantomData;
 use std::time::Instant;
 use ark_ec::pairing::Pairing;
@@ -459,7 +460,7 @@ impl<P: Pairing> PreProver<P> {
         beta: &P::ScalarField,
     ) -> (UnivariatePolynomial<P::ScalarField>, P::G1) {
 
-        let time = Instant::now();
+        let step = start_timer!(|| "compute q1");
         let m_prime = m_domain.size();
         let domain = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(2 * m_prime).unwrap();
         let f1_evals: Vec<Vec<P::ScalarField>> = sub_polys_f1.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(domain).evals).collect();
@@ -468,30 +469,37 @@ impl<P: Pairing> PreProver<P> {
         let upper_polys = vec![&upper_a_t_polys.a_pa_low, &upper_a_t_polys.a_pa_high, &upper_a_t_polys.a_pb_low,
             &upper_a_t_polys.a_pb_high, &upper_a_t_polys.a_pc_low, &upper_a_t_polys.a_pc_high,
             &upper_b_t_polys.b_pa, &upper_b_t_polys.b_pb, &upper_b_t_polys.b_pc];
-        let virtual_polys: Vec<UnivariatePolynomial<P::ScalarField>> = lower_polys.into_par_iter().zip(upper_polys.into_par_iter())
-            .map(|(lower, upper)| &(lower * *beta) + upper)
+        
+        let linear_factors = generate_powers(v, 9);
+        let virtual_polys: Vec<UnivariatePolynomial<P::ScalarField>> = (&lower_polys, &upper_polys, &linear_factors)
+            .into_par_iter()
+            .map(|(lower, upper, factor)| {
+                let mut poly = (*lower * (*beta * factor)) + (*upper * *factor);
+                poly.coeffs[0] += *gamma * *factor;
+                poly
+            })
             .collect();
         let virtual_evals: Vec<Vec<P::ScalarField>> = virtual_polys.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(domain).evals).collect();
 
-        let linear_factors = generate_powers(v, 9);
         let evals_max: Vec<Vec<P::ScalarField>> = f1_evals.par_iter()
             .zip(virtual_evals.par_iter())
-            .zip(linear_factors.par_iter())
-            .map(|((f1_eval, aux_eval), factor)|{
+            .map(|(f1_eval, aux_eval)|{
                 f1_eval.par_iter().zip(aux_eval.par_iter())
                     .map(|(f1, aux)|{
-                        (*f1 * (*gamma + aux) - P::ScalarField::one()) * factor
+                        *f1 * aux
                     }).collect()
             }).collect();
         let evals_target: Vec<P::ScalarField> = (0..domain.size()).into_par_iter().map(|row_index|{
             evals_max.par_iter().map(|eval| eval[row_index]).sum()
         }).collect();
-        let poly_target = DeIPA::<P>::interpolate_from_eval_domain(evals_target, &domain);
+        let mut poly_target = DeIPA::<P>::interpolate_from_eval_domain(evals_target, &domain);
+        poly_target.coeffs[0] -= linear_factors.iter().sum::<P::ScalarField>();
 
         let (sub_poly_q1, remainder) = poly_target.divide_by_vanishing_poly(*m_domain).unwrap();
         assert_eq!(remainder, UnivariatePolynomial::zero());
-        println!("compute sub_poly_q1 time: {:?}", time.elapsed());
+        end_timer!(step);
 
+        let step = start_timer!(|| "commit q1");
         let sub_com_q1 = KZG::<P>::commit(&m_srs, &sub_poly_q1).unwrap();
         let com_q1 = Net::send_to_master(&sub_com_q1);
         let com_q1 = if Net::am_master() {
@@ -499,6 +507,7 @@ impl<P: Pairing> PreProver<P> {
         } else {
             P::G1::zero()
         };
+        end_timer!(step);
         (sub_poly_q1, com_q1)
     }
 

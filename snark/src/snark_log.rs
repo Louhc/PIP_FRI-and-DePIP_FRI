@@ -377,14 +377,14 @@ impl<P: Pairing> DeSNARKLog<P> {
         let (eval_q1, proof_q1) = PreProver::<P>::open_q1(&m_srs, &sub_poly_q1, &delta);
         end_timer!(step);
 
-        let time = Instant::now();
+        let step = start_timer!(|| "compute & commit g5 h5");
         let (polys_g5_h5, coms_g5_h5) = PreProver::<P>::compute_and_commit_g5_h5(&y_srs, &de_polys_f1, &val_upper_and_l_total_evals, &lower_evals, &y_domain, &delta, &beta, &gamma, &v, &u4,
             &eval_q1, &m_domain);
         assert_eq!(polys_g5_h5.len(), 2);
         assert_eq!(coms_g5_h5.len(), 2);
         let mut coms_g4_h4_g5_h5 = coms_g4_h4.clone();
         coms_g4_h4_g5_h5.extend(&coms_g5_h5);
-        println!("Prover {:?} opens g5/h5 time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // generate challenge zeta
         let zeta = if Net::am_master() {
@@ -400,20 +400,20 @@ impl<P: Pairing> DeSNARKLog<P> {
         // generate proof to alpha, beta
         // also open R(r^m, beta)
         // Note:: this involves transcript, must put after the generation of the last challenge
-        let time = Instant::now();
+        let step = start_timer!(|| "open bivariate polynomials");
         let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r], vec![r_pow_m]];
         let sub_polynomials = vec![&wit_polys.poly_w, &wit_polys.poly_a, &wit_polys.poly_b, &wit_polys.poly_c, &upper_r_poly];
         let proofs_wit_upper_r_polys= BivBatchKZG::<P>::de_open_lagrange_at_same_y(sub_prover_id, &powers, &x_srs, &sub_polynomials, &x_points, &beta, &y_domain, transcript, &gamma);
-        println!("Prover {:?} computs proofs of bivariate polynomials time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // open g4 h4, only P_0 works
-        let time = Instant::now();
+        let step = start_timer!(|| "open g4, h4, g5, h5");
         let (evals_g4_h4_g5_h5, proof_g4_h4_g5_h5) = PreProver::<P>::open_g4_h4_g5_h5(&y_srs, &y_domain, &polys_g4_h4, &polys_g5_h5, &zeta, &gamma);
-        println!("Prover {:?} open g4, h4, g5, h5 time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // open t and f2, only P_0 works
         // Note:: this also involves transcript
-        let time = Instant::now();
+        let step = start_timer!(|| "open t, f2, q2, n");
         let coms_t_f2_q2 = if Net::am_master() {
             let mut coms_t_f2_q2 = coms_a_t;
             coms_t_f2_q2.push(com_b_t);
@@ -430,7 +430,7 @@ impl<P: Pairing> DeSNARKLog<P> {
             assert_eq!(evals_t_f2_q2_n[0].len(), 3);
             assert_eq!(evals_t_f2_q2_n[3].len(), 2);
         }
-        println!("Prover {:?} open t, f2, n time: {:?}", sub_prover_id, time.elapsed());
+        end_timer!(step);
 
         // open val_upper_lower_a_b at (delta, zeta)
         let time = Instant::now();
