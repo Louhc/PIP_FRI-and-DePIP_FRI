@@ -201,8 +201,6 @@ impl<P:Pairing> R1CSVectors<P> {
         );
         end_timer!(step);
 
-        end_timer!(timer);
-
         let vec_w = if end <= num_instance_variables {
             instance_assignment[start..end].to_vec()
         } else if start >= num_instance_variables {
@@ -211,6 +209,8 @@ impl<P:Pairing> R1CSVectors<P> {
             vec![&instance_assignment[start..],
             &witness_assignment[..(end - num_instance_variables)]].concat()
         };
+
+        end_timer!(timer);
 
         Ok( Self {
             vec_x: sub_vec_x,

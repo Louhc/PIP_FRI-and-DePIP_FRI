@@ -124,6 +124,17 @@ pub struct PreProver<P: Pairing> {
     _pairing: PhantomData<P>,
 }
 
+#[inline]
+fn slice_inbounds<T>(data: &[T], start: usize, end: usize) -> &[T] {
+    if data.len() <= start {
+        &[]
+    } else if data.len() < end {
+        &data[start..]
+    } else {
+        &data[start..end]
+    }
+}
+
 impl<P: Pairing> PreProver<P> {
 
     pub fn compute_upper_a_t_polys_from_rows (
@@ -719,13 +730,7 @@ impl<P: Pairing> PreProver<P> {
         let end = start + size;
 
         let sub_coeffs_f2: Vec<&[P::ScalarField]> = polys_f2.iter().map(|poly| {
-            if poly.coeffs.len() <= start {
-                &[]
-            } else if poly.coeffs.len() < end {
-                &poly.coeffs[start..]
-            } else {
-                &poly.coeffs[start..end]
-            }
+            slice_inbounds(&poly.coeffs, start, end)
         }).collect();
         let sub_powers = &x_srs[start..end];
         let sub_coms_f2: Vec<P::G1Affine> = sub_coeffs_f2.into_par_iter().map(|sub_coeff| {
@@ -1150,14 +1155,7 @@ impl<P: Pairing> PreProver<P> {
         let size = x_srs.len() / Net::n_parties();
         let start = sub_prover_id * size;
         let end = start + size;
-        let sub_coeff_q2 = 
-            if poly_q2.coeffs.len() <= start {
-                &[]
-            } else if poly_q2.coeffs.len() < end {
-                &poly_q2.coeffs[start..]
-            } else {
-                &poly_q2.coeffs[start..end]
-            };
+        let sub_coeff_q2 = slice_inbounds(&poly_q2.coeffs, start, end);
         let sub_powers = &x_srs[start..end];
         let sub_com_q2: P::G1Affine = P::G1MSM::msm_unchecked_par_auto(sub_powers, &sub_coeff_q2).into();
         let sub_coms_q2 = Net::send_to_master(&sub_com_q2);
@@ -1229,6 +1227,11 @@ impl<P: Pairing> PreProver<P> {
             &numerator_poly3, &numerator_poly3, &numerator_poly3,
             &numerator_poly3, &numerator_poly3, &numerator_poly3,
             &numerator_poly3, &numerator_poly3, &numerator_poly3];
+        let numerator_polys = numerator_polys.par_iter().zip(challenge_vector.par_iter()).map(|(poly, factor)| {
+            let mut poly = (**poly).clone();
+            poly.coeffs.iter_mut().for_each(|x| *x /= *factor);
+            poly
+        }).collect::<Vec<_>>();
 
         let polys_r: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
             zip(evals.par_iter()).
@@ -1239,9 +1242,8 @@ impl<P: Pairing> PreProver<P> {
         let poly_h= polys.par_iter().
             zip(polys_r.par_iter()).
             zip(numerator_polys.par_iter()).
-            zip(challenge_vector.par_iter()).
-            map(|(((poly, poly_r), numerator_poly), factor)| 
-            &(&(*poly - poly_r) / &numerator_poly) * *factor
+            map(|((poly, poly_r), numerator_poly)| 
+                &(*poly - poly_r) / &numerator_poly
             )
             .reduce_with(|acc, poly| acc + poly)
             .unwrap_or_else(UnivariatePolynomial::zero);
@@ -1250,11 +1252,9 @@ impl<P: Pairing> PreProver<P> {
         let size = x_srs.len() / Net::n_parties();
         let start = sub_prover_id * size;
         let end = start + size;
-        let mut coeff_h = poly_h.to_vec();
-        coeff_h.resize(x_srs.len(), P::ScalarField::zero());
-        let sub_coeff_h = &coeff_h[start..end];
+        let sub_coeff_h = slice_inbounds(&poly_h.coeffs, start, end);
         let sub_powers = &x_srs[start..end];
-        let sub_com_h: P::G1Affine = P::G1MSM::msm_unchecked(sub_powers, &sub_coeff_h).into();
+        let sub_com_h: P::G1Affine = P::G1MSM::msm_unchecked_par_auto(sub_powers, &sub_coeff_h).into();
         let sub_coms_h = Net::send_to_master(&sub_com_h);
         let com_h = if Net::am_master() {
             let sub_coms_h = sub_coms_h.unwrap();
@@ -1300,10 +1300,8 @@ impl<P: Pairing> PreProver<P> {
                                     &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);
 
         // try to generate com_h and com_l distributedly
-        let mut coeff_l = poly_l.to_vec();
-        coeff_l.resize(x_srs.len(), P::ScalarField::zero());
-        let sub_coeff_l = &coeff_l[start..end];
-        let sub_com_l: P::G1Affine = P::G1MSM::msm_unchecked(sub_powers, &sub_coeff_l).into();
+        let sub_coeff_l = slice_inbounds(&poly_l.coeffs, start, end);
+        let sub_com_l: P::G1Affine = P::G1MSM::msm_unchecked_par_auto(sub_powers, &sub_coeff_l).into();
         let sub_coms_l = Net::send_to_master(&sub_com_l);
         let com_l = if Net::am_master() {
             let sub_coms_l = sub_coms_l.unwrap();
