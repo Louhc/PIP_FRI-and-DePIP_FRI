@@ -2,6 +2,7 @@ use ark_ff::{Zero, One};
 use ark_ec::pairing::Pairing;
 use rayon::prelude::*;
 use my_kzg::{par_join_3, helper::generate_powers};
+use crate::helper::drop_in_background_thread;
 use itertools::MultiUnzip;
 use ark_std::ops::AddAssign;
 use ark_std::{cfg_iter, start_timer, end_timer};
@@ -200,6 +201,8 @@ impl<P:Pairing> R1CSVectors<P> {
             }
         );
         end_timer!(step);
+
+        drop_in_background_thread(cs_matrix);
 
         let vec_w = if end <= num_instance_variables {
             instance_assignment[start..end].to_vec()
