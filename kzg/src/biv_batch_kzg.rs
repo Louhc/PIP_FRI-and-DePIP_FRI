@@ -193,16 +193,21 @@ impl<P: Pairing> BivBatchKZG<P> {
         // generate slice_q1 and partial evaluations
         let linear_factors = generate_powers(challenge, evals_slice.len());
 
-        let polynomial_combined_slice_q1 = sub_polynomials.par_iter().zip(linear_factors.par_iter())
-            .map(|(poly, factor)| *poly * *factor)
-            .reduce_with(|acc, poly| acc + poly)
-            .unwrap_or(UnivariatePolynomial::zero());
+        let polynomial_q1 = if sub_polynomials.len() == 1 {
+            sub_polynomials[0] / &UnivariatePolynomial::from_coefficients_vec(vec![
+                -x.clone(),
+                P::ScalarField::one()
+            ])
+        } else {
+            &sub_polynomials.par_iter().zip(linear_factors.par_iter())
+                .map(|(poly, factor)| *poly * *factor)
+                .reduce_with(|acc, poly| acc + poly)
+                .unwrap_or(UnivariatePolynomial::zero()) / &UnivariatePolynomial::from_coefficients_vec(vec![
+                    -x.clone(),
+                    P::ScalarField::one()
+                ])
+        };
 
-        let polynomial_q1 = &polynomial_combined_slice_q1 / &UnivariatePolynomial::from_coefficients_vec(vec![
-            -x.clone(),
-            P::ScalarField::one()
-        ]);
-        // coeffs_q1.resize(sub_powers.len(), <P::ScalarField>::zero());
         let sub_proof = P::G1MSM::msm_unchecked_par_auto(&sub_powers, &polynomial_q1.coeffs).into();
         let sub_proofs = Net::send_to_master(&sub_proof);
         let evals = Net::send_to_master(evals_slice);
