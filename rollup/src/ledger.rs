@@ -1,27 +1,14 @@
 use crate::ConstraintF;
-use ark_crypto_primitives::crh::injective_map::constraints::{
-    PedersenCRHCompressorGadget, TECompressorGadget,
-};
-use ark_crypto_primitives::crh::{
-    constraints::{CRHSchemeGadget, TwoToOneCRHSchemeGadget},
-    pedersen,
-    injective_map::TECompressor,
-};
+use ark_crypto_primitives::crh::constraints::{CRHSchemeGadget, TwoToOneCRHSchemeGadget};
 use ark_crypto_primitives::merkle_tree::constraints::PathVar;
 use ark_ed_on_bls12_381::{constraints::EdwardsVar, EdwardsProjective};
 use ark_r1cs_std::bits::uint64::UInt64;
 use ark_r1cs_std::prelude::*;
-use ark_r1cs_std::{
-    alloc::AllocVar, fields::fp::FpVar, uint32::UInt32, R1CSVar,
-};
+use ark_r1cs_std::alloc::AllocVar;
 use ark_relations::r1cs::{Namespace, SynthesisError};
 use ark_simple_payments::ledger::*;
 use ark_simple_payments::signature::schnorr::constraints::ParametersVar as SchnorrParamsVar;
 use std::borrow::Borrow;
-use ark_crypto_primitives::merkle_tree::{
-    constraints::{ConfigGadget, BytesVarDigestConverter},
-    IdentityDigestConverter,
-};
 
 /// Represents transaction amounts and account balances.
 #[derive(Clone, Debug)]

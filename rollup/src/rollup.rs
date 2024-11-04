@@ -431,7 +431,7 @@ mod test {
             .update_balance(alice_id, Amount(1000))
             .expect("Alice's account should exist");
         // Let's make an account for Bob.
-        let (bob_id, _bob_pk, bob_sk) = state.sample_keys_and_register(&pp, &mut rng).unwrap();
+        let (bob_id, _bob_pk, _bob_sk) = state.sample_keys_and_register(&pp, &mut rng).unwrap();
 
         let amount_to_send = rng.gen_range(0..200);
 
@@ -453,6 +453,15 @@ mod test {
         )
         .unwrap();
         rollup
+    }
+
+    #[test]
+    fn test () {
+        let cs = ConstraintSystem::<ConstraintF>::new_ref();
+        let _circuit = build_two_tx_circuit().generate_constraints(cs.clone()).unwrap();
+        assert!(cs.is_satisfied().unwrap());
+        println!("number of constraints: {:?}", cs.num_constraints());
+        println!("number of variables: {:?}", cs.num_witness_variables());
     }
 
     /*
