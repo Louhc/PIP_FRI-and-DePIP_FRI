@@ -110,18 +110,16 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
 
     // prover
     println!("Prover {:?} starts to prove", sub_prover_id);
-    let total_time = Instant::now();
+    let timer1 = start_timer!(|| "Prover starts to prove");
     let mut transcript : Transcript = Transcript::new(b"Random R1CS");
-    let timer = start_timer!(|| "Build r1cs vecs and polys");
-    let time = Instant::now();
+    let timer2 = start_timer!(|| "Build r1cs vecs and polys");
     let r1cs_de_vecs: R1CSVectors<E> = R1CSVectors::<E>::build(sub_prover_id, m, l, challenge_r, &cs).unwrap();
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<E>(m, l, r1cs_de_vecs);
-    end_timer!(timer);
-    println!("Prover {:?} build r1cs vecs and polys time: {:?}", sub_prover_id, time.elapsed());
+    end_timer!(timer2);
     let proof = DeSNARKLog::<E>::de_r1cs_prove(sub_prover_id, &powers, 
         &m_powers, &x_srs, &y_srs, &m_srs, &sub_wit_polys, &sub_pub_polys, &pre_mes_prover,
         &challenge_r, &domain_x, &domain_y, &domain_m, &mut transcript);
-    println!("Prover {:?} prove total time: {:?}", sub_prover_id, total_time.elapsed());
+    end_timer!(timer1);
 
     if Net::am_master() {
         let proof_size = DeSNARKLog::<E>::get_proof_size(proof.as_ref().unwrap());

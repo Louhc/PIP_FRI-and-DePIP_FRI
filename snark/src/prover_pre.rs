@@ -204,8 +204,9 @@ impl<P: Pairing> PreProver<P> {
         h1: &UnivariatePolynomial<P::ScalarField>,
         upper_a_t_polys: &DeAandTPolys<P>,
     ) -> (Vec<P::G1>, Vec<P::G1>) {
+        
+        let step = start_timer!(|| "compute upper a");
         let set = upper_a_t_polys;
-
         let polys_upper_a = vec![&set.a_pa_low, &set.a_pa_high, &set.a_pb_low, 
             &set.a_pb_high, &set.a_pc_low, &set.a_pc_high];
         let coms_upper_a = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &polys_upper_a);
@@ -214,9 +215,11 @@ impl<P: Pairing> PreProver<P> {
         } else {
             Vec::new()
         };
+        end_timer!(step);
 
         // REPEAT COMPUTE: only need commitments to t_low and t_high but all sub-provers have t_low and t_high
         // here we use split msm to commit to avoid the problem
+        let step = start_timer!(|| "compute t");
         let size = x_srs.len() / Net::n_parties();
         let start = sub_prover_id * size;
         let end = start + size;
@@ -245,11 +248,14 @@ impl<P: Pairing> PreProver<P> {
         } else {
             vec![P::G1::zero(); 2]
         };
+        end_timer!(step);
 
         // commit g1, h1
+        let step = start_timer!(|| "commit g1 h1");
         let g1_h1 = vec![g1, h1];
         let coms_g1_h1 = BatchKZG::<P>::commit(&x_srs, &g1_h1).unwrap();
         let coms_g1_h1_t: Vec<P::G1> = coms_g1_h1.iter().chain(coms_t_low_high.iter()).copied().collect();
+        end_timer!(step);
 
         (coms_upper_a, coms_g1_h1_t)
     }

@@ -70,21 +70,8 @@ impl<P: Pairing> BivBatchKZG<P> {
         
         let final_coms_slice = Net::send_to_master(&sub_coms);
 
-        if Net::am_master() {
-            // let mut final_coms = vec![P::G1::zero(); sub_polynomials.len()];
+        if Net::am_master() {          
             let final_coms_slice = final_coms_slice.unwrap();
-            // let final_coms: Vec<_> = final_coms_slice
-            // .par_iter()
-            // .map(|row| {
-            //     row.iter().cloned().collect::<Vec<_>>()
-            // })
-            // .reduce_with(|mut acc, row| {
-            //     acc.iter_mut().zip(row.iter()).for_each(|(a, &b)| {
-            //         *a += b;
-            //     });
-            //     acc
-            // })
-            // .unwrap_or_else(|| vec![P::G1::zero(); sub_polynomials.len()]);
             let column_count = final_coms_slice[0].len();
             let final_coms = (0..column_count).into_par_iter()
                 .map(|col_index| {
@@ -274,7 +261,6 @@ impl<P: Pairing> BivBatchKZG<P> {
         let gamma = *challenge;
         
         // generate q_i()
-        let time = Instant::now();
         let eval_lagrange: <P as Pairing>::ScalarField = evaluate_one_lagrange::<P>(sub_prover_id, domain, y_point);
 
         let results: Vec<_> = x_points
@@ -301,7 +287,6 @@ impl<P: Pairing> BivBatchKZG<P> {
         } else {
             None
         };
-        println!("Prover {:?} proof1 time: {:?}", sub_prover_id, time.elapsed());
 
         // given proof_q, generate challenge eta using fiat-shamir
         let eta = if Net::am_master() {
@@ -351,10 +336,8 @@ impl<P: Pairing> BivBatchKZG<P> {
             Net::recv_from_master(None)
         };
 
-        let time = Instant::now();
         let proof_q1_q2 = Self::de_open_lagrange(sub_prover_id, &powers, &sub_polynomials, &sub_evals_eta, &point_eta_beta, &domain, &theta);
         let proof_q3 = DeKZG::<P>::de_open(&x_srs, &polynomial_q_slice, &eta);
-        println!("Prover {:?} proof3 time: {:?}", sub_prover_id, time.elapsed());
 
         let proof = if Net::am_master() {
             let proof_q: <P as Pairing>::G1 = proof_q.unwrap();

@@ -88,8 +88,6 @@ impl<P: Pairing> DeSNARKLog<P> {
         let l = Net::n_parties();
         // let m_prime = m_srs.len();
 
-        let timer = start_timer!(|| "de r1cs prove");
-
         // Derive the message
         let PreMesProver { upper_r_poly, de_row_index_vecs, de_col_index_vecs, val_evals, val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys } = pre_mes_prover;
         let row_index_vec = &de_row_index_vecs[sub_prover_id];
@@ -459,8 +457,6 @@ impl<P: Pairing> DeSNARKLog<P> {
             assert_eq!(eval_l.len(), 1);
         }
         end_timer!(step);
-
-        end_timer!(timer);
 
         if Net::am_master() {
             Some(SNARKProofLog {

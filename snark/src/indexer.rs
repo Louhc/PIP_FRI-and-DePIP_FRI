@@ -210,7 +210,7 @@ impl<P: Pairing> Indexer<P> {
         let n_evals = Indexer::<P>::build_n_evals(&de_row_index_vecs, &de_col_index_vecs, l, m, m_prime);
         let n_polys = Indexer::<P>::compute_n_polys(&x_domain, &n_evals);
         let coms_n = Indexer::<P>::commit_n_polys(&x_srs, &n_polys);
-        let com_l = Indexer::<P>::commit_poly_upper_l(&powers, l, &y_domain);
+        let com_l = Indexer::<P>::commit_poly_upper_l(sub_prover_id, &powers, l, &y_domain);
         (
             PreMesProver{upper_r_poly, de_row_index_vecs, de_col_index_vecs, val_evals: de_val_evals_vecs[sub_prover_id].clone(), val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys}, 
             PreMesVerifier{com_upper_r, coms_val, coms_lower_a_b, com_l, coms_n}
@@ -649,7 +649,7 @@ impl<P: Pairing> Indexer<P> {
                 (col_pa, col_pb, col_pc)
             }
         );
-        NPolys { row_pa_low, row_pa_high, row_pb_low, row_pb_high, row_pc_low, row_pc_high, col_pa, col_pb, col_pc}
+        NPolys { row_pa_low, row_pa_high, row_pb_low, row_pb_high, row_pc_low, row_pc_high, col_pa, col_pb, col_pc }
     }
 
     pub fn commit_n_polys (
@@ -826,23 +826,23 @@ impl<P: Pairing> Indexer<P> {
         (x_polynomial, com)
     }
 
-    // TODO: consider other approaches to be faster
     pub fn commit_poly_upper_l (
+        sub_prover_id: usize,
         powers: &Vec<Vec<P::G1Affine>>,
         l: usize,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> P::G1 {
         // use interpolatation to get lagrange polynomials
-        let vec = vec![P::ScalarField::zero(); l];
-        let x_polynomials: Vec<UnivariatePolynomial<P::ScalarField>> = (0..l).into_par_iter().map(|i| {
-            let mut vec_cur = vec.clone();
-            vec_cur[i] = P::ScalarField::one();
-            DeIPA::<P>::interpolate_from_eval_domain(vec_cur, &y_domain)
-        }).collect();
-        let x_poly_refs : Vec<_> = x_polynomials.iter().collect();
+        let mut vec = vec![P::ScalarField::zero(); l];
+        vec[sub_prover_id] = P::ScalarField::one();
+        let x_polynomial = DeIPA::<P>::interpolate_from_eval_domain(vec, &y_domain);
 
-        let biv_poly = BivariatePolynomial{x_polynomials: &x_poly_refs};
-        let com = BivariateKZG::<P>::commit(&powers, biv_poly).unwrap();
+        let com = BivBatchKZG::<P>::de_commit(sub_prover_id, &powers, &[&x_polynomial]);
+        let com = if Net::am_master() {
+            com.unwrap()[0]
+        } else {
+            P::G1::zero()
+        };
 
         com
     }
