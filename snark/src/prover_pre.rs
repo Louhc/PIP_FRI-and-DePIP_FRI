@@ -1328,9 +1328,11 @@ impl<P: Pairing> PreProver<P> {
         delta: &P::ScalarField,
         zeta: &P::ScalarField,
         gamma: &P::ScalarField,
-    ) -> (Vec<P::ScalarField>, (P::G1, P::G1)) {
+    ) -> (UnivariatePolynomial<P::ScalarField>, Vec<P::ScalarField>, (P::G1, P::G1)) {
+        let precombined_f1 = linear_combination_poly_by_ref::<P>(&sub_polys_f1.iter().collect(), gamma);
+
         // val, row, col, lower_pa, lower_b, f1
-        let mut sub_polys = vec![
+        let sub_polys = vec![
             &val_polys.val_pa, &val_polys.val_pb, &val_polys.val_pc,
             &upper_a_t_polys.a_pa_low, &upper_a_t_polys.a_pa_high, 
             &upper_a_t_polys.a_pb_low, &upper_a_t_polys.a_pb_high, 
@@ -1340,8 +1342,8 @@ impl<P: Pairing> PreProver<P> {
             &lower_a_b_polys.la_pb_low, &lower_a_b_polys.la_pb_high, 
             &lower_a_b_polys.la_pc_low, &lower_a_b_polys.la_pc_high, 
             &lower_a_b_polys.lb_pa, &lower_a_b_polys.lb_pb, &lower_a_b_polys.lb_pc, 
+            &precombined_f1,
         ];
-        sub_polys.extend(sub_polys_f1.iter());
         // let evals_slice: Vec<P::ScalarField> = val_upper_l_evals[..9].to_vec();
         let mut evals_slice: Vec<P::ScalarField> = val_upper_l_evals.clone();
         evals_slice.pop();
@@ -1350,13 +1352,12 @@ impl<P: Pairing> PreProver<P> {
         let evals_f: Vec<P::ScalarField> = sub_polys_f1.par_iter().map(|poly| poly.evaluate(delta)).collect();
         evals_slice.extend(evals_f);
 
-        assert_eq!(sub_polys.len(), evals_slice.len());
-
         let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &m_powers, &sub_polys, &evals_slice, &(*delta, *zeta), &y_domain, gamma);
         if Net::am_master() {
-            proof.unwrap()
+            let (evals, proof) = proof.unwrap();
+            (precombined_f1, evals, proof)
         } else {
-            (Vec::new(), (P::G1::zero(), P::G1::zero()))
+            (precombined_f1, Vec::new(), (P::G1::zero(), P::G1::zero()))
         }
     }
 
@@ -1366,12 +1367,13 @@ impl<P: Pairing> PreProver<P> {
         sub_prover_id: usize,
         m_powers: &Vec<Vec<P::G1Affine>>,
         sub_polys_f1: &Vec<UnivariatePolynomial<P::ScalarField>>,
+        precombined_f1: &UnivariatePolynomial<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         gamma: &P::ScalarField,
     ) -> (Vec<P::ScalarField>, (P::G1, P::G1)) {
         let evals_slice = sub_polys_f1.par_iter().map(|poly| poly.coeffs[0]).collect();
 
-        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &m_powers, &sub_polys_f1.iter().collect::<Vec<_>>(), &evals_slice, &(P::ScalarField::zero(), P::ScalarField::zero()), &y_domain, gamma);
+        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &m_powers, &[precombined_f1], &evals_slice, &(P::ScalarField::zero(), P::ScalarField::zero()), &y_domain, gamma);
         if Net::am_master() {
             proof.unwrap()
         } else {

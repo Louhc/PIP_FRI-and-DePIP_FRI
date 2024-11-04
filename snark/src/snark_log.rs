@@ -434,7 +434,7 @@ impl<P: Pairing> DeSNARKLog<P> {
 
         // open val_upper_lower_a_b at (delta, zeta)
         let step = start_timer!(|| "open val, A, B, a, b at (delta, zeta)");
-        let (evals_val_upper_lower_a_b_f1, proof_val_upper_lower_a_b_f1) = PreProver::<P>::open_val_upper_lower_a_b_f1(sub_prover_id, 
+        let (precombined_f1, evals_val_upper_lower_a_b_f1, proof_val_upper_lower_a_b_f1) = PreProver::<P>::open_val_upper_lower_a_b_f1(sub_prover_id, 
             &m_powers, 
             &val_polys, 
             &upper_a_t_polys, 
@@ -448,7 +448,7 @@ impl<P: Pairing> DeSNARKLog<P> {
 
         // open f1 at (0, 0)
         let step = start_timer!(|| "open f1 at (0, 0)");
-        let (evals_f1, proof_f1) = PreProver::<P>::open_f1(sub_prover_id, &m_powers, &de_polys_f1, &y_domain, &gamma);
+        let (evals_f1, proof_f1) = PreProver::<P>::open_f1(sub_prover_id, &m_powers, &de_polys_f1, &precombined_f1, &y_domain, &gamma);
         end_timer!(step);
 
         // open L at (beta, zeta)

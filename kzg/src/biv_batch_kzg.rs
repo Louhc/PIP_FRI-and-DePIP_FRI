@@ -191,7 +191,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         let (x, y) = point;
 
         // generate slice_q1 and partial evaluations
-        let linear_factors = generate_powers(challenge, sub_polynomials.len());
+        let linear_factors = generate_powers(challenge, evals_slice.len());
 
         let polynomial_combined_slice_q1 = sub_polynomials.par_iter().zip(linear_factors.par_iter())
             .map(|(poly, factor)| *poly * *factor)
@@ -233,7 +233,7 @@ impl<P: Pairing> BivBatchKZG<P> {
             
             // compute target poly eval
             let evals_lagrange = domain.evaluate_all_lagrange_coefficients(*y);
-            let target_evals: Vec<P::ScalarField> = (0..sub_polynomials.len()).into_par_iter()
+            let target_evals: Vec<P::ScalarField> = (0..evals_slice.len()).into_par_iter()
                 .map(|i| {
                     evals.par_iter().zip(evals_lagrange.par_iter()).map(|(row, eval_lagrange)| row[i] * eval_lagrange).sum()
                 }).collect();
