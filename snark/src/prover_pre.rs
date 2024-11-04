@@ -168,7 +168,7 @@ impl<P: Pairing> PreProver<P> {
                 let poly = DeIPA::<P>::interpolate_from_eval_domain(evals.clone(), m_domain);
                 (poly, evals)
             }).unzip(),
-            // let all sub-provers have t_low and t_high
+            // REPEAT COMPUTE: all sub-provers have t_low and t_high, and t_row_low and t_row_high are computed repeatedly
             || {
                 let t_low_evals : Vec<_> = generate_powers(r, m);
                 let t_row_low = DeIPA::<P>::interpolate_from_eval_domain(t_low_evals.clone(), x_domain);
@@ -215,7 +215,8 @@ impl<P: Pairing> PreProver<P> {
             Vec::new()
         };
 
-        // commit t_row_low_high distributedly
+        // REPEAT COMPUTE: only need commitments to t_low and t_high but all sub-provers have t_low and t_high
+        // here we use split msm to commit to avoid the problem
         let size = x_srs.len() / Net::n_parties();
         let start = sub_prover_id * size;
         let end = start + size;
@@ -283,7 +284,7 @@ impl<P: Pairing> PreProver<P> {
                 let b_pc = DeIPA::<P>::interpolate_from_eval_domain(evals_b_pc.clone(), m_domain);
                 (b_pc, evals_b_pc)
             },
-            // let all sub-provers have t_col
+            // REPEAT COMPUTE: all sub-provers compute t_col, only one suffices and this is repeated
             || {
                 let t_col_evals : Vec<_> = generate_powers(alpha, m);
                 let t_col = DeIPA::<P>::interpolate_from_eval_domain(t_col_evals.clone(), x_domain);
@@ -300,6 +301,8 @@ impl<P: Pairing> PreProver<P> {
         x_srs: &[P::G1Affine],
         upper_b_t_polys: &DeBandTPolys<P>,
     ) -> P::G1 {
+        // REPEAT COMPUTE: only need commitments to t_col but all sub-provers have t_col
+        // here we use split msm to commit to avoid the problem
         let size = x_srs.len() / Net::n_parties();
         let start = sub_prover_id * size;
         let end = start + size;
@@ -402,7 +405,7 @@ impl<P: Pairing> PreProver<P> {
 
         let w = x_domain.group_gen();
 
-        // new method to compute f2, to make every prover has f2, and commit distributedly
+        // REPEAT COMPUTE: only need commitments to f2's but all sub-provers have f2, the computation to get polys_f2 is repeated
         let (polys_f2, polys_f1) = 
         rayon::join(
             || {
@@ -723,7 +726,8 @@ impl<P: Pairing> PreProver<P> {
         let coms_f1 = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &sub_polys_f1.iter().collect::<Vec<_>>());
         println!("Prover {:?} commits f1 time: {:?}", sub_prover_id, time.elapsed());
     
-        // improved f2 commit method, each sub-prover only commits partial msm, and the master prover adds them
+        // REPEAT COMPUTE: only need commitments to f2's but all sub-provers have f2's
+        // here we use split msm to commit to avoid the problem
         let time = Instant::now();
         let size = x_srs.len() / Net::n_parties();
         let start = sub_prover_id * size;
@@ -1168,7 +1172,7 @@ impl<P: Pairing> PreProver<P> {
         (poly_q2, com_q2)
     }
 
-    // TODO: try to make a novel use of repeated points
+    // REPEAT COMPUTE: involve the open of t, f2, q2, n
     pub fn open_t_f2_q2_n (
         sub_prover_id: usize,
         x_srs: &[P::G1Affine],

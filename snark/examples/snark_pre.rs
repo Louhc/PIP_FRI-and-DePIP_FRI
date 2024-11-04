@@ -53,9 +53,8 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     println!("Generate R1CS instances time: {:?}", time.elapsed());
 
     let mut rng = StdRng::seed_from_u64(0u64);
-    let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, pow_of_two): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<E>::build_de_r1cs_index(l, m, &cs).unwrap();
-    let m_prime: usize = pow_of_two;
-    println!("log m_prime: {:?}", log2(pow_of_two));
+    let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, m_prime): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<E>::build_de_r1cs_index(l, m, &cs).unwrap();
+    println!("log m_prime: {:?}", log2(m_prime));
 
     let time = Instant::now();
     let challenge_r = E::ScalarField::rand(&mut rng);
