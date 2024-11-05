@@ -36,7 +36,7 @@ pub struct SecretKey<C: CurveGroup> {
     pub public_key: PublicKey<C>,
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Copy, Clone, Default, Debug)]
 pub struct Signature<C: CurveGroup> {
     pub prover_response: C::ScalarField,
     pub verifier_challenge: [u8; 32],

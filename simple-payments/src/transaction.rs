@@ -8,7 +8,7 @@ use ark_ed_on_bls12_381::EdwardsProjective;
 use ark_std::rand::Rng;
 
 /// Transaction transferring some amount from one account to another.
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Transaction {
     /// The account information of the sender.
     pub sender: AccountId,

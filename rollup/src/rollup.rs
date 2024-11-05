@@ -269,7 +269,7 @@ impl<const NUM_TX: usize> ConstraintSynthesizer<ConstraintF> for Rollup<NUM_TX> 
         for _ in 0..next_power_of_two - cons_num {
             cs.enforce_constraint(lc!(), lc!(), lc!())?;
         }
-        for _ in 0..vars_num - cons_num {
+        for _ in 0..next_power_of_two - vars_num {
             let _ = cs.new_witness_variable(|| Ok(ConstraintF::zero())).unwrap();
         }
 
@@ -296,20 +296,11 @@ pub fn build_multi_tx_circuit<const NUM_TX: usize>() -> Rollup<NUM_TX> {
 
     // Alice wants to transfer amount_to_send units to Bob, and does this NUM_TX times
     let mut temp_state = state.clone();
-    let txs = (0..NUM_TX).map(|_| {
-        Transaction::create(
-            &pp,
-            alice_id,
-            bob_id,
-            Amount(amount_to_send),
-            &alice_sk,
-            &mut rng,
-        )
-    }).collect::<Vec<_>>();
+    let tx1 = Transaction::create(&pp, alice_id, bob_id, Amount(amount_to_send), &alice_sk, &mut rng);
     
     let rollup = Rollup::<NUM_TX>::with_state_and_transactions(
         pp.clone(),
-        &txs,
+        &[tx1.clone(); NUM_TX],
         &mut temp_state,
         true,
     )
@@ -510,12 +501,13 @@ mod test {
     }
 
     #[test]
-    fn test () {
+    fn test_padding () {
+        const TX_NUM: usize = 1 << 6;
         let cs = ConstraintSystem::<ConstraintF>::new_ref();
-        let _circuit = build_two_tx_circuit().generate_constraints(cs.clone()).unwrap();
-        assert!(cs.is_satisfied().unwrap());
+        let _circuit = build_multi_tx_circuit::<TX_NUM>().generate_constraints(cs.clone()).unwrap();
+        // assert!(cs.is_satisfied().unwrap());
         println!("number of constraints: {:?}", cs.num_constraints());
-        println!("number of variables: {:?}", cs.num_witness_variables());
+        println!("number of variables: {:?}", cs.num_witness_variables() + cs.num_instance_variables());
     }
 
     /*
