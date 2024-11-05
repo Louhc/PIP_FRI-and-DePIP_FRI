@@ -6,9 +6,11 @@ use ark_r1cs_std::prelude::*;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use ark_simple_payments::{
     account::AccountInformation,
-    ledger::{AccPath, AccRoot, Parameters, State},
+    ledger::{AccPath, AccRoot, Parameters, State, Amount},
     transaction::Transaction,
 };
+use ark_std::Zero;
+use ark_relations::lc;
 
 pub struct Rollup<const NUM_TX: usize> {
     /// The ledger parameters.
@@ -259,8 +261,60 @@ impl<const NUM_TX: usize> ConstraintSynthesizer<ConstraintF> for Rollup<NUM_TX> 
         // applying all state transitions
         // TODO: implement this
         prev_root.enforce_equal(&final_root)?;
+
+        let cons_num = cs.num_constraints();
+        let vars_num = cs.num_witness_variables() + cs.num_instance_variables();
+        
+        let next_power_of_two = cons_num.max(vars_num).next_power_of_two();
+        for _ in 0..next_power_of_two - cons_num {
+            cs.enforce_constraint(lc!(), lc!(), lc!())?;
+        }
+        for _ in 0..vars_num - cons_num {
+            let _ = cs.new_witness_variable(|| Ok(ConstraintF::zero())).unwrap();
+        }
+
         Ok(())
     }
+}
+
+pub fn build_multi_tx_circuit<const NUM_TX: usize>() -> Rollup<NUM_TX> {
+    use ark_std::rand::Rng;
+    let mut rng = ark_std::test_rng();
+    let pp = Parameters::sample(&mut rng);
+    let mut state = State::new(32, &pp);
+    // Let's make an account for Alice.
+    let (alice_id, _alice_pk, alice_sk) =
+        state.sample_keys_and_register(&pp, &mut rng).unwrap();
+    // Let's give her some initial balance to start with.
+    state
+        .update_balance(alice_id, Amount(NUM_TX as u64 + 1))
+        .expect("Alice's account should exist");
+    // Let's make an account for Bob.
+    let (bob_id, _bob_pk, _bob_sk) = state.sample_keys_and_register(&pp, &mut rng).unwrap();
+
+    let amount_to_send = 1;
+
+    // Alice wants to transfer amount_to_send units to Bob, and does this NUM_TX times
+    let mut temp_state = state.clone();
+    let txs = (0..NUM_TX).map(|_| {
+        Transaction::create(
+            &pp,
+            alice_id,
+            bob_id,
+            Amount(amount_to_send),
+            &alice_sk,
+            &mut rng,
+        )
+    }).collect::<Vec<_>>();
+    
+    let rollup = Rollup::<NUM_TX>::with_state_and_transactions(
+        pp.clone(),
+        &txs,
+        &mut temp_state,
+        true,
+    )
+    .unwrap();
+    rollup
 }
 
 #[cfg(test)]
