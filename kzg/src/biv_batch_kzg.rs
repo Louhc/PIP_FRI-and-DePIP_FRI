@@ -6,7 +6,7 @@ use ark_ff::{One, Zero, Field};
 use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
-use ark_poly::{Evaluations, GeneralEvaluationDomain, EvaluationDomain};
+use ark_poly::{GeneralEvaluationDomain, EvaluationDomain};
 use merlin::Transcript;
 use crate::helper::{evaluate_one_lagrange, linear_combination_poly};
 use crate::uni_trivial_kzg::{self, KZG, DeKZG};
@@ -147,8 +147,7 @@ impl<P: Pairing> BivBatchKZG<P> {
                         .sum()
                 }).collect());
             
-            let evals_q2 = Evaluations::<P::ScalarField>::from_vec_and_domain(sub_poly_evals_sum, *domain);
-            let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_q2, &y, &domain);
+            let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&sub_poly_evals_sum, &y, &domain);
             let proof_2 = P::G1MSM::msm_unchecked_par_auto(&y_srs, &coeffs_q2);
 
             Some((proof_1, proof_2.into().into()))
@@ -230,8 +229,7 @@ impl<P: Pairing> BivBatchKZG<P> {
                     evals.par_iter().zip(evals_lagrange.par_iter()).map(|(row, eval_lagrange)| row[i] * eval_lagrange).sum()
                 }).collect();
             
-            let evals_q2 = Evaluations::<P::ScalarField>::from_vec_and_domain(sub_poly_evals_sum, *domain);
-            let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_q2, &y, &domain);
+            let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&sub_poly_evals_sum, &y, &domain);
             let proof_2 = P::G1MSM::msm_unchecked_par_auto(&y_srs, &coeffs_q2);
 
             Some((target_evals, (proof_1, proof_2.into().into())))
@@ -578,8 +576,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         //     -y.clone(),
         //     P::ScalarField::one(),
         // ]);
-        let evals_q2 = Evaluations::<P::ScalarField>::from_vec_and_domain(combined_polynomial_q2.coeffs, *domain);
-        let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_q2, &y, &domain);
+        let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&combined_polynomial_q2.coeffs, &y, &domain);
         
         // generate q1(x,y) = \sum_j f_j (x,y)-f_j (z1,y) / (x-z1) = \sum_i gamma^{i-1} \sum_j [(f_{j,i}(x)-f_{j,i}(z1))/(x-z1)] \cdot y^{i-1}
 

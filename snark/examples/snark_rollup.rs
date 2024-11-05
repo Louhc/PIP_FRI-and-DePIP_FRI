@@ -54,7 +54,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     // In Pianist, a rollup transaction constraint number is 86k, while ours is 196k, two times than it
     let num_tx_in_pianist = NUM_TX * 2;
     if NUM_TX % Net::n_parties() != 0 {
-        println!("The transaction number is not enough to assign each sub-prover!");
+        println!("The transaction number is not enough to assign each sub-prover distributedly!");
     }
     let cs = ConstraintSystem::<ConstraintF>::new_ref();
     let _circuit = build_multi_tx_circuit::<NUM_TX>().generate_constraints(cs.clone()).unwrap();

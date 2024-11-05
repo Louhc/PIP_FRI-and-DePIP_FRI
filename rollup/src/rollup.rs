@@ -497,7 +497,7 @@ mod test {
         println!("number of constraints: {:?}", cs.num_constraints());
         println!("number of variables: {:?}", cs.num_witness_variables() + cs.num_instance_variables());
         let cs_matrix = cs.to_matrices().unwrap();
-        println!("cs_matrix.a[0].len(): {:?}", cs_matrix.a[0].len());
+        // println!("cs_matrix.a[0].len(): {:?}", cs_matrix.a[0].len());
     }
 
     /*

@@ -18,7 +18,7 @@ use crate::prover_nopre::NoPreProver;
 use crate::par_join_4;
 use my_ipa::de_ipa::DeIPA;
 use my_kzg::uni_trivial_kzg::KZG;
-use my_kzg::helper::{generate_powers, linear_combination_poly, linear_combination_poly_by_ref};
+use my_kzg::helper::{evaluate_one_lagrange, generate_powers, linear_combination_poly, linear_combination_poly_by_ref};
 use my_kzg::uni_trivial_kzg::DeKZG;
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use std::mem::take;
@@ -1157,9 +1157,17 @@ impl<P: Pairing> PreProver<P> {
             })
             .collect::<Vec<_>>();
 
-        let poly_left = DeIPA::<P>::interpolate_from_eval_domain(evals_left, &domain_2x);
+        let poly_left = DeIPA::<P>::interpolate_from_eval_domain(evals_left.clone(), &domain_2x);
         let (poly_q2, remainder) = poly_left.divide_by_vanishing_poly(*x_domain).unwrap();
+        println!("poly_q2 degree is: {:?}", poly_q2.degree());
         assert_eq!(remainder, UnivariatePolynomial::zero());
+
+        // test for lagrange commit and open
+        // let elements: Vec<P::ScalarField> = domain_2x.elements().collect();
+        // println!("size is: {:?}", elements.len());
+        // let evals_q2: Vec<P::ScalarField> = elements.par_iter().zip(evals_left.par_iter()).map(|(a, b)| *b / domain_2x.evaluate_vanishing_polynomial(*a)).collect();
+        // let poly_q2_test = DeIPA::<P>::interpolate_from_eval_domain(evals_q2, &domain_2x);
+        // assert_eq!(poly_q2, poly_q2_test);
 
         // generate com_q2 distributedly
         let size = x_srs.len() / Net::n_parties();
