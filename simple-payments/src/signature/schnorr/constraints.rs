@@ -1,5 +1,5 @@
 use ark_ec::CurveGroup;
-use ark_ff::{Field, BigInteger};
+use ark_ff::Field;
 use ark_r1cs_std::{bits::uint8::UInt8, prelude::*};
 use ark_relations::r1cs::ConstraintSystemRef;
 use ark_relations::r1cs::{Namespace, SynthesisError};

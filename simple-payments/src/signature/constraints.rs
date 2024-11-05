@@ -38,9 +38,8 @@ pub trait SigRandomizePkGadget<S: SignatureScheme, ConstraintF: Field> {
 #[cfg(test)]
 mod test {
     use crate::signature::{schnorr, schnorr::constraints::*, *};
-    use ark_ec::{CurveGroup, Group};
     use ark_ed_on_bls12_381::constraints::EdwardsVar as JubJubVar;
-    use ark_ed_on_bls12_381::{EdwardsProjective as JubJub, Fr, Fq};
+    use ark_ed_on_bls12_381::{EdwardsProjective as JubJub, Fq};
     use ark_ff::PrimeField;
     use ark_r1cs_std::prelude::*;
     use ark_relations::r1cs::ConstraintSystem;

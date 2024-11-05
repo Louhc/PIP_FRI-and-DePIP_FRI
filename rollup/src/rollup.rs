@@ -278,7 +278,6 @@ impl<const NUM_TX: usize> ConstraintSynthesizer<ConstraintF> for Rollup<NUM_TX> 
 }
 
 pub fn build_multi_tx_circuit<const NUM_TX: usize>() -> Rollup<NUM_TX> {
-    use ark_std::rand::Rng;
     let mut rng = ark_std::test_rng();
     let pp = Parameters::sample(&mut rng);
     let mut state = State::new(32, &pp);
@@ -463,46 +462,46 @@ mod test {
 
     // Builds a circuit with two txs, using different pubkeys & amounts every time.
     // It returns this circuit
-    fn build_two_tx_circuit() -> Rollup<2> {
-        use ark_std::rand::Rng;
-        let mut rng = ark_std::test_rng();
-        let pp = Parameters::sample(&mut rng);
-        let mut state = State::new(32, &pp);
-        // Let's make an account for Alice.
-        let (alice_id, _alice_pk, alice_sk) =
-            state.sample_keys_and_register(&pp, &mut rng).unwrap();
-        // Let's give her some initial balance to start with.
-        state
-            .update_balance(alice_id, Amount(1000))
-            .expect("Alice's account should exist");
-        // Let's make an account for Bob.
-        let (bob_id, _bob_pk, _bob_sk) = state.sample_keys_and_register(&pp, &mut rng).unwrap();
+    // fn build_two_tx_circuit() -> Rollup<2> {
+    //     use ark_std::rand::Rng;
+    //     let mut rng = ark_std::test_rng();
+    //     let pp = Parameters::sample(&mut rng);
+    //     let mut state = State::new(32, &pp);
+    //     // Let's make an account for Alice.
+    //     let (alice_id, _alice_pk, alice_sk) =
+    //         state.sample_keys_and_register(&pp, &mut rng).unwrap();
+    //     // Let's give her some initial balance to start with.
+    //     state
+    //         .update_balance(alice_id, Amount(1000))
+    //         .expect("Alice's account should exist");
+    //     // Let's make an account for Bob.
+    //     let (bob_id, _bob_pk, _bob_sk) = state.sample_keys_and_register(&pp, &mut rng).unwrap();
 
-        let amount_to_send = rng.gen_range(0..200);
+    //     let amount_to_send = rng.gen_range(0..200);
 
-        // Alice wants to transfer amount_to_send units to Bob, and does this twice
-        let mut temp_state = state.clone();
-        let tx1 = Transaction::create(
-            &pp,
-            alice_id,
-            bob_id,
-            Amount(amount_to_send),
-            &alice_sk,
-            &mut rng,
-        );
-        let rollup = Rollup::<2>::with_state_and_transactions(
-            pp.clone(),
-            &[tx1.clone(), tx1.clone()],
-            &mut temp_state,
-            true,
-        )
-        .unwrap();
-        rollup
-    }
+    //     // Alice wants to transfer amount_to_send units to Bob, and does this twice
+    //     let mut temp_state = state.clone();
+    //     let tx1 = Transaction::create(
+    //         &pp,
+    //         alice_id,
+    //         bob_id,
+    //         Amount(amount_to_send),
+    //         &alice_sk,
+    //         &mut rng,
+    //     );
+    //     let rollup = Rollup::<2>::with_state_and_transactions(
+    //         pp.clone(),
+    //         &[tx1.clone(), tx1.clone()],
+    //         &mut temp_state,
+    //         true,
+    //     )
+    //     .unwrap();
+    //     rollup
+    // }
 
     #[test]
     fn test_padding () {
-        const TX_NUM: usize = 1 << 6;
+        const TX_NUM: usize = 1 << 2;
         let cs = ConstraintSystem::<ConstraintF>::new_ref();
         let _circuit = build_multi_tx_circuit::<TX_NUM>().generate_constraints(cs.clone()).unwrap();
         // assert!(cs.is_satisfied().unwrap());

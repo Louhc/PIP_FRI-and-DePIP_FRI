@@ -6,11 +6,9 @@ use ark_ff::{
     ToConstraintField, UniformRand,
 };
 use ark_serialize::CanonicalSerialize;
-use ark_std::io::{Result as IoResult, Write};
 use ark_std::rand::Rng;
 use ark_std::{hash::Hash, marker::PhantomData, vec::Vec};
 use blake2::Blake2s256;
-use digest::generic_array::GenericArray;
 use blake2::Digest;
 
 use derivative::Derivative;

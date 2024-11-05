@@ -5,14 +5,13 @@ use ark_crypto_primitives::crh::{
     constraints::{CRHSchemeGadget, TwoToOneCRHSchemeGadget},
     pedersen, CRHScheme, TwoToOneCRHScheme,
 };
-use ark_crypto_primitives::merkle_tree::{self, ByteDigestConverter, MerkleTree, Path};
+use ark_crypto_primitives::merkle_tree::{ByteDigestConverter, MerkleTree, Path};
 use ark_ed_on_bls12_381::{EdwardsProjective, Fq as ConstraintF, constraints::EdwardsVar};
 use ark_std::rand::Rng;
 use std::collections::HashMap;
 use ark_crypto_primitives::merkle_tree::{
     Config,
-    constraints::{ConfigGadget, BytesVarDigestConverter},
-    IdentityDigestConverter,
+    constraints::{ConfigGadget, BytesVarDigestConverter}
 };
 use ark_r1cs_std::uint8::UInt8;
 
