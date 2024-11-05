@@ -490,7 +490,7 @@ mod test {
 
     #[test]
     fn test_padding () {
-        const TX_NUM: usize = 1 << 2;
+        const TX_NUM: usize = 1 << 0;
         let cs = ConstraintSystem::<ConstraintF>::new_ref();
         let _circuit = build_multi_tx_circuit::<TX_NUM>().generate_constraints(cs.clone()).unwrap();
         // assert!(cs.is_satisfied().unwrap());

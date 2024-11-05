@@ -20,7 +20,7 @@ use my_snark::indexer::Indexer;
 use my_ipa::r1cs::R1CSVectors;
 use ark_bn254::Bn254;
 use ark_std::{start_timer, end_timer};
-// use ark_bls12_381::Bls12_381;
+use ark_bls12_381::Bls12_381;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "example", about = "An example of StructOpt usage.")]
@@ -139,6 +139,6 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
 fn main() {
     let (m, l, sub_prover_id) = init();
     test_helper::<Bn254>(m, l, sub_prover_id);
-    // test_helper::<Bls12_381>(m, l, sub_prover_id);
+    test_helper::<Bls12_381>(m, l, sub_prover_id);
     Net::deinit();
 }
