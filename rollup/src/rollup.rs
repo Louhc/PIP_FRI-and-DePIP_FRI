@@ -262,17 +262,6 @@ impl<const NUM_TX: usize> ConstraintSynthesizer<ConstraintF> for Rollup<NUM_TX> 
         // TODO: implement this
         prev_root.enforce_equal(&final_root)?;
 
-        let cons_num = cs.num_constraints();
-        let vars_num = cs.num_witness_variables() + cs.num_instance_variables();
-        
-        let next_power_of_two = cons_num.max(vars_num).next_power_of_two();
-        for _ in 0..next_power_of_two - cons_num {
-            cs.enforce_constraint(lc!(), lc!(), lc!())?;
-        }
-        for _ in 0..next_power_of_two - vars_num {
-            let _ = cs.new_witness_variable(|| Ok(ConstraintF::zero())).unwrap();
-        }
-
         Ok(())
     }
 }
@@ -507,6 +496,8 @@ mod test {
         // assert!(cs.is_satisfied().unwrap());
         println!("number of constraints: {:?}", cs.num_constraints());
         println!("number of variables: {:?}", cs.num_witness_variables() + cs.num_instance_variables());
+        let cs_matrix = cs.to_matrices().unwrap();
+        println!("cs_matrix.a[0].len(): {:?}", cs_matrix.a[0].len());
     }
 
     /*

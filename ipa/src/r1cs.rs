@@ -125,15 +125,21 @@ where
 impl<P:Pairing> R1CSVectors<P> {
     pub fn build(
         sub_prover_id: usize,
-        m: usize,
+        _m: usize,
         l: usize,
         challenge_r: P::ScalarField,
         cs: &ConstraintSystemRef<P::ScalarField>,
     )-> Result<Self, SynthesisError> {
         let timer = start_timer!(|| "R1CSVector build");
+
+        let cons_num = cs.num_constraints();
+        let vars_num = cs.num_witness_variables() + cs.num_instance_variables();
+        
+        let next_power_of_two = cons_num.max(vars_num).next_power_of_two();
+        let m_padded = next_power_of_two / l;
     
         // Each sub-prover holds m constraints
-        assert_eq!(m, cs.num_constraints() / l);
+        // assert_eq!(m, cs.num_constraints() / l);
         let f_zero = P::ScalarField::zero();
     
         let step = start_timer!(|| "CS to matrices");
@@ -142,21 +148,25 @@ impl<P:Pairing> R1CSVectors<P> {
         end_timer!(step);
 
         let step = start_timer!(|| "Evaluate constraints");
-        let start = m * sub_prover_id;
-        let end = start + m;
+        let start = m_padded * sub_prover_id;
+        let end = start + m_padded;
 
         let num_instance_variables = cs.num_instance_variables;
         let instance_assignment = &cs.instance_assignment;
         let witness_assignment = &cs.witness_assignment;
 
         let get_sub_vec = |matrix: &Matrix<P::ScalarField>, i: usize| {
-            let start = if i == 0 {
-                0
+            if i > cons_num {
+                f_zero
             } else {
-                matrix.1[i - 1]
-            };
-            let end = matrix.1[i];
-            evaluate_constraint(&matrix.0[start..end], instance_assignment, witness_assignment)
+                let start = if i == 0 {
+                    0
+                } else {
+                    matrix.1[i - 1]
+                };
+                let end = matrix.1[i];
+                evaluate_constraint(&matrix.0[start..end], instance_assignment, witness_assignment)
+            }
         };
 
         let (sub_vec_a, sub_vec_b, sub_vec_c): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = 
@@ -175,14 +185,14 @@ impl<P:Pairing> R1CSVectors<P> {
         end_timer!(step);
     
         let step = start_timer!(|| "sub vec x y z");
-        let vec_r = generate_powers(&challenge_r, m * l);
+        let vec_r = generate_powers(&challenge_r, next_power_of_two);
     
-        let mut sub_vec_x = vec![f_zero; m];
-        let mut sub_vec_y = vec![f_zero; m];
-        let mut sub_vec_z = vec![f_zero; m];
+        let mut sub_vec_x = vec![f_zero; m_padded];
+        let mut sub_vec_y = vec![f_zero; m_padded];
+        let mut sub_vec_z = vec![f_zero; m_padded];
 
         let generate_sub_vec = |out: &mut Vec<P::ScalarField>, matrix: &Matrix<P::ScalarField>| {
-            for row_idx in 0..m * l {
+            for row_idx in 0..cons_num {
                 let data_start = if row_idx == 0 {
                     0
                 } else {
@@ -238,27 +248,33 @@ pub struct R1CSPubVectors<P:Pairing> {
 
 impl<P:Pairing> R1CSPubVectors<P> {
     pub fn build(
-        m: usize,
+        _m: usize,
         l: usize,
         challenge_r: &P::ScalarField,
         cs: ConstraintSystemRef<P::ScalarField>,
     )-> Result<Self, SynthesisError> {
     
+        let cons_num = cs.num_constraints();
+        let vars_num = cs.num_witness_variables() + cs.num_instance_variables();
+        
+        let next_power_of_two = cons_num.max(vars_num).next_power_of_two();
+        let m_padded = next_power_of_two / l;
+
         // Each sub-prover holds m constraints
-        assert_eq!(m, cs.num_constraints() / l);
+        // assert_eq!(m, cs.num_constraints() / l);
         let f_zero = P::ScalarField::zero();
     
         let cs = cs.borrow().unwrap();
         let cs_matrix = cs.to_matrices().unwrap();
     
-        let vec_r = generate_powers(challenge_r, m * l);
+        let vec_r = generate_powers(challenge_r, next_power_of_two);
 
-        let mut vec_x = vec![f_zero; m * l];
-        let mut vec_y = vec![f_zero; m * l];
-        let mut vec_z = vec![f_zero; m * l];
+        let mut vec_x = vec![f_zero; m_padded];
+        let mut vec_y = vec![f_zero; m_padded];
+        let mut vec_z = vec![f_zero; m_padded];
 
         let generate_sub_vec = |out: &mut Vec<P::ScalarField>, matrix: &Matrix<P::ScalarField>| {
-            for row_idx in 0..m * l {
+            for row_idx in 0..cons_num {
                 let data_start = if row_idx == 0 {
                     0
                 } else {
