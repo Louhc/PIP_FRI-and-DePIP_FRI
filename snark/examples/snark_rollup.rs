@@ -20,7 +20,7 @@ use ark_relations::r1cs::{ConstraintSystem, ConstraintSynthesizer};
 use my_snark::snark_log::DeSNARKLog;
 use my_snark::indexer::Indexer;
 use my_ipa::r1cs::R1CSVectors;
-use ark_rollup::{rollup::build_multi_tx_circuit, ConstraintF};
+use ark_rollup::{de_rollup::build_multi_tx_circuit, ConstraintF};
 // use ark_bn254::Bn254;
 use ark_std::{start_timer, end_timer};
 // use ark_ed_on_bls12_381::E
@@ -38,12 +38,14 @@ struct Opt {
 }
 
 const NUM_TX: usize = 4;
+const L: usize = 4;
 
 fn init() -> (usize, usize) {
     let opt = Opt::from_args();
     println!("{:?}", opt);
     Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
     let l = Net::n_parties();
+    assert_eq!(l, L);
     let sub_prover_id = Net::party_id();
     (l, sub_prover_id)
 }
@@ -56,7 +58,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
         println!("The transaction number is not enough to assign each sub-prover distributedly!");
     }
     let cs = ConstraintSystem::<ConstraintF>::new_ref();
-    let _circuit = build_multi_tx_circuit::<NUM_TX>().generate_constraints(cs.clone()).unwrap();
+    let _circuit = build_multi_tx_circuit::<NUM_TX, L>().generate_constraints(cs.clone()).unwrap();
     // assert!(cs.is_satisfied().unwrap());
     assert!(cs.is_satisfied().unwrap());
     println!("Generate R1CS of {:?} transactions time: {:?}", num_tx_in_pianist, time.elapsed());
