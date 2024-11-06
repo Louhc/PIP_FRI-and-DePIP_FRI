@@ -137,7 +137,8 @@ impl<P:Pairing> R1CSVectors<P> {
         let f_zero = P::ScalarField::zero();
     
         let step = start_timer!(|| "CS to matrices");
-        let cs = cs.borrow().unwrap();
+        let mut cs = cs.borrow_mut().unwrap();
+        cs.finalize();
         let cs_matrix = cs.to_matrices().unwrap();
         end_timer!(step);
 

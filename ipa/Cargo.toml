@@ -18,6 +18,7 @@ my_kzg = { path = "../kzg" }
 de_network = { version = "0.1.0", path = "../de_network"}
 structopt = "0.3"
 ark-relations = "0.4"
+ark-rollup = {path = "../rollup"}
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.4", features = [ "curve" ] }
