@@ -1,6 +1,5 @@
 use ark_ec::{
     pairing::Pairing,
-    Group,
     CurveGroup, AffineRepr
 };
 use ark_ff::{Field, One, Zero};
@@ -116,7 +115,6 @@ pub fn get_x_srs<P: Pairing> (
             x_srs[i] += powers[j][i].into_group();
         }
     }
-    assert!(x_srs[0] == P::G1::generator());
     let x_srs = P::G1::normalize_batch(&x_srs);
     x_srs
 }

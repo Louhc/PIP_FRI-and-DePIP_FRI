@@ -561,7 +561,7 @@ mod tests {
             h: v_srs.h,
             h_alpha: v_srs.h_beta
         };
-        let g_alpha_powers: Vec<<Bls12_381 as Pairing>::G1Affine> = g_alpha_powers.iter()
+        let g_alpha_powers: Vec<<Bls12_381 as Pairing>::G1Affine> = g_alpha_powers.0.iter()
             .filter_map(|row| row.get(0))
             .cloned()
             .collect();

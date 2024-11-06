@@ -89,7 +89,7 @@ fn main() {
     // println!("Prover {:?} generates random polynomials and evaluation time: {:?}", sub_prover_id, time.elapsed());
 
     let time = Instant::now();
-    let coms = BivBatchKZG::<Bls12_381>::de_commit(sub_prover_id, &srs.0, &sub_polynomials);
+    let coms = BivBatchKZG::<Bls12_381>::de_commit(sub_prover_id, &srs.0.0, &sub_polynomials);
     println!("Prover {:?} committing time: {:?}", sub_prover_id, time.elapsed());
 
     // de-eval
@@ -120,7 +120,7 @@ fn main() {
     let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
     let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
         &mut prover_transcript, b"combined_polynomial_x_beta");
-    let proof = BivBatchKZG::<Bls12_381>::de_open_lagrange_with_eval(sub_prover_id, &srs.0, &sub_polynomials, &evals_slice, &(x_point, y_point), &domain, &gamma);
+    let proof = BivBatchKZG::<Bls12_381>::de_open_lagrange_with_eval(sub_prover_id, &srs.0.0, &srs.0.2, &sub_polynomials, &evals_slice, &(x_point, y_point), &domain, &gamma);
     println!("Prover {:?} open time: {:?}", sub_prover_id, time.elapsed());
 
     // verify
