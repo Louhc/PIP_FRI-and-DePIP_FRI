@@ -5,12 +5,10 @@ use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial,
      Polynomial
 };
+use my_kzg::biv_trivial_kzg::LagrangeBivariatePolynomial;
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_ff::UniformRand;
-use std::time::{
-    Instant,
-    // Duration
-};
+use std::time::Instant;
 use std::path::PathBuf;
 use structopt::StructOpt;
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
@@ -169,8 +167,11 @@ pub fn test_double_lagrange_biv_batch_kzg () {
     let coms = BivBatchKZG::<Bls12_381>::de_commit_double_lagrange(sub_prover_id, &xy_srs, &sub_evals);
     println!("Prover {:?} committing time: {:?}", sub_prover_id, time.elapsed());
 
-    // de-eval
-    // let evals_slice: Vec<<Bls12_381 as Pairing>::ScalarField> = sub_polynomials.iter().map(|poly| poly.evaluate(&x_point)).collect();
+    // evals
+    let poly_evals: Vec<<Bls12_381 as Pairing>::ScalarField> = polys_evals.iter().map(|xy_evals| {
+        let biv_poly = LagrangeBivariatePolynomial::<<Bls12_381 as Pairing>::ScalarField> {double_evals: xy_evals.to_vec()};
+        biv_poly.evaluate_double_lagrange(&(x_point, y_point), &x_domain, &y_domain)
+    }).collect();
 
     // de-open
     let time = Instant::now();
@@ -184,6 +185,7 @@ pub fn test_double_lagrange_biv_batch_kzg () {
     if Net::am_master() {
         let time = Instant::now();
         let (evals, proof) = proof.unwrap();
+        assert_eq!(evals, poly_evals);
         for _ in 0..50 {
             let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
             let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
