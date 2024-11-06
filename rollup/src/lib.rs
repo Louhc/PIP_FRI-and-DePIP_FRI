@@ -5,3 +5,4 @@ pub mod ledger;
 pub mod transaction;
 
 pub mod rollup;
+pub mod de_rollup;
