@@ -2,11 +2,13 @@ use ark_ec::{
     pairing::Pairing,
     scalar_mul::variable_base::VariableBaseMSM,
 };
-use ark_ff::{One, Zero, Field};
+use ark_ff::{One, Zero, Field, 
+    batch_inversion
+};
 use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
-use ark_poly::{Evaluations, GeneralEvaluationDomain, EvaluationDomain};
+use ark_poly::{GeneralEvaluationDomain, EvaluationDomain};
 use merlin::Transcript;
 use crate::helper::{evaluate_one_lagrange, linear_combination_poly};
 use crate::uni_trivial_kzg::{self, KZG, DeKZG};
@@ -51,8 +53,18 @@ impl<P: Pairing> BivBatchKZG<P> {
         x_degree: usize,
         y_degree: usize,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
-    ) -> Result<(Vec<Vec<P::G1Affine>>, VerifierSRS<P>), Error> {
+    ) -> Result<((Vec<Vec<P::G1Affine>>, Vec<P::G1Affine>, Vec<P::G1Affine>), VerifierSRS<P>), Error> {
         Ok(BivariateKZG::<P>::setup_lagrange(rng, x_degree, y_degree, domain).unwrap())
+    }
+
+    pub fn setup_double_lagrange<R: Rng>(
+        rng: &mut R,
+        x_degree: usize,
+        y_degree: usize,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
+    ) -> Result<((Vec<Vec<P::G1Affine>>, Vec<P::G1Affine>, Vec<P::G1Affine>), VerifierSRS<P>), Error> {
+        Ok(BivariateKZG::<P>::setup_double_lagrange(rng, x_degree, y_degree, x_domain, y_domain).unwrap())
     }
 
     pub fn de_commit(
@@ -86,10 +98,41 @@ impl<P: Pairing> BivBatchKZG<P> {
         }
     }
 
-    // add evals to proof as de-evals cost communication time
+    pub fn de_commit_double_lagrange(
+        sub_prover_id: usize,
+        powers: &Vec<Vec<P::G1Affine>>,
+        // P_i only holds f_1,i, f_2,i, ..., f_m,i
+        sub_evals: &Vec<Vec<P::ScalarField>>,
+    ) -> Option<Vec<P::G1>> {
+        // the sub_bivariate_polynomial is f_i(X)L_i(Y), so only need srs related to L_i(Y)
+        let sub_powers = &powers[sub_prover_id];
+
+        let sub_coms: Vec<P::G1Affine> = sub_evals.par_iter().map(|evals| {
+            P::G1MSM::msm_unchecked(&sub_powers, &evals).into()
+        }).collect();
+        
+        let final_coms_slice = Net::send_to_master(&sub_coms);
+
+        if Net::am_master() {          
+            let final_coms_slice = final_coms_slice.unwrap();
+            let column_count = final_coms_slice[0].len();
+            let final_coms = (0..column_count).into_par_iter()
+                .map(|col_index| {
+                    final_coms_slice.iter().map(|row| row[col_index])
+                        .fold(P::G1MSM::zero(), |acc, x| acc + x)
+                        .into().into()
+                })
+                .collect();
+            Some(final_coms)
+        } else {
+            None
+        }
+    }
+
     pub fn de_open_lagrange(
         sub_prover_id: usize,
         powers: &Vec<Vec<P::G1Affine>>,
+        y_srs: &Vec<P::G1Affine>,
         sub_polynomials: &[&UnivariatePolynomial<P::ScalarField>],
         evals_slice: &Vec<P::ScalarField>,
         point: &(P::ScalarField, P::ScalarField),
@@ -125,12 +168,6 @@ impl<P: Pairing> BivBatchKZG<P> {
 
         // generate f(z1,z2)
         if Net::am_master() {
-            // generate the second part proof
-            let y_srs: Vec<<P as Pairing>::G1Affine> = powers.par_iter()
-                .filter_map(|row| row.get(0))
-                .cloned()
-                .collect();
-            // receive the sub_evals
             let sub_proofs = sub_proofs.unwrap();
             let evals = evals.unwrap();
             let (proof_1, sub_poly_evals_sum) = rayon::join(
@@ -147,8 +184,7 @@ impl<P: Pairing> BivBatchKZG<P> {
                         .sum()
                 }).collect());
             
-            let evals_q2 = Evaluations::<P::ScalarField>::from_vec_and_domain(sub_poly_evals_sum, *domain);
-            let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_q2, &y, &domain);
+            let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&sub_poly_evals_sum, &y, &domain);
             let proof_2 = P::G1MSM::msm_unchecked_par_auto(&y_srs, &coeffs_q2);
 
             Some((proof_1, proof_2.into().into()))
@@ -158,10 +194,10 @@ impl<P: Pairing> BivBatchKZG<P> {
         }
     }
 
-    // used individually, proof includes the evals
     pub fn de_open_lagrange_with_eval(
         sub_prover_id: usize,
         powers: &Vec<Vec<P::G1Affine>>,
+        y_srs: &Vec<P::G1Affine>,
         sub_polynomials: &[&UnivariatePolynomial<P::ScalarField>],
         evals_slice: &Vec<P::ScalarField>,
         point: &(P::ScalarField, P::ScalarField),
@@ -201,11 +237,6 @@ impl<P: Pairing> BivBatchKZG<P> {
 
         // generate f(z1,z2)
         if Net::am_master() {
-            // generate the second part proof
-            let y_srs: Vec<<P as Pairing>::G1Affine> = powers.par_iter()
-                .filter_map(|row| row.get(0))
-                .cloned()
-                .collect();
             // receive the sub_evals
             let sub_proofs = sub_proofs.unwrap();
             let evals = evals.unwrap();
@@ -230,8 +261,88 @@ impl<P: Pairing> BivBatchKZG<P> {
                     evals.par_iter().zip(evals_lagrange.par_iter()).map(|(row, eval_lagrange)| row[i] * eval_lagrange).sum()
                 }).collect();
             
-            let evals_q2 = Evaluations::<P::ScalarField>::from_vec_and_domain(sub_poly_evals_sum, *domain);
-            let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_q2, &y, &domain);
+            let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&sub_poly_evals_sum, &y, &domain);
+            let proof_2 = P::G1MSM::msm_unchecked_par_auto(&y_srs, &coeffs_q2);
+
+            Some((target_evals, (proof_1, proof_2.into().into())))
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn de_open_double_lagrange_with_eval(
+        sub_prover_id: usize,
+        powers: &Vec<Vec<P::G1Affine>>,
+        y_srs: &Vec<P::G1Affine>,
+        sub_evals: &Vec<Vec<P::ScalarField>>,
+        // No need to generate for double_lagrange
+        // evals_slice: &Vec<P::ScalarField>,
+        point: &(P::ScalarField, P::ScalarField),
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        challenge: &P::ScalarField,
+    ) -> Option<(Vec<P::ScalarField>, (P::G1, P::G1))> {
+        // generate q1(x,y) and q2(y)
+        // see f(x,y) - f(z1,z2) = f(x,y) - f(z1,y) + f(z1,y) - f(z1,z2)
+        // q1(x,y) = f(x,y)-f(z1,y)/(x-z1) = \sum_i [(f_{i}(x)-f_{i}(z1))/(x-z1)] \cdot L_i(Y)
+        // For P_i, she only holds f_i,1,... f_i,m to compute f_i(x) and f_i(z_1)
+        // q2(y) = f(z1,y) - f(z1,z2) / (y - z2)
+        // As q2 is lagrange-based, we only need f(z1,y)'s evaluations, which are exactly f1(z1), ..., f_l(z1)
+        // and these evaluations can be combined via rlc
+        let sub_powers = &powers[sub_prover_id];
+        let (x, y) = point;
+
+        // generate slice_q1 and partial evaluations
+        let linear_factors = generate_powers(challenge, sub_evals.len());
+        if x_domain.evaluate_vanishing_polynomial(*x) == P::ScalarField::zero() {
+            println!("bad evaluation point inside the lagrange domain!");
+        } 
+        let mut divider_vec: Vec<P::ScalarField> = x_domain.elements().map(|element| element - *x).collect();
+        batch_inversion(divider_vec.as_mut_slice());
+        let evals_x_lagrange: Vec<P::ScalarField> = x_domain.evaluate_all_lagrange_coefficients(*x);
+        // f_i^1(z_1), f_i^2(z_1),..., f_i^k(z_1)
+        let evals_point: Vec<P::ScalarField> = sub_evals.par_iter().map(|evals| {
+            evals.par_iter().zip(evals_x_lagrange.par_iter()).map(|(left, right)| *left * *right).sum()
+        }).collect();
+        let evals_q1: Vec<Vec<P::ScalarField>> = sub_evals.par_iter().zip(evals_point.par_iter()).zip(linear_factors.par_iter()).map(|((evals, eval_x), factor)| {
+            evals.par_iter().map(|eval| (*eval - *eval_x) * factor).collect()
+        }).collect();
+        let evals_q1: Vec<P::ScalarField> = (0..x_domain.size()).into_par_iter().map(|col_index| {
+            evals_q1.par_iter().map(|evals_k| evals_k[col_index]).sum()
+        }).collect();
+        let evals_q1: Vec<P::ScalarField> = evals_q1.par_iter().zip(divider_vec.par_iter()).map(|(left, right)| *left * *right).collect();
+        let sub_proof = P::G1MSM::msm_unchecked_par_auto(&sub_powers, &evals_q1).into();
+        let sub_proofs = Net::send_to_master(&sub_proof);
+        let evals = Net::send_to_master(&evals_point);
+
+        // generate f(z1,z2)
+        if Net::am_master() {
+            // receive the sub_evals
+            let sub_proofs = sub_proofs.unwrap();
+            let evals = evals.unwrap();
+            let (proof_1, sub_poly_evals_sum) = rayon::join(
+                // generate the first part proof
+                || sub_proofs.iter()
+                    .fold(P::G1MSM::zero(), |acc, x| acc + x).into().into(),
+                // generate the second part proof
+                || evals.par_iter()
+                .map(|evals| {
+                    evals
+                        .par_iter()
+                        .zip(linear_factors.par_iter())
+                        .map(|(eval, factor)| *eval * *factor)
+                        .sum()
+                }).collect());
+            
+            // compute target poly eval
+            let evals_lagrange = y_domain.evaluate_all_lagrange_coefficients(*y);
+            let target_evals: Vec<P::ScalarField> = (0..evals.len()).into_par_iter()
+                .map(|i| {
+                    evals.par_iter().zip(evals_lagrange.par_iter()).map(|(row, eval_lagrange)| row[i] * eval_lagrange).sum()
+                }).collect();
+            
+            let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&sub_poly_evals_sum, &y, &y_domain);
             let proof_2 = P::G1MSM::msm_unchecked_par_auto(&y_srs, &coeffs_q2);
 
             Some((target_evals, (proof_1, proof_2.into().into())))
@@ -245,6 +356,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         sub_prover_id: usize,
         powers: &Vec<Vec<P::G1Affine>>,
         x_srs: &Vec<P::G1Affine>,
+        y_srs: &Vec<P::G1Affine>,
         sub_polynomials: &[&UnivariatePolynomial<P::ScalarField>],
         x_points: &Vec<Vec<P::ScalarField>>,
         y_point: &P::ScalarField,
@@ -336,7 +448,7 @@ impl<P: Pairing> BivBatchKZG<P> {
             Net::recv_from_master(None)
         };
 
-        let proof_q1_q2 = Self::de_open_lagrange(sub_prover_id, &powers, &sub_polynomials, &sub_evals_eta, &point_eta_beta, &domain, &theta);
+        let proof_q1_q2 = Self::de_open_lagrange(sub_prover_id, &powers, &y_srs, &sub_polynomials, &sub_evals_eta, &point_eta_beta, &domain, &theta);
         let proof_q3 = DeKZG::<P>::de_open(&x_srs, &polynomial_q_slice, &eta);
 
         let proof = if Net::am_master() {
@@ -578,8 +690,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         //     -y.clone(),
         //     P::ScalarField::one(),
         // ]);
-        let evals_q2 = Evaluations::<P::ScalarField>::from_vec_and_domain(combined_polynomial_q2.coeffs, *domain);
-        let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_q2, &y, &domain);
+        let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&combined_polynomial_q2.coeffs, &y, &domain);
         
         // generate q1(x,y) = \sum_j f_j (x,y)-f_j (z1,y) / (x-z1) = \sum_i gamma^{i-1} \sum_j [(f_{j,i}(x)-f_{j,i}(z1))/(x-z1)] \cdot y^{i-1}
 
@@ -864,7 +975,7 @@ mod tests {
 
         // Commit to the polynomials
         let coms =
-            TestBivariatePolyCommitment::commit(&srs.0, &bivariate_polynomials).unwrap();
+            TestBivariatePolyCommitment::commit(&srs.0.0, &bivariate_polynomials).unwrap();
         let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same point");
         let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
                 &mut prover_transcript, b"combined_polynomials_evaluated_at_the_same_point");
@@ -872,7 +983,7 @@ mod tests {
         // Evaluate at challenge point
         let point = (UniformRand::rand(&mut rng), UniformRand::rand(&mut rng));
         let eval_proof = TestBivariatePolyCommitment::open_lagrange(
-            &srs.0,
+            &srs.0.0,
             &bivariate_polynomials,
             &point,
             &domain,
@@ -987,7 +1098,7 @@ mod tests {
         let srs =
             TestBivariatePolyCommitment::setup_lagrange(&mut rng, BIVARIATE_X_DEGREE, BIVARIATE_Y_DEGREE, &domain)
                 .unwrap();
-        let x_srs = get_x_srs::<Bls12_381>(&srs.0);
+        let x_srs = get_x_srs::<Bls12_381>(&srs.0.0);
 
         let mut x_polynomials = Vec::new();
         for _ in 0..POLYNOMIAL_NUMBER {
@@ -1010,7 +1121,7 @@ mod tests {
 
         // Commit to the polynomials
         let coms =
-            TestBivariatePolyCommitment::commit(&srs.0, &bivariate_polynomials).unwrap();
+            TestBivariatePolyCommitment::commit(&srs.0.0, &bivariate_polynomials).unwrap();
         let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
         let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
             &mut prover_transcript, b"combined_polynomial_x_beta");
@@ -1030,7 +1141,7 @@ mod tests {
         }
 
         let eval_proof = TestBivariatePolyCommitment::open_lagrange_at_same_y(
-            &srs.0,
+            &srs.0.0,
             &x_srs, 
             &bivariate_polynomials,
             &x_points,

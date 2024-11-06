@@ -57,10 +57,10 @@ fn main() {
     let srs = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, x_degree, y_degree, &domain).unwrap();
     // generate x_srs
     let powers = &srs.0;
-    let mut x_srs = vec![<Bls12_381 as Pairing>::G1::zero(); powers[0].len()];
-    for i in 0..powers[0].len() {
-        for j in 0..powers.len() {
-            x_srs[i] += powers[j][i].into_group();
+    let mut x_srs = vec![<Bls12_381 as Pairing>::G1::zero(); powers.0[0].len()];
+    for i in 0..powers.0[0].len() {
+        for j in 0..powers.0.len() {
+            x_srs[i] += powers.0[j][i].into_group();
         }
     }
     assert!(x_srs[0] == <Bls12_381 as Pairing>::G1::generator());
@@ -113,7 +113,7 @@ fn main() {
     // println!("Prover {:?} generates random polynomials and evaluation time: {:?}", sub_prover_id, time.elapsed());
 
     let time = Instant::now();
-    let coms = BivBatchKZG::<Bls12_381>::de_commit(sub_prover_id, &srs.0, &sub_polynomials);
+    let coms = BivBatchKZG::<Bls12_381>::de_commit(sub_prover_id, &srs.0.0, &sub_polynomials);
     println!("Prover {:?} committing time: {:?}", sub_prover_id, time.elapsed());
 
     // de-eval
@@ -150,7 +150,7 @@ fn main() {
     let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
     let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
         &mut prover_transcript, b"combined_polynomial_x_beta");
-    let proof = BivBatchKZG::<Bls12_381>::de_open_lagrange_at_same_y(sub_prover_id, &srs.0, &x_srs, &sub_polynomials, &x_points, &y_point, &domain, &mut prover_transcript, &gamma);
+    let proof = BivBatchKZG::<Bls12_381>::de_open_lagrange_at_same_y(sub_prover_id, &srs.0.0, &x_srs, &srs.0.2,&sub_polynomials, &x_points, &y_point, &domain, &mut prover_transcript, &gamma);
     println!("Prover {:?} open time: {:?}", sub_prover_id, time.elapsed());
 
     // verify
@@ -178,7 +178,7 @@ fn main() {
         }
 
         let time = Instant::now();
-        let com_test = BivBatchKZG::<Bls12_381>::commit(&srs.0, &bivariate_polynomials).unwrap();
+        let com_test = BivBatchKZG::<Bls12_381>::commit(&srs.0.0, &bivariate_polynomials).unwrap();
         println!("Prover commit individually time: {:?}", time.elapsed());
         assert_eq!(coms.unwrap(), com_test);
 
@@ -186,7 +186,7 @@ fn main() {
         let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
         let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
             &mut prover_transcript, b"combined_polynomial_x_beta");
-        let proof_test = BivBatchKZG::<Bls12_381>::open_lagrange_at_same_y(&srs.0, &x_srs, &bivariate_polynomials, &x_points, &y_point, &domain, &mut prover_transcript, &gamma).unwrap();
+        let proof_test = BivBatchKZG::<Bls12_381>::open_lagrange_at_same_y(&srs.0.0, &x_srs, &bivariate_polynomials, &x_points, &y_point, &domain, &mut prover_transcript, &gamma).unwrap();
         println!("Prover open individually time: {:?}", time.elapsed());
         assert_eq!(proof.unwrap(), proof_test);
 

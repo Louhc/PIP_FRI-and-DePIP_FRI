@@ -18,7 +18,7 @@ use crate::prover_nopre::NoPreProver;
 use crate::par_join_4;
 use my_ipa::de_ipa::DeIPA;
 use my_kzg::uni_trivial_kzg::KZG;
-use my_kzg::helper::{generate_powers, linear_combination_poly, linear_combination_poly_by_ref};
+use my_kzg::helper::{evaluate_one_lagrange, generate_powers, linear_combination_poly, linear_combination_poly_by_ref};
 use my_kzg::uni_trivial_kzg::DeKZG;
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use std::mem::take;
@@ -1157,9 +1157,17 @@ impl<P: Pairing> PreProver<P> {
             })
             .collect::<Vec<_>>();
 
-        let poly_left = DeIPA::<P>::interpolate_from_eval_domain(evals_left, &domain_2x);
+        let poly_left = DeIPA::<P>::interpolate_from_eval_domain(evals_left.clone(), &domain_2x);
         let (poly_q2, remainder) = poly_left.divide_by_vanishing_poly(*x_domain).unwrap();
+        println!("poly_q2 degree is: {:?}", poly_q2.degree());
         assert_eq!(remainder, UnivariatePolynomial::zero());
+
+        // test for lagrange commit and open
+        // let elements: Vec<P::ScalarField> = domain_2x.elements().collect();
+        // println!("size is: {:?}", elements.len());
+        // let evals_q2: Vec<P::ScalarField> = elements.par_iter().zip(evals_left.par_iter()).map(|(a, b)| *b / domain_2x.evaluate_vanishing_polynomial(*a)).collect();
+        // let poly_q2_test = DeIPA::<P>::interpolate_from_eval_domain(evals_q2, &domain_2x);
+        // assert_eq!(poly_q2, poly_q2_test);
 
         // generate com_q2 distributedly
         let size = x_srs.len() / Net::n_parties();
@@ -1327,6 +1335,7 @@ impl<P: Pairing> PreProver<P> {
     pub fn open_val_upper_lower_a_b_f1 (
         sub_prover_id: usize,
         m_powers: &Vec<Vec<P::G1Affine>>,
+        m_y_srs: &Vec<P::G1Affine>,
         val_polys: &DeValPolys<P>,
         upper_a_t_polys: &DeAandTPolys<P>,
         upper_b_t_polys: &DeBandTPolys<P>,
@@ -1362,7 +1371,7 @@ impl<P: Pairing> PreProver<P> {
         let evals_f: Vec<P::ScalarField> = sub_polys_f1.par_iter().map(|poly| poly.evaluate(delta)).collect();
         evals_slice.extend(evals_f);
 
-        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &m_powers, &sub_polys, &evals_slice, &(*delta, *zeta), &y_domain, gamma);
+        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &m_powers, &m_y_srs, &sub_polys, &evals_slice, &(*delta, *zeta), &y_domain, gamma);
         if Net::am_master() {
             let (evals, proof) = proof.unwrap();
             (precombined_f1, evals, proof)
@@ -1376,6 +1385,7 @@ impl<P: Pairing> PreProver<P> {
     pub fn open_f1 (
         sub_prover_id: usize,
         m_powers: &Vec<Vec<P::G1Affine>>,
+        m_y_srs: &Vec<P::G1Affine>,
         sub_polys_f1: &Vec<UnivariatePolynomial<P::ScalarField>>,
         precombined_f1: &UnivariatePolynomial<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
@@ -1383,7 +1393,7 @@ impl<P: Pairing> PreProver<P> {
     ) -> (Vec<P::ScalarField>, (P::G1, P::G1)) {
         let evals_slice = sub_polys_f1.par_iter().map(|poly| poly.coeffs[0]).collect();
 
-        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &m_powers, &[precombined_f1], &evals_slice, &(P::ScalarField::zero(), P::ScalarField::zero()), &y_domain, gamma);
+        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &m_powers, &m_y_srs, &[precombined_f1], &evals_slice, &(P::ScalarField::zero(), P::ScalarField::zero()), &y_domain, gamma);
         if Net::am_master() {
             proof.unwrap()
         } else {
@@ -1417,6 +1427,7 @@ impl<P: Pairing> PreProver<P> {
         l: usize,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         powers: &Vec<Vec<P::G1Affine>>,
+        y_srs: &Vec<P::G1Affine>,
         eval_beta: &P::ScalarField,
         beta: &P::ScalarField,
         zeta: &P::ScalarField,
@@ -1429,7 +1440,7 @@ impl<P: Pairing> PreProver<P> {
         let poly_l = NoPreProver::<P>::interpolate_from_eval_domain(evals, &y_domain);
 
         // invoke the de-open
-        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &powers, &vec![&poly_l], &vec![*eval_beta], &(*beta, *zeta), &y_domain, &gamma);
+        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &powers, &y_srs, &vec![&poly_l], &vec![*eval_beta], &(*beta, *zeta), &y_domain, &gamma);
         if Net::am_master() {
             let proof = proof.unwrap();
             assert_eq!(proof.0.len(), 1);

@@ -5,7 +5,7 @@
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_ec::pairing::Pairing;
 use ark_std::log2;
-use my_kzg::{biv_batch_kzg::BivBatchKZG, helper::get_x_srs};
+use my_kzg::biv_batch_kzg::BivBatchKZG;
 use merlin::Transcript;
 use my_ipa::{helper::generate_r1cs_de_polynomials, r1cs::RandomCircuit};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
@@ -40,7 +40,7 @@ fn init() -> (usize, usize, usize) {
     Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
     let l = Net::n_parties();
     let sub_prover_id = Net::party_id();
-    let m = 1 << 18;
+    let m = 1 << 12;
     (m, l, sub_prover_id)
 }
 
@@ -69,22 +69,15 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     let x_degree = m - 1;
     let y_degree = l - 1;
     let m_degree = m_prime - 1;
-    let (powers, v_srs) = BivBatchKZG::<E>::setup_lagrange(&mut rng, x_degree, y_degree, &domain_y).unwrap();
-    let x_srs = get_x_srs::<E>(&powers);
-    // Note that y_srs is lagrange-based
-    let y_srs: Vec<<E as Pairing>::G1Affine> = powers.iter()
-        .filter_map(|row| row.get(0))
-        .cloned()
-        .collect();
+    let ((powers, x_srs, y_srs), v_srs) = BivBatchKZG::<E>::setup_lagrange(&mut rng, x_degree, y_degree, &domain_y).unwrap();
 
-    let (m_powers, m_v_srs) = {
+    let ((m_powers, m_srs, m_y_srs), m_v_srs) = {
         if x_degree == m_degree {
-            (powers.clone(), v_srs.clone())
+            ((powers.clone(), x_srs.clone(), y_srs.clone()), v_srs.clone())
         } else {
             BivBatchKZG::<E>::setup_lagrange(&mut rng, m_degree, y_degree, &domain_y).unwrap()
         }
     };
-    let m_srs = get_x_srs::<E>(&m_powers);
     println!("Setup time: {:?}", time.elapsed());
 
     // indexer works
@@ -117,7 +110,7 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<E>(m, l, r1cs_de_vecs);
     end_timer!(timer2);
     let proof = DeSNARKLog::<E>::de_r1cs_prove(sub_prover_id, &powers, 
-        &m_powers, &x_srs, &y_srs, &m_srs, &sub_wit_polys, &sub_pub_polys, &pre_mes_prover,
+        &m_powers, &x_srs, &y_srs, &m_srs, &m_y_srs, &sub_wit_polys, &sub_pub_polys, &pre_mes_prover,
         &challenge_r, &domain_x, &domain_y, &domain_m, &mut transcript);
     end_timer!(timer1);
 

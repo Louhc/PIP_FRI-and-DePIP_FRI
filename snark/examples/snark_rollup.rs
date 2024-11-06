@@ -4,9 +4,8 @@
 
 use ark_bls12_381::Bls12_381;
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
-use ark_ec::pairing::Pairing;
 use ark_std::log2;
-use my_kzg::{biv_batch_kzg::BivBatchKZG, helper::get_x_srs};
+use my_kzg::biv_batch_kzg::BivBatchKZG;
 use merlin::Transcript;
 use my_ipa::{helper::generate_r1cs_de_polynomials,
     // r1cs::RandomCircuit
@@ -54,7 +53,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     // In Pianist, a rollup transaction constraint number is 86k, while ours is 196k, two times than it
     let num_tx_in_pianist = NUM_TX * 2;
     if NUM_TX % Net::n_parties() != 0 {
-        println!("The transaction number is not enough to assign each sub-prover!");
+        println!("The transaction number is not enough to assign each sub-prover distributedly!");
     }
     let cs = ConstraintSystem::<ConstraintF>::new_ref();
     let _circuit = build_multi_tx_circuit::<NUM_TX>().generate_constraints(cs.clone()).unwrap();
@@ -82,22 +81,15 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let x_degree = m - 1;
     let y_degree = l - 1;
     let m_degree = m_prime - 1;
-    let (powers, v_srs) = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, x_degree, y_degree, &domain_y).unwrap();
-    let x_srs = get_x_srs::<Bls12_381>(&powers);
-    // Note that y_srs is lagrange-based
-    let y_srs: Vec<<Bls12_381 as Pairing>::G1Affine> = powers.iter()
-        .filter_map(|row| row.get(0))
-        .cloned()
-        .collect();
+    let ((powers, x_srs, y_srs), v_srs) = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, x_degree, y_degree, &domain_y).unwrap();
 
-    let (m_powers, m_v_srs) = {
+    let ((m_powers, m_srs, m_y_srs), m_v_srs) = {
         if x_degree == m_degree {
-            (powers.clone(), v_srs.clone())
+            ((powers.clone(), x_srs.clone(), y_srs.clone()), v_srs.clone())
         } else {
             BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, m_degree, y_degree, &domain_y).unwrap()
         }
     };
-    let m_srs = get_x_srs::<Bls12_381>(&m_powers);
     println!("Setup time: {:?}", time.elapsed());
 
     // indexer works
@@ -130,7 +122,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<Bls12_381>(m, l, r1cs_de_vecs);
     end_timer!(timer2);
     let proof = DeSNARKLog::<Bls12_381>::de_r1cs_prove(sub_prover_id, &powers, 
-        &m_powers, &x_srs, &y_srs, &m_srs, &sub_wit_polys, &sub_pub_polys, &pre_mes_prover,
+        &m_powers, &x_srs, &y_srs, &m_srs, &m_y_srs,  &sub_wit_polys, &sub_pub_polys, &pre_mes_prover,
         &challenge_r, &domain_x, &domain_y, &domain_m, &mut transcript);
     end_timer!(timer1);
 

@@ -189,7 +189,7 @@ impl<P: Pairing> DeSNARKLinear<P> {
         let time = Instant::now();
         let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r]];
         let sub_polynomials = vec![&wit_polys.poly_w, &wit_polys.poly_a, &wit_polys.poly_b, &wit_polys.poly_c];
-        let proofs_wit_polys= BivBatchKZG::<P>::de_open_lagrange_at_same_y(sub_prover_id, &powers, &x_srs, &sub_polynomials, &x_points, &beta, &y_domain, transcript, &gamma);
+        let proofs_wit_polys= BivBatchKZG::<P>::de_open_lagrange_at_same_y(sub_prover_id, &powers, &x_srs, &y_srs, &sub_polynomials, &x_points, &beta, &y_domain, transcript, &gamma);
         println!("Prover {:?} computs proofs of bivariate polynomials time: {:?}", sub_prover_id, time.elapsed());
 
         let time = Instant::now();

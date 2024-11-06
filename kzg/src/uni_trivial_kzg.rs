@@ -151,49 +151,100 @@ impl<P: Pairing> KZG<P> {
     // Given the evaluations, compute the quotient polynomial evaluations
     // Find more details from [XHY24]
     pub fn get_quotient_eval_lagrange (
-        evals: &Evaluations<P::ScalarField>,
+        evals: &Vec<P::ScalarField>,
         point: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> Vec<P::ScalarField> {
-        let power = domain.size();
-        let power_as_field = domain.size_as_field_element();
+        
+        if domain.evaluate_vanishing_polynomial(*point) == P::ScalarField::zero() {
+            println!("Bad random evaluation point for Lagrange KZG open, ie, inside the domain!");
+            let power = domain.size();
+            let power_as_field = domain.size_as_field_element();
 
-        // Make use of the batch inversion function
-        // Compute (z - g^i)^-1
-        let g = domain.group_gen();
-        let g_powers = generate_powers(&g, evals.evals.len());
-        let mut divider_vec: Vec<P::ScalarField> = g_powers.par_iter().map(|g_power| *point - g_power).collect();
-        batch_inversion(divider_vec.as_mut_slice());
+            // Make use of the batch inversion function
+            // Compute (z - g^i)^-1
+            let g = domain.group_gen();
+            let g_powers = generate_powers(&g, evals.len());
+            let mut divider_vec: Vec<P::ScalarField> = g_powers.par_iter().map(|g_power| *point - g_power).collect();
+            batch_inversion(divider_vec.as_mut_slice());
 
-        // Compute P(z) = (z^power - 1) / power \cdot \sum P(g^i) * g^i / (z - g^i)
-        let mut constant_term = point.pow([power as u64]) - P::ScalarField::one();
-        constant_term *= power_as_field.inverse().unwrap();
+            // Compute P(z) = (z^power - 1) / power \cdot \sum P(g^i) * g^i / (z - g^i)
+            let mut constant_term = point.pow([power as u64]) - P::ScalarField::one();
+            constant_term *= power_as_field.inverse().unwrap();
 
-        let sum: P::ScalarField = evals.evals.par_iter().zip(g_powers.par_iter()).zip(divider_vec.par_iter())
-            .map(|((eval, g_power), divider)| *eval * *g_power * divider).sum();
-        let p_z = constant_term * sum;
+            let sum: P::ScalarField = evals.par_iter().zip(g_powers.par_iter()).zip(divider_vec.par_iter())
+                .map(|((eval, g_power), divider)| *eval * *g_power * divider).sum();
+            let p_z = constant_term * sum;
 
-        // pi = (P(g^i) - P(z)) / (g^i - z) \cdot G
-        let quotient_evals: Vec<P::ScalarField> = evals.evals.par_iter().zip(divider_vec.par_iter())
-            .map(|(eval, divider)| (p_z - eval) * divider).collect();
-        assert_eq!(quotient_evals.len(), power);
+            // pi = (P(g^i) - P(z)) / (g^i - z) \cdot G
+            let quotient_evals: Vec<P::ScalarField> = evals.par_iter().zip(divider_vec.par_iter())
+                .map(|(eval, divider)| (p_z - eval) * divider).collect();
+
+            quotient_evals
+        } else {
+            let evals_lagrange = domain.evaluate_all_lagrange_coefficients(*point);
+            let eval_point: P::ScalarField = evals.par_iter().zip(evals_lagrange.par_iter()).map(|(left, right)| *left * *right).sum();
+            let mut divider_vec: Vec<P::ScalarField> = domain.elements().map(|element| element - point).collect();
+            batch_inversion(divider_vec.as_mut_slice());
+            let quotient_evals: Vec<P::ScalarField> = evals.par_iter().zip(divider_vec.par_iter()).map(|(up, div)| (*up - eval_point) * div).collect();
+
+            quotient_evals
+        }
+    }
+
+    // pub fn get_quotient_eval_lagrange (
+    //     evals: &Vec<P::ScalarField>,
+    //     point: &P::ScalarField,
+    //     domain: &GeneralEvaluationDomain<P::ScalarField>,
+    // ) -> Vec<P::ScalarField> {
+    
+    //         let power = domain.size();
+    //         let power_as_field = domain.size_as_field_element();
+
+    //         // Make use of the batch inversion function
+    //         // Compute (z - g^i)^-1
+    //         let g = domain.group_gen();
+    //         let g_powers = generate_powers(&g, evals.len());
+    //         let mut divider_vec: Vec<P::ScalarField> = g_powers.par_iter().map(|g_power| *point - g_power).collect();
+    //         batch_inversion(divider_vec.as_mut_slice());
+
+    //         // Compute P(z) = (z^power - 1) / power \cdot \sum P(g^i) * g^i / (z - g^i)
+    //         let mut constant_term = point.pow([power as u64]) - P::ScalarField::one();
+    //         constant_term *= power_as_field.inverse().unwrap();
+
+    //         let sum: P::ScalarField = evals.par_iter().zip(g_powers.par_iter()).zip(divider_vec.par_iter())
+    //             .map(|((eval, g_power), divider)| *eval * *g_power * divider).sum();
+    //         let p_z = constant_term * sum;
+
+    //         // pi = (P(g^i) - P(z)) / (g^i - z) \cdot G
+    //         let quotient_evals: Vec<P::ScalarField> = evals.par_iter().zip(divider_vec.par_iter())
+    //             .map(|(eval, divider)| (p_z - eval) * divider).collect();
+
+    //         quotient_evals
+    // }
+
+    pub fn get_quotient_eval_lagrange_no_repeat (
+        evals: &Vec<P::ScalarField>,
+        evals_lagrange: &Vec<P::ScalarField>,
+        divider_vec: &Vec<P::ScalarField>,
+    ) -> Vec<P::ScalarField> {
+
+        let eval_point: P::ScalarField = evals.par_iter().zip(evals_lagrange.par_iter()).map(|(left, right)| *left * *right).sum();
+        let quotient_evals: Vec<P::ScalarField> = evals.par_iter().zip(divider_vec.par_iter()).map(|(up, div)| (*up - eval_point) * div).collect();
 
         quotient_evals
     }
 
     pub fn open_lagrange(
         powers: &[P::G1Affine],
-        evals: &Evaluations<P::ScalarField>,
+        evals: &Vec<P::ScalarField>,
         point: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> Result<P::G1, Error> {
 
         let quotient_evals = Self::get_quotient_eval_lagrange(&evals, &point, &domain);
-
-        // Can unwrap because quotient_coeffs.len() is guaranteed to be equal to powers.len()
         Ok(P::G1MSM::msm_unchecked_par_auto(powers, &quotient_evals).into().into())
     }
-
 
     pub fn verify(
         v_srs: &UniVerifierSRS<P>,
@@ -207,8 +258,6 @@ impl<P: Pairing> KZG<P> {
             || P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point)
         );
         Ok(left == right)
-        // Ok(P::pairing(com.clone() - v_srs.g * eval, v_srs.h.clone())
-        //     == P::pairing(proof.clone(), v_srs.h_alpha.clone() - v_srs.h * point))
     }
 }
 
@@ -431,7 +480,7 @@ mod tests {
 
         // Open
         let open_start = Instant::now();
-        let proof = KZG::<Bls12_381>::open_lagrange(&g_alpha_powers, &evals_in_eval, &point, &domain).unwrap();
+        let proof = KZG::<Bls12_381>::open_lagrange(&g_alpha_powers, &evals, &point, &domain).unwrap();
         println!("KZG open  time, {:} log_degree: {:?} ", log_degree, open_start.elapsed());
 
         // Verify
