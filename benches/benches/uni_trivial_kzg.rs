@@ -65,7 +65,7 @@ fn kzg_commit_benchmark(c: &mut Criterion) {
         });
 
         let (g_alpha_powers, _v_srs) = KZG::<Bls12_381>::setup_lagrange(&mut rng, degree, &domain).unwrap();
-        let evals = polynomial.evaluate_over_domain_by_ref(domain);
+        let evals = polynomial.evaluate_over_domain_by_ref(domain).evals;
         c.bench_function(&format!("KZG_lagrange_commit, log_degree {}", log_size), |b| {
             b.iter(|| {
                 let _ = KZG::<Bls12_381>::commit_lagrange(

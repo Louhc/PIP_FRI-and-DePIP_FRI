@@ -226,9 +226,9 @@ impl<P: Pairing> DeSNARKLog<P> {
 
             // get lagrange evaluations of g2, h2low, h2high to invoke the commitment generation
             let (evals_g2, evals_h2_low, evals_h2_high) = par_join_3!(
-                || poly_g2.evaluate_over_domain_by_ref(*y_domain),
-                || poly_h2_low.evaluate_over_domain_by_ref(*y_domain),
-                || poly_h2_high.evaluate_over_domain_by_ref(*y_domain)
+                || poly_g2.evaluate_over_domain_by_ref(*y_domain).evals,
+                || poly_h2_low.evaluate_over_domain_by_ref(*y_domain).evals,
+                || poly_h2_high.evaluate_over_domain_by_ref(*y_domain).evals
             );
             let polys_g2_h2 = vec![poly_g2, poly_h2_low, poly_h2_high];
             // compute commitments to g2, h2low, h2high

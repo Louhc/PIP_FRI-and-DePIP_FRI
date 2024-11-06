@@ -8,7 +8,7 @@ use ark_ff::{batch_inversion, Field, One, PrimeField, UniformRand, Zero};
 use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
-use ark_poly::{EvaluationDomain, Evaluations, GeneralEvaluationDomain};
+use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use std::marker::PhantomData;
 use ark_std::rand::Rng;
 use crate::helper::generate_powers;
@@ -124,10 +124,10 @@ impl<P: Pairing> KZG<P> {
 
     pub fn commit_lagrange(
         powers: &[P::G1Affine],
-        evals: &Evaluations<P::ScalarField>,
+        evals: &Vec<P::ScalarField>,
     ) -> Result<P::G1, Error> {
-        assert!(powers.len() == evals.evals.len());
-        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &evals.evals).into().into())
+        assert!(powers.len() == evals.len());
+        Ok(P::G1MSM::msm_unchecked_par_auto(powers, &evals).into().into())
     }
 
     pub fn open(
@@ -191,37 +191,6 @@ impl<P: Pairing> KZG<P> {
             quotient_evals
         }
     }
-
-    // pub fn get_quotient_eval_lagrange (
-    //     evals: &Vec<P::ScalarField>,
-    //     point: &P::ScalarField,
-    //     domain: &GeneralEvaluationDomain<P::ScalarField>,
-    // ) -> Vec<P::ScalarField> {
-    
-    //         let power = domain.size();
-    //         let power_as_field = domain.size_as_field_element();
-
-    //         // Make use of the batch inversion function
-    //         // Compute (z - g^i)^-1
-    //         let g = domain.group_gen();
-    //         let g_powers = generate_powers(&g, evals.len());
-    //         let mut divider_vec: Vec<P::ScalarField> = g_powers.par_iter().map(|g_power| *point - g_power).collect();
-    //         batch_inversion(divider_vec.as_mut_slice());
-
-    //         // Compute P(z) = (z^power - 1) / power \cdot \sum P(g^i) * g^i / (z - g^i)
-    //         let mut constant_term = point.pow([power as u64]) - P::ScalarField::one();
-    //         constant_term *= power_as_field.inverse().unwrap();
-
-    //         let sum: P::ScalarField = evals.par_iter().zip(g_powers.par_iter()).zip(divider_vec.par_iter())
-    //             .map(|((eval, g_power), divider)| *eval * *g_power * divider).sum();
-    //         let p_z = constant_term * sum;
-
-    //         // pi = (P(g^i) - P(z)) / (g^i - z) \cdot G
-    //         let quotient_evals: Vec<P::ScalarField> = evals.par_iter().zip(divider_vec.par_iter())
-    //             .map(|(eval, divider)| (p_z - eval) * divider).collect();
-
-    //         quotient_evals
-    // }
 
     pub fn get_quotient_eval_lagrange_no_repeat (
         evals: &Vec<P::ScalarField>,
@@ -475,7 +444,7 @@ mod tests {
 
         // Commit
         let com_start = Instant::now();
-        let com = KZG::<Bls12_381>::commit_lagrange(&g_alpha_powers, &evals_in_eval).unwrap();
+        let com = KZG::<Bls12_381>::commit_lagrange(&g_alpha_powers, &evals).unwrap();
         println!("KZG commi time, {:} log_degree: {:?} ", log_degree, com_start.elapsed());
 
         // Open

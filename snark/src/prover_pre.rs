@@ -712,7 +712,7 @@ impl<P: Pairing> PreProver<P> {
 
             let (poly_g5, poly_h5) = IPA::<P>::get_g_mul_u_and_h(&poly_target, &u4, &y_domain);
             let polys_g5_h5 = vec![poly_g5, poly_h5];
-            let eval_vec = polys_g5_h5.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(*y_domain)).collect();
+            let eval_vec = polys_g5_h5.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(*y_domain).evals).collect();
             let coms_g5_h5 = BatchKZG::<P>::commit_lagrange(&y_srs, &eval_vec).unwrap();
 
             (polys_g5_h5, coms_g5_h5)
@@ -1068,7 +1068,7 @@ impl<P: Pairing> PreProver<P> {
         polys_g4_h4: &Vec<UnivariatePolynomial<P::ScalarField>>,
     ) -> Vec<P::G1> {
         if Net::am_master() {
-            let eval_vec = polys_g4_h4.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(*y_domain)).collect();
+            let eval_vec = polys_g4_h4.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(*y_domain).evals).collect();
             BatchKZG::<P>::commit_lagrange(&y_srs, &eval_vec).unwrap()
         } else {
             Vec::new()
@@ -1465,7 +1465,7 @@ impl<P: Pairing> PreProver<P> {
                 .collect::<Vec<_>>();
             let evals: Vec<P::ScalarField> = polys.par_iter().map(|poly| poly.evaluate(&zeta)).collect();
 
-            let evals_on_domain: Vec<Evaluations<P::ScalarField>> = polys.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(*y_domain)).collect();
+            let evals_on_domain: Vec<Vec<P::ScalarField>> = polys.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(*y_domain).evals).collect();
             let proof = BatchKZG::<P>::open_lagrange(&y_srs, &evals_on_domain, &zeta, &y_domain, &gamma).unwrap();
 
             assert_eq!(evals.len(), 7);
