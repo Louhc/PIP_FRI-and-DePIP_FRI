@@ -3,11 +3,12 @@ use ark_ec::{
     scalar_mul::variable_base::VariableBaseMSM,
     CurveGroup, Group,
 };
-use ark_ff::{One, UniformRand, Zero};
+use ark_ff::{One, UniformRand, Zero, batch_inversion};
 use ark_poly::{polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial}, 
-    // EvaluationDomain, 
-    GeneralEvaluationDomain
+    EvaluationDomain, 
+    GeneralEvaluationDomain,
+    Evaluations
 };
 use crate::helper::{generator_numerator_polynomial, interpolate_on_trivial_domain, generate_powers};
 use merlin::Transcript;
@@ -19,6 +20,7 @@ use crate::Error;
 use rayon::prelude::*;
 // use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use std::time::Instant;
+use std::collections::HashSet;
 
 // This is the batch KZG, a simple version of multiple polynomials on one point, and a more complicated version of multiple polynomials on multiple polynomials, from [https://eprint.iacr.org/2020/081.pdf]
 pub struct BatchKZG<P: Pairing> {
@@ -168,7 +170,7 @@ impl<P: Pairing> BatchKZG<P> {
             .reduce_with(|acc, poly| acc + poly)
             .unwrap_or_else(UnivariatePolynomial::zero);
         let poly_h = &target_poly / &numerator_polynomial;
-        println!("compute poly_hs: {:?}", time.elapsed());
+        println!("compute and commit poly_h: {:?}", time.elapsed());
         let com_h = KZG::<P>::commit(&powers, &poly_h).unwrap();
 
         // generate challenge z
@@ -187,235 +189,128 @@ impl<P: Pairing> BatchKZG<P> {
             .reduce_with(|acc, poly| acc + poly)
             .unwrap_or_else(UnivariatePolynomial::zero);
         let poly_l = &(&target_poly - &(&poly_h * numerator_polynomial.evaluate(&z))) / 
-                                    &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);
-        println!("compute poly_l: {:?}", time.elapsed());                            
+                                    &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);                  
         let com_l = KZG::<P>::commit(&powers, &poly_l).unwrap();
+        println!("compute and commit poly_l: {:?}", time.elapsed());          
 
         Ok((evals, (com_h, com_l)))
     }
 
-    // pub fn open_lagrange_multiple_polys_and_points(
-    //     powers: &[P::G1Affine],
-    //     // evals to represnt polynomial
-    //     poly_evals: &Vec<Vec<P::ScalarField>>,
-    //     points: &Vec<Vec<P::ScalarField>>,
-    //     domain: &GeneralEvaluationDomain<P::ScalarField>,
-    //     challenge: &P::ScalarField,
-    //     transcript: &mut Transcript,
-    // ) -> Result<(Vec<Vec<P::ScalarField>>, (P::G1, P::G1)), Error> {
-    //     assert_eq!(poly_evals.len(), points.len());
-    //     let gamma = *challenge;
-    //     let point_vec = points.par_iter().flatten().cloned().collect();
-    //     let numerator_polynomial = generator_numerator_polynomial::<P>(&point_vec);
+    pub fn open_lagrange_multiple_polys_and_points(
+        powers: &[P::G1Affine],
+        // evals to represnt polynomial
+        poly_evals: &Vec<Vec<P::ScalarField>>,
+        points: &Vec<Vec<P::ScalarField>>,
+        domain: &GeneralEvaluationDomain<P::ScalarField>,
+        challenge: &P::ScalarField,
+        transcript: &mut Transcript,
+    ) -> Result<(Vec<Vec<P::ScalarField>>, (P::G1, P::G1)), Error> {
+        assert_eq!(poly_evals.len(), points.len());
+        let gamma = *challenge;
 
-    //     let challenge_vector = generate_powers(&gamma, poly_evals.len());
+        let challenge_vector = generate_powers(&gamma, poly_evals.len());
 
-    //     let time = Instant::now();
-    //     let target_evals: Vec<Vec<P::ScalarField>> = poly_evals.par_iter().zip(points.par_iter()).map(|(poly_eval, x_points)|{
-    //         x_points.par_iter().map(|point| {
-    //             let evals_lagrange = domain.evaluate_all_lagrange_coefficients(*point);
-    //             poly_eval.par_iter().zip(evals_lagrange.par_iter()).map(|(left, right)| *left * *right).sum()
-    //         }).collect()
-    //     }).collect();
-    //     println!("compute target evals time: {:?}", time.elapsed());
+        let time = Instant::now();
+        let target_evals: Vec<Vec<P::ScalarField>> = poly_evals.par_iter().zip(points.par_iter()).map(|(poly_eval, x_points)|{
+            x_points.par_iter().map(|point| {
+                let evals_lagrange = domain.evaluate_all_lagrange_coefficients(*point);
+                poly_eval.par_iter().zip(evals_lagrange.par_iter()).map(|(left, right)| *left * *right).sum()
+            }).collect()
+        }).collect();
+        println!("compute target evals time: {:?}", time.elapsed());
 
-    //     // can directly compute the evaluations of h = (fi - ri)/Z_Si on domain, but be careful of the bad evaluation point belonging to x_domain
-    //     // see if there exists such "bad point"
-    //     let mut flags: Vec<bool> = vec![false; points.len()];
-    //     for i in 0..points.len() {
-    //         for j in 0..points[i].len() {
-    //             if domain.evaluate_vanishing_polynomial(points[i][j]) == P::ScalarField::zero() {
-    //                 flags[i] = true;
-    //             }
-    //             break;
-    //         }
-    //     }
-    //     let (polys_r, auxiliary_polys): (Vec<UnivariatePolynomial<P::ScalarField>>, Vec<UnivariatePolynomial<P::ScalarField>>) = rayon::join(
-    //         || points.par_iter().
-    //         zip(target_evals.par_iter()).
-    //         map(|(row_points, row_evals)| 
-    //             interpolate_on_trivial_domain::<P>(row_points, row_evals)
-    //         ).collect(), 
-    //         || points.par_iter().
-    //         map(|row_points| generator_numerator_polynomial::<P>(row_points)).collect()
-    //     );
-    //     let vecs_evals_h = flags.par_iter().zip(auxiliary_polys.par_iter()).zip(polys_r.par_iter()).zip(poly_evals.par_iter()).map(|(((flag, aux), r), evals)| {
-    //         if *flag == false {
-    //             let aux_evals = aux.evaluate_over_domain_by_ref(*domain).evals;
-    //             let r_evals = r.evaluate_over_domain_by_ref(*domain).evals;
-    //             evals.par_iter().zip(aux_evals.par_iter()).zip(r_evals.par_iter()).map(|((eval, aux_eval), r_eval)| (*eval - *r_eval) / aux_eval)
-    //         } else {
-    //             let poly = DeIPA::<P>::
-    //         }
-    //     })
+        // can directly compute the evaluations of h = (fi - ri)/Z_Si on domain, but be careful of the bad evaluation point belonging to x_domain
+        // see if there exists such "bad point"
+        let time = Instant::now();
+        let mut flags: Vec<bool> = vec![false; points.len()];
+        for i in 0..points.len() {
+            for j in 0..points[i].len() {
+                if domain.evaluate_vanishing_polynomial(points[i][j]) == P::ScalarField::zero() {
+                    flags[i] = true;
+                }
+                break;
+            }
+        }
+        let (polys_r, auxiliary_polys): (Vec<UnivariatePolynomial<P::ScalarField>>, Vec<UnivariatePolynomial<P::ScalarField>>) = rayon::join(
+            || points.par_iter().
+            zip(target_evals.par_iter()).
+            map(|(row_points, row_evals)| 
+                interpolate_on_trivial_domain::<P>(row_points, row_evals)
+            ).collect(), 
+            || points.par_iter().
+            map(|row_points| generator_numerator_polynomial::<P>(row_points)).collect()
+        );
+        println!("compute poly_r and auciliary_polys: {:?}", time.elapsed());
 
+        let time = Instant::now();
+        // slower
+        // let vecs_evals_h: Vec<Vec<P::ScalarField>> = flags.par_iter().zip(auxiliary_polys.par_iter()).zip(polys_r.par_iter()).zip(poly_evals.par_iter()).map(|(((flag, aux), r), evals)| {
+        //     if *flag == false {
+        //         let aux_evals = aux.evaluate_over_domain_by_ref(*domain).evals;
+        //         let r_evals = r.evaluate_over_domain_by_ref(*domain).evals;
+        //         evals.par_iter().zip(aux_evals.par_iter()).zip(r_evals.par_iter()).map(|((eval, aux_eval), r_eval)| (*eval - *r_eval) / aux_eval).collect()
+        //     } else {
+        //         let poly = Self::interpolate_from_eval_domain(evals.clone(), domain);
+        //         let poly_h = &(&poly - r) / &aux;
+        //         poly_h.evaluate_over_domain_by_ref(*domain).evals
+        //     }
+        // }).collect();
+        // let evals_h: Vec<P::ScalarField> = (0..domain.size()).into_par_iter().map(|col_index|{
+        //     vecs_evals_h.par_iter().zip(challenge_vector.par_iter()).map(|(evals_h, factor)| {
+        //         evals_h[col_index] * factor
+        //     }).sum()
+        // }).collect();
 
+        // try the trivial fft
+        let polynomials: Vec<UnivariatePolynomial<P::ScalarField>> = poly_evals.par_iter().map(|eval| Self::interpolate_from_eval_domain(eval.to_vec(), &domain)).collect();
+        let target_poly: UnivariatePolynomial<P::ScalarField>= polynomials.par_iter().
+            zip(polys_r.par_iter()).
+            zip(auxiliary_polys.par_iter()).
+            zip(challenge_vector.par_iter()).
+            map(|(((poly, poly_r), aux_poly), factor)| 
+            &(&(poly - poly_r) / aux_poly) * *factor
+            )
+            .reduce_with(|acc, poly| acc + poly)
+            .unwrap_or_else(UnivariatePolynomial::zero);
+        let poly_h = &target_poly;
+        let evals_h = poly_h.evaluate_over_domain_by_ref(*domain).evals;
+        println!("compute poly_h: {:?}", time.elapsed());
+        let com_h = KZG::<P>::commit_lagrange(&powers, &evals_h).unwrap();
 
-    //     let time = Instant::now();
-    //     let (polys_r, auxiliary_polys): (Vec<UnivariatePolynomial<P::ScalarField>>, Vec<UnivariatePolynomial<P::ScalarField>>) = rayon::join(
-    //         || points.par_iter().
-    //         zip(target_evals.par_iter()).
-    //         map(|(row_points, row_evals)| 
-    //             interpolate_on_trivial_domain::<P>(row_points, row_evals)
-    //         ).collect(), 
-    //         || points.par_iter().
-    //         map(|row_points| &numerator_polynomial / &generator_numerator_polynomial::<P>(row_points)).collect()
-    //     );
-    //     println!("compute poly_r and auciliary_polys: {:?}", time.elapsed());
-        
-    //     let time = Instant::now();
-    //     let target_poly= polynomials.par_iter().
-    //         zip(polys_r.par_iter()).
-    //         zip(auxiliary_polys.par_iter()).
-    //         zip(challenge_vector.par_iter()).
-    //         map(|(((poly, poly_r), aux_poly), factor)| 
-    //         &(&(*poly - poly_r) * aux_poly) * *factor
-    //         )
-    //         .reduce_with(|acc, poly| acc + poly)
-    //         .unwrap_or_else(UnivariatePolynomial::zero);
-    //     let poly_h = &target_poly / &numerator_polynomial;
-    //     println!("compute poly_hs: {:?}", time.elapsed());
-    //     let com_h = KZG::<P>::commit(&powers, &poly_h).unwrap();
+        // generate challenge z
+        <Transcript as ProofTranscript<P>>::append_point(transcript, b"random_evaluate_point_z", &com_h);
+        let z = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluate_point_z");
+        if domain.evaluate_vanishing_polynomial(z) == P::ScalarField::zero() {
+            println!("bad random evaluation point inside the domain");
+        }
 
-    //     // generate challenge z
-    //     <Transcript as ProofTranscript<P>>::append_point(transcript, b"random_evaluate_point_z", &com_h);
-    //     let z = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluate_point_z");
+        // generate polynomial fz
+        let time = Instant::now();
+        let point_vec: Vec<P::ScalarField> = points.par_iter().flatten().cloned().collect();
+        let mut seen  = HashSet::new(); 
+        let points_without_repeat: Vec<P::ScalarField> = point_vec.iter().filter(|&&x| seen.insert(x)).cloned().collect();
+        let z_t_eval: P::ScalarField = points_without_repeat.par_iter().map(|point| z - point).product();
 
-    //     // generate polynomial fz
-    //     let time = Instant::now();
-    //     let target_poly = polynomials.par_iter().
-    //         zip(polys_r.par_iter()).
-    //         zip(auxiliary_polys.par_iter()).
-    //         zip(challenge_vector.par_iter()).
-    //         map(|(((poly, poly_r), aux_poly), factor)| 
-    //         &(*poly + &UnivariatePolynomial::from_coefficients_vec(vec![-poly_r.evaluate(&z)])) * (*factor * aux_poly.evaluate(&z))
-    //         )
-    //         .reduce_with(|acc, poly| acc + poly)
-    //         .unwrap_or_else(UnivariatePolynomial::zero);
-    //     let poly_l = &(&target_poly - &(&poly_h * numerator_polynomial.evaluate(&z))) / 
-    //                                 &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);
-    //     println!("compute poly_l: {:?}", time.elapsed());                            
-    //     let com_l = KZG::<P>::commit(&powers, &poly_l).unwrap();
+        let aux_evals_z: Vec<P::ScalarField> = auxiliary_polys.par_iter().map(|poly| z_t_eval / poly.evaluate(&z)).collect();
+        let r_evals_z: Vec<P::ScalarField> = polys_r.par_iter().map(|poly| poly.evaluate(&z)).collect();
+        let vecs_evals_fz: Vec<Vec<P::ScalarField>> = poly_evals.par_iter().zip(aux_evals_z.par_iter()).zip(r_evals_z.par_iter())
+            .map(|((evals, aux_eval), r_eval)| {
+                evals.par_iter().map(|eval| *aux_eval * (*eval - *r_eval)).collect()
+        }).collect();
+        let evals_fz: Vec<P::ScalarField> = (0..domain.size()).into_par_iter().map(|col_index|{
+            vecs_evals_fz.par_iter().zip(challenge_vector.par_iter()).map(|(evals_fz, factor)| {
+                evals_fz[col_index] * factor
+            }).sum()
+        }).collect();
+        let mut divider_vec: Vec<P::ScalarField> = domain.elements().map(|element| element - z).collect();
+        batch_inversion(divider_vec.as_mut_slice());
+        let evals_l: Vec<P::ScalarField> = evals_fz.par_iter().zip(evals_h.par_iter()).zip(divider_vec.par_iter())
+            .map(|((fz, h), div)| (*fz - z_t_eval * h) * div).collect();                           
+        let com_l = KZG::<P>::commit_lagrange(&powers, &evals_l).unwrap();
+        println!("compute and commit poly_l: {:?}", time.elapsed());          
 
-    //     Ok((evals, (com_h, com_l)))
-    // }
-
-    // NOTE: NOT USED IN THE FINAL SCHEME
-    // pub fn de_open_multiple_polys_and_points(
-    //     sub_prover_id: usize,
-    //     powers: &[P::G1Affine],
-    //     polynomials: &[&UnivariatePolynomial<P::ScalarField>],
-    //     points: &Vec<Vec<P::ScalarField>>,
-    //     challenge: &P::ScalarField,
-    //     transcript: &mut Transcript,
-    // ) -> Result<(Vec<Vec<P::ScalarField>>, (P::G1, P::G1)), Error> {
-    //     assert_eq!(polynomials.len(), points.len());
-    //     let gamma = *challenge;
-    //     let point_vec = points.par_iter().flatten().cloned().collect();
-    //     let numerator_polynomial = generator_numerator_polynomial::<P>(&point_vec);
-
-    //     let challenge_vector = generate_powers(&gamma, polynomials.len());
-
-    //     let time = Instant::now();
-    //     let evals: Vec<Vec<P::ScalarField>> = polynomials.par_iter().zip(points.par_iter()).map(|(poly, x_points)|{
-    //         x_points.par_iter().map(|point| poly.evaluate(&point)).collect()
-    //     }).collect();
-    //     println!("compute target evals time: {:?}", time.elapsed());
-
-    //     let time = Instant::now();
-
-    //     let (polys_r, auxiliary_polys): (Vec<UnivariatePolynomial<P::ScalarField>>, Vec<UnivariatePolynomial<P::ScalarField>>) = rayon::join(
-    //         || points.par_iter().
-    //         zip(evals.par_iter()).
-    //         map(|(row_points, row_evals)| 
-    //         interpolate_on_trivial_domain::<P>(row_points, row_evals)
-    //         ).collect(), 
-    //         || points.par_iter().
-    //         map(|row_points| &numerator_polynomial / &generator_numerator_polynomial::<P>(row_points)).collect()
-    //     );
-    //     if Net::am_master() {
-    //         println!("polys_r: {:?}", polys_r);
-    //         println!("auciliary_polys: {:?}", auxiliary_polys);
-    //     }
-    //     println!("compute poly_r and auciliary_polys: {:?}", time.elapsed());
-
-    //     let time = Instant::now();
-    //     let target_poly= polynomials.par_iter().
-    //         zip(polys_r.par_iter()).
-    //         zip(points.par_iter()).
-    //         zip(challenge_vector.par_iter()).
-    //         map(|(((poly, poly_r), row_points), factor)| 
-    //         &(&(*poly - poly_r) / &generator_numerator_polynomial::<P>(row_points)) * *factor
-    //         )
-    //         .reduce_with(|acc, poly| acc + poly)
-    //         .unwrap_or_else(UnivariatePolynomial::zero);
-    //     let poly_h = target_poly;
-    //     if Net::am_master() {
-    //         println!("poly_h: {:?}", poly_h);
-    //     }
-    //     println!("compute poly_h: {:?}", time.elapsed());
-        
-    //     // generate com_h distributedly
-    //     let time = Instant::now();
-    //     let size = powers.len() / Net::n_parties();
-    //     let start = sub_prover_id * size;
-    //     let end = start + size;
-    //     let mut coeff_h = poly_h.to_vec();
-    //     coeff_h.resize(powers.len(), P::ScalarField::zero());
-    //     let sub_coeff_h = &coeff_h[start..end];
-    //     let sub_powers = &powers[start..end];
-    //     let sub_com_h: P::G1Affine = P::G1MSM::msm_unchecked(sub_powers, &sub_coeff_h).into();
-    //     let sub_coms_h = Net::send_to_master(&sub_com_h);
-    //     let com_h = if Net::am_master() {
-    //         let sub_coms_h = sub_coms_h.unwrap();
-    //         sub_coms_h.par_iter().sum()
-    //     } else {
-    //         P::G1::zero()
-    //     };
-    //     println!("compute com_h: {:?}", time.elapsed());
-
-    //     // generate challenge z
-    //     let z = if Net::am_master() {
-    //         <Transcript as ProofTranscript<P>>::append_point(transcript, b"random_evaluate_point_z", &com_h);
-    //         let z = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluate_point_z");
-    //         Net::recv_from_master(Some(vec![z; Net::n_parties()]));
-    //         z
-    //     } else {
-    //         Net::recv_from_master(None)
-    //     };
-
-    //     // generate polynomial fz
-    //     let time = Instant::now();
-    //     let target_poly = polynomials.par_iter().
-    //         zip(polys_r.par_iter()).
-    //         zip(auxiliary_polys.par_iter()).
-    //         zip(challenge_vector.par_iter()).
-    //         map(|(((poly, poly_r), aux_poly), factor)| 
-    //         &(*poly + &UnivariatePolynomial::from_coefficients_vec(vec![-poly_r.evaluate(&z)])) * (*factor * aux_poly.evaluate(&z))
-    //         )
-    //         .reduce_with(|acc, poly| acc + poly)
-    //         .unwrap_or_else(UnivariatePolynomial::zero);
-    //     let poly_l = &(&target_poly - &(&poly_h * numerator_polynomial.evaluate(&z))) / 
-    //                                 &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);
-    //     println!("compute poly_l: {:?}", time.elapsed());   
-
-    //     // try to generate com_h and com_l distributedly
-    //     let time = Instant::now();
-    //     let mut coeff_l = poly_l.to_vec();
-    //     coeff_l.resize(powers.len(), P::ScalarField::zero());
-    //     let sub_coeff_l = &coeff_l[start..end];
-    //     let sub_com_l: P::G1Affine = P::G1MSM::msm_unchecked(sub_powers, &sub_coeff_l).into();
-    //     let sub_coms_l = Net::send_to_master(&sub_com_l);
-    //     let com_l = if Net::am_master() {
-    //         let sub_coms_l = sub_coms_l.unwrap();
-    //         sub_coms_l.par_iter().sum()
-    //     } else {
-    //         P::G1::zero()
-    //     };
-    //     println!("commit poly_l: {:?}", time.elapsed());  
-
-    //     Ok((evals, (com_h, com_l)))
-    // }
+        Ok((target_evals, (com_h, com_l)))
+    }
 
     // A specified version only used for snark_pre
     pub fn verify_multiple_polys_and_points_no_repeat(
@@ -500,7 +395,7 @@ impl<P: Pairing> BatchKZG<P> {
         let z = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluate_point_z");
 
         // generate auxiliary_evals
-        let time = Instant::now();
+        // let time = Instant::now();
         let point_vec: Vec<P::ScalarField> = points.par_iter().flatten().cloned().collect();
         let numerator_polynomial = generator_numerator_polynomial::<P>(&point_vec);
         let eval_zt = numerator_polynomial.evaluate(&z);
@@ -514,31 +409,31 @@ impl<P: Pairing> BatchKZG<P> {
             map(|(row_points, linear_factor)|
             *linear_factor * eval_zt / generator_numerator_polynomial::<P>(row_points).evaluate(&z)
             ).collect();
-        println!("generate auxiliary_evals: {:?}", time.elapsed());
+        // println!("generate auxiliary_evals: {:?}", time.elapsed());
 
         // generate evals_r
-        let time = Instant::now();
+        // let time = Instant::now();
         let exps: Vec<P::G1> = polys_r.par_iter().
             zip(coms.par_iter()).
             map(|(poly_r, com)| 
             *com - v_srs.g.clone() * poly_r.evaluate(&z)
             ).collect();
-        println!("generate r_evals: {:?}", time.elapsed());
+        // println!("generate r_evals: {:?}", time.elapsed());
 
         // generate F
-        let time = Instant::now();
+        // let time = Instant::now();
         let f: P::G1 = auxiliary_evals.par_iter().zip(exps.par_iter()).
             map(|(eval, exp)| *exp * *eval).sum();
         let f = f - *com_h * eval_zt;
-        println!("generate F: {:?}", time.elapsed());
+        // println!("generate F: {:?}", time.elapsed());
         
         // final check
-        let time = Instant::now();
+        // let time = Instant::now();
         let (left, right) = rayon::join(
             || P::pairing(f, v_srs.h),
             || P::pairing(com_l, v_srs.h_alpha - v_srs.h * z)
         );
-        println!("pairing: {:?}", time.elapsed());
+        // println!("pairing: {:?}", time.elapsed());
         Ok(left == right)
     }
 
@@ -564,6 +459,14 @@ impl<P: Pairing> BatchKZG<P> {
             || P::pairing(proof, v_srs.h_alpha - v_srs.h * point)
         );
         Ok(left == right)
+    }
+
+    pub fn interpolate_from_eval_domain (
+        evals: Vec<P::ScalarField>,
+        domain: &GeneralEvaluationDomain<P::ScalarField>,
+    ) -> UnivariatePolynomial<P::ScalarField> {
+        let eval_domain = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(evals, *domain);
+        eval_domain.interpolate()
     }
 }
 
@@ -716,7 +619,7 @@ mod tests {
     #[test]
     fn batch_kzg_multiple_polys_and_points_test() {
 
-        let log_degree = 10;
+        let log_degree = 15;
         let poly_num = 10;
         let degree = (1 << log_degree) - 1;
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -756,6 +659,73 @@ mod tests {
         let challenge = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
             &mut prover_transcript, b"batch_kzg_rlc_challenge");
         let proof = BatchKZG::<Bls12_381>::open_multiple_polys_and_points(&g_alpha_powers, &poly_refs, &points, &challenge, &mut prover_transcript).unwrap();
+        println!("KZG open  time, {:} log_degree: {:?} ms", log_degree, open_start.elapsed().as_millis());
+
+        // Proof size
+        let proof_size = size_of_val(&proof.1) + proof.0.len() * (size_of_val(&proof.0[0][0]) * proof.0[0].len());
+        println!("KZG proof size, {:} log_degree: {:?} bytes", log_degree, proof_size);
+
+        // Verify
+        std::thread::sleep(Duration::from_millis(5000));
+        let verify_start = Instant::now();
+        for _ in 0..50 {
+            let mut verifier_transcript : Transcript = Transcript::new(b"batch univariate KZG");
+            let challenge = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+                &mut verifier_transcript, b"batch_kzg_rlc_challenge");
+            let is_valid =
+                BatchKZG::<Bls12_381>::verify_multiple_polys_and_points(&v_srs, &coms, &points, &proof, &challenge, &mut verifier_transcript).unwrap();
+            assert!(is_valid);
+        }
+        let verify_time = verify_start.elapsed().as_millis() / 50;
+        println!("KZG verif time, {:} log_degree: {:?} ms", log_degree, verify_time);
+    }
+
+    #[test]
+    fn batch_lagrange_kzg_multiple_polys_and_points_test() {
+
+        let log_degree = 15;
+        let poly_num = 10;
+        let degree = (1 << log_degree) - 1;
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(1 << log_degree).unwrap();
+
+        let setup_start = Instant::now();
+        let (g_alpha_powers, v_srs) = KZG::<Bls12_381>::setup_lagrange(&mut rng, degree, &domain).unwrap();
+        println!("BatchKZG setup time, {:} log_degree: {:?} ", degree, setup_start.elapsed());
+
+        let mut polynomials = Vec::new();
+        let mut poly_evals = Vec::new();
+        let mut points = Vec::new();
+
+        for _ in 0..poly_num {
+            let polynomial = UnivariatePolynomial::rand(degree, &mut rng);
+            let poly_eval = polynomial.evaluate_over_domain_by_ref(domain).evals;
+            polynomials.push(polynomial);
+            poly_evals.push(poly_eval);
+
+            let mut point_vec = Vec::new();
+            let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+            point_vec.push(point);
+            let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+            point_vec.push(point);
+
+            points.push(point_vec);
+        }
+
+        // Commit
+        let com_start = Instant::now();
+        let coms = BatchKZG::<Bls12_381>::commit_lagrange(&g_alpha_powers, &poly_evals).unwrap();
+        let mut prover_transcript : Transcript = Transcript::new(b"batch univariate KZG");
+        println!("KZG commi time, {:} log_degree: {:?} ms", log_degree, com_start.elapsed().as_millis());
+        println!("KZG commi size, {:} log_degree: {:?} bytes", log_degree, size_of_val(&coms[0])*coms.len());
+
+        // TODO: append_point input inconsistency
+        // Open
+        let open_start = Instant::now();
+        // prover_transcript.append_point(b"add_commitments", &coms[0]);
+        let challenge = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
+            &mut prover_transcript, b"batch_kzg_rlc_challenge");
+        let proof = BatchKZG::<Bls12_381>::open_lagrange_multiple_polys_and_points(&g_alpha_powers, &poly_evals, &points, &domain, &challenge, &mut prover_transcript).unwrap();
         println!("KZG open  time, {:} log_degree: {:?} ms", log_degree, open_start.elapsed().as_millis());
 
         // Proof size

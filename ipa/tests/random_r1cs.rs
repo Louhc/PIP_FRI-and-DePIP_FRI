@@ -2,16 +2,18 @@ use ark_ec::pairing::Pairing;
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_ff::{One, Zero, UniformRand};
 use ark_bls12_381::{Bls12_381, Fr};
-use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef};
 use my_ipa::r1cs::{R1CSVectors, RandomCircuit};
+use ark_rollup::{de_rollup::build_multi_tx_circuit, ConstraintF};
 
 const NUM_CONSTRAINTS: usize = 1 << 10;
 const NUM_VARIABLES: usize = 1 << 10;
 
 #[test]
 fn random_r1cs_satisfication_test() {
-    let l = 8;
-    let m = NUM_CONSTRAINTS / l;
+    let l = 4;
+    const NUM_TX: usize = 4;
+    const L: usize = 4;
     
     let mut rng = StdRng::seed_from_u64(0u64);
     let challenge_r = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
@@ -20,11 +22,17 @@ fn random_r1cs_satisfication_test() {
 
     // Generate the circuit
 
-    let c = RandomCircuit::<Bls12_381>::new(NUM_VARIABLES, NUM_CONSTRAINTS, m, l);
-    let cs = ConstraintSystem::<<Bls12_381 as Pairing>::ScalarField>::new_ref();
-    c.generate_constraints(cs.clone()).unwrap();
+    // let c = RandomCircuit::<Bls12_381>::new(NUM_VARIABLES, NUM_CONSTRAINTS, m, l);
+    // let cs = ConstraintSystem::<<Bls12_381 as Pairing>::ScalarField>::new_ref();
+    // c.generate_constraints(cs.clone()).unwrap();
+    // assert!(cs.is_satisfied().unwrap());
+
+    let cs = ConstraintSystem::<ConstraintF>::new_ref();
+    let _circuit = build_multi_tx_circuit::<NUM_TX, L>().generate_constraints(cs.clone()).unwrap();
+    // assert!(cs.is_satisfied().unwrap());
     assert!(cs.is_satisfied().unwrap());
 
+    let m = cs.num_constraints() / l;
     println!("Number of constraints: {:?}", NUM_CONSTRAINTS);
     println!("Number of variables: {:?}", NUM_VARIABLES);
 
