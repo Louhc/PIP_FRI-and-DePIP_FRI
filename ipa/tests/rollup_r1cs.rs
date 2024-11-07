@@ -6,7 +6,7 @@ use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
 use my_ipa::r1cs::R1CSVectors;
 use ark_rollup::{de_rollup::build_multi_tx_circuit, ConstraintF};
 
-const NUM_TX: usize = 1 << 5;
+const NUM_TX: usize = 1 << 2;
 const L: usize = 1 << 2;
 
 
