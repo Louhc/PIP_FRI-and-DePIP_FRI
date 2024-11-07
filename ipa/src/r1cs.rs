@@ -12,7 +12,6 @@ use ark_relations::{
 };
 use ark_std::{UniformRand, test_rng};
 use std::marker::PhantomData;
-use std::time::Instant;
 
 #[derive(Clone)]
 pub struct RandomCircuit<P: Pairing> {
