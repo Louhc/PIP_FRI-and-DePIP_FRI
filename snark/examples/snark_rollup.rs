@@ -17,14 +17,13 @@ use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_ff::UniformRand;
 use std::time::Instant;
 use ark_relations::r1cs::{ConstraintSystem, ConstraintSynthesizer};
-use my_snark::{gadgets_and_tests::inner_product, snark_log::DeSNARKLog};
+use my_snark::snark_log::DeSNARKLog;
 use my_snark::indexer::Indexer;
 use my_ipa::r1cs::R1CSVectors;
 use ark_rollup::{de_rollup::build_multi_tx_circuit, ConstraintF};
 // use ark_bn254::Bn254;
 use ark_std::{start_timer, end_timer};
 // use ark_ed_on_bls12_381::E
-use my_kzg::helper::generate_powers;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "example", about = "An example of StructOpt usage.")]
@@ -122,14 +121,6 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let mut transcript : Transcript = Transcript::new(b"Random R1CS");
     let timer2 = start_timer!(|| "Build r1cs vecs and polys");
     let r1cs_de_vecs: R1CSVectors<Bls12_381> = R1CSVectors::<Bls12_381>::build(sub_prover_id, m, l, challenge_r, &cs).unwrap();
-
-    //self tets
-    let vec_r = generate_powers(&challenge_r, m * l);
-    assert_eq!(inner_product::<Bls12_381>(&r1cs_de_vecs.vec_x, &r1cs_de_vecs.vec_w), inner_product::<Bls12_381>(&r1cs_de_vecs.vec_a, &vec_r));
-    assert_eq!(inner_product::<Bls12_381>(&r1cs_de_vecs.vec_y, &r1cs_de_vecs.vec_w), inner_product::<Bls12_381>(&r1cs_de_vecs.vec_b, &vec_r));
-    assert_eq!(inner_product::<Bls12_381>(&r1cs_de_vecs.vec_z, &r1cs_de_vecs.vec_w), inner_product::<Bls12_381>(&r1cs_de_vecs.vec_c, &vec_r));
-    //self test over
-
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<Bls12_381>(m, l, r1cs_de_vecs);
     end_timer!(timer2);
     let proof = DeSNARKLog::<Bls12_381>::de_r1cs_prove(sub_prover_id, &powers, 

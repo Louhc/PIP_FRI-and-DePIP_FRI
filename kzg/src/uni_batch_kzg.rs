@@ -222,15 +222,6 @@ impl<P: Pairing> BatchKZG<P> {
         // can directly compute the evaluations of h = (fi - ri)/Z_Si on domain, but be careful of the bad evaluation point belonging to x_domain
         // see if there exists such "bad point"
         let time = Instant::now();
-        let mut flags: Vec<bool> = vec![false; points.len()];
-        for i in 0..points.len() {
-            for j in 0..points[i].len() {
-                if domain.evaluate_vanishing_polynomial(points[i][j]) == P::ScalarField::zero() {
-                    flags[i] = true;
-                }
-                break;
-            }
-        }
         let (polys_r, auxiliary_polys): (Vec<UnivariatePolynomial<P::ScalarField>>, Vec<UnivariatePolynomial<P::ScalarField>>) = rayon::join(
             || points.par_iter().
             zip(target_evals.par_iter()).
@@ -619,7 +610,7 @@ mod tests {
     #[test]
     fn batch_kzg_multiple_polys_and_points_test() {
 
-        let log_degree = 15;
+        let log_degree = 18;
         let poly_num = 10;
         let degree = (1 << log_degree) - 1;
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -683,7 +674,7 @@ mod tests {
     #[test]
     fn batch_lagrange_kzg_multiple_polys_and_points_test() {
 
-        let log_degree = 15;
+        let log_degree = 18;
         let poly_num = 10;
         let degree = (1 << log_degree) - 1;
         let mut rng = StdRng::seed_from_u64(0u64);
