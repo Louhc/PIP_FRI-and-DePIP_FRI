@@ -7,9 +7,7 @@ use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_std::log2;
 use my_kzg::biv_batch_kzg::BivBatchKZG;
 use merlin::Transcript;
-use my_ipa::{helper::generate_r1cs_de_polynomials,
-    // r1cs::RandomCircuit
-};
+use my_ipa::helper::generate_r1cs_de_polynomials;
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -52,7 +50,7 @@ fn init() -> (usize, usize) {
 
 fn test_helper(l: usize, sub_prover_id: usize) {
     let time = Instant::now();
-    // In Pianist, 3 rollup transaction R1CS constraint number is 1<<18, in ours 1 tx is 1<<18
+    // In Pianist repo, 3 rollup transaction R1CS constraint number is 1<<18, which is 1 tx of ours
     let num_tx_in_pianist = NUM_TX * 3;
     if NUM_TX % Net::n_parties() != 0 {
         println!("The transaction number is not enough to assign each sub-prover distributedly!");
