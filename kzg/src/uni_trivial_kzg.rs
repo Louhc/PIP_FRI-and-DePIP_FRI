@@ -193,9 +193,9 @@ impl<P: Pairing> KZG<P> {
     }
 
     pub fn get_quotient_eval_lagrange_no_repeat (
-        evals: &Vec<P::ScalarField>,
-        evals_lagrange: &Vec<P::ScalarField>,
-        divider_vec: &Vec<P::ScalarField>,
+        evals: &[P::ScalarField],
+        evals_lagrange: &[P::ScalarField],
+        divider_vec: &[P::ScalarField],
     ) -> Vec<P::ScalarField> {
 
         let eval_point: P::ScalarField = evals.par_iter().zip(evals_lagrange.par_iter()).map(|(left, right)| *left * *right).sum();

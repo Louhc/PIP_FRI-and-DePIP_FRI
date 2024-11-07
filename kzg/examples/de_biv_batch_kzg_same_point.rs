@@ -46,10 +46,12 @@ pub fn test_y_lagrange_biv_batch_kzg () {
     let y_degree = l - 1;
     
     let mut rng = StdRng::seed_from_u64(0u64);
+    let x_domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(1<<m).unwrap();
+
     let domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(l).unwrap();
 
     let setup_start = Instant::now();
-    let srs = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, x_degree, y_degree, &domain).unwrap();
+    let ((xy_srs, x_srs, y_srs), verifier) = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, x_degree, y_degree, &domain).unwrap();
     // generate x_srs
     println!("Prover {:?} setup time: {:?}", sub_prover_id, setup_start.elapsed());
 
@@ -88,7 +90,7 @@ pub fn test_y_lagrange_biv_batch_kzg () {
     // println!("Prover {:?} generates random polynomials and evaluation time: {:?}", sub_prover_id, time.elapsed());
 
     let time = Instant::now();
-    let coms = BivBatchKZG::<Bls12_381>::de_commit(sub_prover_id, &srs.0.0, &sub_polynomials);
+    let coms = BivBatchKZG::<Bls12_381>::de_commit(sub_prover_id, &xy_srs, &sub_polynomials, &x_domain);
     println!("Prover {:?} committing time: {:?}", sub_prover_id, time.elapsed());
 
     // de-eval
@@ -99,7 +101,7 @@ pub fn test_y_lagrange_biv_batch_kzg () {
     let mut prover_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
     let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
         &mut prover_transcript, b"combined_polynomial_x_beta");
-    let proof = BivBatchKZG::<Bls12_381>::de_open_lagrange_with_eval(sub_prover_id, &srs.0.0, &srs.0.2, &sub_polynomials, &evals_slice, &(x_point, y_point), &domain, &gamma);
+    let proof = BivBatchKZG::<Bls12_381>::de_open_lagrange_with_eval(sub_prover_id, &xy_srs, &y_srs, &sub_polynomials, &evals_slice, &(x_point, y_point), &x_domain, &domain, &gamma);
     println!("Prover {:?} open time: {:?}", sub_prover_id, time.elapsed());
 
     // verify
@@ -110,7 +112,7 @@ pub fn test_y_lagrange_biv_batch_kzg () {
             let mut verifier_transcript : Transcript = Transcript::new(b"batch bivariate KZG at the same y");
             let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
                 &mut verifier_transcript, b"combined_polynomial_x_beta");
-            let is_valid = BivBatchKZG::<Bls12_381>::verify(&srs.1, &coms.clone().unwrap(), &(x_point, y_point), &evals, &proof.clone(), &gamma).unwrap();
+            let is_valid = BivBatchKZG::<Bls12_381>::verify(&verifier, &coms.clone().unwrap(), &(x_point, y_point), &evals, &proof.clone(), &gamma).unwrap();
             assert!(is_valid);
         }
         println!("Verifier time: {:?}", time.elapsed()/50);
@@ -141,7 +143,7 @@ pub fn test_double_lagrange_biv_batch_kzg () {
                 for _ in 0..x_degree + 1 {
                     x_evals.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
                 }
-                xy_evals.push(x_evals);
+                xy_evals.extend(x_evals);
             }
             poly_k_evals.push(xy_evals);
         }
@@ -150,7 +152,7 @@ pub fn test_double_lagrange_biv_batch_kzg () {
     } else {
         Net::recv_from_master(None)
     };
-    let sub_evals: Vec<Vec<<Bls12_381 as Pairing>::ScalarField>> = polys_evals.iter().map(|xy_evals| xy_evals[sub_prover_id].clone()).collect();
+    let sub_evals: Vec<Vec<<Bls12_381 as Pairing>::ScalarField>> = polys_evals.iter().map(|xy_evals| xy_evals[sub_prover_id * x_domain.size()..(sub_prover_id + 1) * x_domain.size()].to_vec()).collect();
 
     let (y_point, x_point) = if Net::am_master() {
         let y_point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
@@ -164,12 +166,12 @@ pub fn test_double_lagrange_biv_batch_kzg () {
     // println!("Prover {:?} generates random polynomials and evaluation time: {:?}", sub_prover_id, time.elapsed());
 
     let time = Instant::now();
-    let coms = BivBatchKZG::<Bls12_381>::de_commit_double_lagrange(sub_prover_id, &xy_srs, &sub_evals);
+    let coms = BivBatchKZG::<Bls12_381>::de_commit_double_lagrange(sub_prover_id, &xy_srs, &sub_evals, &x_domain);
     println!("Prover {:?} committing time: {:?}", sub_prover_id, time.elapsed());
 
     // evals
-    let poly_evals: Vec<<Bls12_381 as Pairing>::ScalarField> = polys_evals.iter().map(|xy_evals| {
-        let biv_poly = LagrangeBivariatePolynomial::<<Bls12_381 as Pairing>::ScalarField> {double_evals: xy_evals.to_vec()};
+    let poly_evals: Vec<<Bls12_381 as Pairing>::ScalarField> = polys_evals.into_iter().map(|xy_evals| {
+        let biv_poly = LagrangeBivariatePolynomial::<<Bls12_381 as Pairing>::ScalarField> {evals: xy_evals};
         biv_poly.evaluate_double_lagrange(&(x_point, y_point), &x_domain, &y_domain)
     }).collect();
 
@@ -195,6 +197,8 @@ pub fn test_double_lagrange_biv_batch_kzg () {
         }
         println!("Verifier time: {:?}", time.elapsed()/50);
     }
+
+    Net::deinit();
 }
 
 fn main() {

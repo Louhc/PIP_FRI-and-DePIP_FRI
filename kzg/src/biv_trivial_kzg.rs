@@ -78,7 +78,7 @@ impl<'a, F: FftField> BivariatePolynomial<'a, F> {
 
 #[derive(Clone)]
 pub struct LagrangeBivariatePolynomial<F: Field> {
-    pub double_evals: Vec<Vec<F>>
+    pub evals: Vec<F>
 }
 
 // sum_i f_i(X) L_i(Y)， where f_i(X) = \sum_j f_i,j R_j(X)
@@ -92,17 +92,14 @@ impl<F: FftField> LagrangeBivariatePolynomial<F> {
     pub fn evaluate_double_lagrange(&self, point: &(F, F), x_domain: &GeneralEvaluationDomain<F>, y_domain: &GeneralEvaluationDomain<F>) -> F {
         let (x, y) = point;
         let x_lagrange_evals = EvaluationDomain::evaluate_all_lagrange_coefficients(x_domain, *x);
-        let x_evals: Vec<F> = self.double_evals.par_iter().map(|vec| {
-            vec.par_iter().zip(x_lagrange_evals.par_iter()).map(|(left, right)| *left * *right).sum()
-        }).collect();
-        assert_eq!(x_evals.len(), y_domain.size());
-        
         let y_evals = EvaluationDomain::evaluate_all_lagrange_coefficients(y_domain, *y);
 
-        y_evals
-            .par_iter()
-            .zip(x_evals)
-            .map(|(y_eval, x_eval)| *y_eval * x_eval)
+        (self.evals.par_chunks_exact(x_domain.size()), &y_evals)
+            .into_par_iter()
+            .map(|(vec, y_eval)| -> F {
+                vec.par_iter().zip(x_lagrange_evals.par_iter()).map(|(left, right)| *left * *right).sum::<F>()
+                    * y_eval
+            })
             .sum()
     }
 }
@@ -121,13 +118,13 @@ impl<P: Pairing> BivariateKZG<P> {
         g: &P::G1,
         s_x: &P::ScalarField,
         s_y: &P::ScalarField,
-    ) -> (Vec<Vec<P::G1Affine>>, Vec<P::G1Affine>, Vec<P::G1Affine>) {
+    ) -> (Vec<P::G1Affine>, Vec<P::G1Affine>, Vec<P::G1Affine>) {
         assert!(num.is_power_of_two());
         assert_eq!(num, x_domain.size());
-        let evals_x = EvaluationDomain::evaluate_all_lagrange_coefficients(x_domain, *s_x);
-        let evals_y = EvaluationDomain::evaluate_all_lagrange_coefficients(y_domain, *s_y);
-        let evals: Vec<Vec<P::ScalarField>> = evals_y.par_iter().map(|y| {
-            evals_x.par_iter().map(|x| *x * *y).collect()
+        let (evals_x, evals_y) = rayon::join(|| EvaluationDomain::evaluate_all_lagrange_coefficients(x_domain, *s_x),
+            || EvaluationDomain::evaluate_all_lagrange_coefficients(y_domain, *s_y));
+        let evals: Vec<P::ScalarField> = evals_y.par_iter().flat_map(|y| {
+            evals_x.par_iter().map(move |x| *x * *y)
         }).collect();
     
         let window_size = FixedBase::get_mul_window_size(num);
@@ -135,10 +132,8 @@ impl<P: Pairing> BivariateKZG<P> {
         let g_table = FixedBase::get_window_table(scalar_bits, window_size, g.clone());
 
         let time = Instant::now();
-        let powers_of_g: Vec<Vec<P::G1Affine>> = evals.par_iter().map(|x_evals| {
-            let sub_powers = FixedBase::msm::<P::G1>(scalar_bits, window_size, &g_table, &x_evals);
-            <P as Pairing>::G1::normalize_batch(&sub_powers)
-        }).collect();
+        let powers_of_g = FixedBase::msm::<P::G1>(scalar_bits, window_size, &g_table, &evals);
+        let powers_of_g = <P as Pairing>::G1::normalize_batch(&powers_of_g);
         println!("xy_srs time: {:?}", time.elapsed());
 
         let time = Instant::now();
@@ -162,17 +157,20 @@ impl<P: Pairing> BivariateKZG<P> {
         rng: &mut R,
         x_degree: usize,
         y_degree: usize,
-    ) -> Result<(Vec<Vec<P::G1Affine>>, VerifierSRS<P>), Error> {
+    ) -> Result<(Vec<P::G1Affine>, Vec<P::G1Affine>, VerifierSRS<P>), Error> {
         let alpha = <P::ScalarField>::rand(rng);
         let beta = <P::ScalarField>::rand(rng);
         let g = <P::G1>::generator();
         let h = <P::G2>::generator();
 
+        assert!((x_degree + 1).is_power_of_two());
+        assert!((y_degree + 1).is_power_of_two());
+
         let mut challenge_vector = vec![g; y_degree + 1];
         challenge_vector.par_iter_mut().enumerate().for_each(|(i, val)| {
             *val = g * beta.pow([i as u64]);
         });
-        let final_srs: Vec<Vec<P::G1Affine>> = challenge_vector.into_par_iter().map(|temp|{
+        let final_srs: Vec<P::G1Affine> = challenge_vector.into_par_iter().flat_map(|temp|{
             let temp_srs = structured_generators_scalar_power(
                 x_degree + 1,
                 &temp,
@@ -181,7 +179,12 @@ impl<P: Pairing> BivariateKZG<P> {
             <P as Pairing>::G1::normalize_batch(&temp_srs)
         }).collect();
 
+        let y_srs: Vec<<P as Pairing>::G1Affine> = final_srs.par_chunks(x_degree + 1)
+            .map(|row| row[0])
+            .collect();
+
         Ok((final_srs,
+            y_srs,
             VerifierSRS {
                 g,
                 h,
@@ -195,7 +198,7 @@ impl<P: Pairing> BivariateKZG<P> {
         x_degree: usize,
         y_degree: usize,
         domain: &GeneralEvaluationDomain<P::ScalarField>
-    ) -> Result<((Vec<Vec<P::G1Affine>>, Vec<P::G1Affine>, Vec<P::G1Affine>), VerifierSRS<P>), Error> {
+    ) -> Result<((Vec<P::G1Affine>, Vec<P::G1Affine>, Vec<P::G1Affine>), VerifierSRS<P>), Error> {
         let beta = EvaluationDomain::sample_element_outside_domain(domain, rng);
         let alpha = <P::ScalarField>::rand(rng);
         let g = <P::G1>::generator();
@@ -206,7 +209,7 @@ impl<P: Pairing> BivariateKZG<P> {
         let y_evals = EvaluationDomain::evaluate_all_lagrange_coefficients(domain, beta);
         assert_eq!(y_evals.len(), y_degree+1);
 
-        let xy_srs = y_evals.par_iter().map(|y_eval| {
+        let xy_srs = y_evals.par_iter().flat_map(|y_eval| {
             let temp_srs = structured_generators_scalar_power(
                 x_degree + 1,
                 &(g * y_eval),
@@ -247,7 +250,7 @@ impl<P: Pairing> BivariateKZG<P> {
         y_degree: usize,
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>
-    ) -> Result<((Vec<Vec<P::G1Affine>>, Vec<P::G1Affine>, Vec<P::G1Affine>), VerifierSRS<P>), Error> {
+    ) -> Result<((Vec<P::G1Affine>, Vec<P::G1Affine>, Vec<P::G1Affine>), VerifierSRS<P>), Error> {
         let alpha = EvaluationDomain::sample_element_outside_domain(x_domain, rng);
         let beta = EvaluationDomain::sample_element_outside_domain(y_domain, rng);
         let g = <P::G1>::generator();
@@ -269,20 +272,17 @@ impl<P: Pairing> BivariateKZG<P> {
 
     // lagrange commit and commit are the same for bivariate polynomials
     pub fn commit(
-        powers: &Vec<Vec<P::G1Affine>>,
+        powers: &Vec<P::G1Affine>,
         bivariate_polynomial: BivariatePolynomial<P::ScalarField>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> Result<P::G1, Error> {
-        assert!(powers.len() == bivariate_polynomial.x_polynomials.len());
-        assert!(powers[0].len() >= bivariate_polynomial.x_polynomials[0].degree() + 1);
-
-        let extended_powers = powers.concat();
-        let extended_coeff: Vec<P::ScalarField> = bivariate_polynomial.x_polynomials.par_iter().flat_map(|poly| {
-            let mut coeffs = poly.coeffs.to_vec();
-            coeffs.resize(powers[0].len(), <P::ScalarField>::zero());
-            coeffs
+        let extended_coeff: Vec<P::ScalarField> = bivariate_polynomial.x_polynomials.par_iter().flat_map_iter(|poly| {
+            poly.coeffs.iter()
+                .cloned()
+                .chain(std::iter::repeat_n(P::ScalarField::zero(), x_domain.size() - poly.coeffs.len()))
         }).collect();
         
-        Ok(P::G1MSM::msm_unchecked_par_auto(&extended_powers, &extended_coeff).into().into())
+        Ok(P::G1MSM::msm_unchecked_par_auto(&powers, &extended_coeff).into().into())
     }
 
     // sum_i f_i(X) L_i(Y)， where f_i(X) = \sum_j f_i,j R_j(X)
@@ -292,22 +292,18 @@ impl<P: Pairing> BivariateKZG<P> {
     //                  f_l,1, f_l,2, ..., f_l,m)
     // m is the x-degree, l is the y-degree
     pub fn commit_double_lagrange(
-        powers: &Vec<Vec<P::G1Affine>>,
+        powers: &Vec<P::G1Affine>,
         lag_biv_poly: LagrangeBivariatePolynomial<P::ScalarField>,
     ) -> Result<P::G1, Error> {
-        assert!(powers.len() == lag_biv_poly.double_evals.len());
-        assert!(powers[0].len() == lag_biv_poly.double_evals[0].len());
-
-        let extended_powers = powers.concat();
-        let extended_evals = lag_biv_poly.double_evals.concat();
-        
-        Ok(P::G1MSM::msm_unchecked_par_auto(&extended_powers, &extended_evals).into().into())
+        Ok(P::G1MSM::msm_unchecked_par_auto(&powers, &lag_biv_poly.evals).into().into())
     }
 
     pub fn open(
-        powers: &Vec<Vec<P::G1Affine>>,
+        powers: &Vec<P::G1Affine>,
+        y_srs: &Vec<P::G1Affine>,
         bivariate_polynomial: BivariatePolynomial<P::ScalarField>,
         point: &(P::ScalarField, P::ScalarField),
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> Result<(P::G1, P::G1), Error> {
         // generate q1(x,y) and q2(y)
         // see f(x,y) - f(z1,z2) = f(x,y) - f(z1,y) + f(z1,y) - f(z1,z2)
@@ -315,10 +311,6 @@ impl<P: Pairing> BivariateKZG<P> {
         // q2(y) = f(z1,y) - f(z1,z2) / (y - z2)
 
         let (x, y) = point;
-        let y_srs: Vec<<P as Pairing>::G1Affine> = powers.par_iter()
-            .filter_map(|row| row.get(0))
-            .cloned()
-            .collect();
 
         // compute the vector composed by (f_1(z1), f_2(z1), ..., f_l(z1))
         let evals_z1: Vec<P::ScalarField> = bivariate_polynomial.x_polynomials
@@ -327,15 +319,14 @@ impl<P: Pairing> BivariateKZG<P> {
             .collect();
 
         // the concatenation of the q1(x,y)
-        let xy_srs = powers.concat();
         let coeffs_q1: Vec<P::ScalarField> = bivariate_polynomial.x_polynomials.par_iter().flat_map(|poly| {
-            let polynomial_slice_q1 = *poly
+            let mut polynomial_slice_q1 = *poly
             / &UnivariatePolynomial::from_coefficients_vec(vec![
                 -x.clone(),
                 P::ScalarField::one()
             ]);
-            let mut coeffs_slice_q1 = polynomial_slice_q1.coeffs.to_vec();
-            coeffs_slice_q1.resize(powers[0].len(), <P::ScalarField>::zero());
+            let mut coeffs_slice_q1 = take(&mut polynomial_slice_q1.coeffs);
+            coeffs_slice_q1.resize(x_domain.size(), <P::ScalarField>::zero());
             coeffs_slice_q1
         }).collect();
 
@@ -345,18 +336,19 @@ impl<P: Pairing> BivariateKZG<P> {
                 P::ScalarField::one(),
             ]);
         let proof = (
-            P::G1MSM::msm_unchecked_par_auto(&xy_srs, &coeffs_q1).into().into(), 
+            P::G1MSM::msm_unchecked_par_auto(&powers, &coeffs_q1).into().into(), 
             P::G1MSM::msm_unchecked_par_auto(&y_srs, &polynomial_q2.coeffs).into().into());
         
         Ok(proof)
     }
 
     pub fn open_lagrange(
-        powers: &Vec<Vec<P::G1Affine>>,
+        powers: &Vec<P::G1Affine>,
         y_srs: &Vec<P::G1Affine>,
         bivariate_polynomial: BivariatePolynomial<P::ScalarField>,
         point: &(P::ScalarField, P::ScalarField),
-        domain: &GeneralEvaluationDomain<P::ScalarField>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> Result<(P::G1, P::G1), Error> {
         // generate q1(x,y) and q2(y)
         // see f(x,y) - f(z1,z2) = f(x,y) - f(z1,y) + f(z1,y) - f(z1,z2)
@@ -374,7 +366,6 @@ impl<P: Pairing> BivariateKZG<P> {
         // println!("get y_srs time: {:?}", time.elapsed());
 
         // the concatenation of the q1(x,y)
-        let xy_srs: Vec<<P as Pairing>::G1Affine> = powers.concat();
         let coeffs_q1: Vec<P::ScalarField> = bivariate_polynomial.x_polynomials.par_iter().flat_map(|poly| {
             let mut polynomial_slice_q1 = *poly
             / &UnivariatePolynomial::from_coefficients_vec(vec![
@@ -382,7 +373,7 @@ impl<P: Pairing> BivariateKZG<P> {
                 P::ScalarField::one()
             ]);
             let mut coeffs_slice_q1 = take(&mut polynomial_slice_q1.coeffs);
-            coeffs_slice_q1.resize(powers[0].len(), <P::ScalarField>::zero());
+            coeffs_slice_q1.resize(x_domain.size(), <P::ScalarField>::zero());
             coeffs_slice_q1
         }).collect();
 
@@ -392,18 +383,18 @@ impl<P: Pairing> BivariateKZG<P> {
             .map(|poly| poly.evaluate(&x))
             .collect();
      
-        let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_z1, &y, &domain);
+        let coeffs_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_z1, &y, &y_domain);
         assert_eq!(coeffs_q2.len(), y_srs.len());
 
         let proof = (
-            P::G1MSM::msm_unchecked_par_auto(&xy_srs, &coeffs_q1).into().into(), 
+            P::G1MSM::msm_unchecked_par_auto(&powers, &coeffs_q1).into().into(), 
             P::G1MSM::msm_unchecked_par_auto(&y_srs, &coeffs_q2).into().into());
 
         Ok(proof)
     }
 
     pub fn open_double_lagrange(
-        powers: &Vec<Vec<P::G1Affine>>,
+        powers: &Vec<P::G1Affine>,
         y_srs: &[P::G1Affine],
         lag_biv_poly: LagrangeBivariatePolynomial<P::ScalarField>,
         point: &(P::ScalarField, P::ScalarField),
@@ -419,7 +410,7 @@ impl<P: Pairing> BivariateKZG<P> {
         
         // compute the vector composed by (f_1(z1), f_2(z1), ..., f_l(z1))
         let y_evals = x_domain.evaluate_all_lagrange_coefficients(*x);
-        let evals_q2: Vec<P::ScalarField> = lag_biv_poly.double_evals.par_iter().map(|x_evals| {
+        let evals_q2: Vec<P::ScalarField> = lag_biv_poly.evals.par_chunks_exact(x_domain.size()).map(|x_evals| {
             x_evals.par_iter().zip(y_evals.par_iter()).map(|(left, right)| *left * *right).sum()
         }).collect();
         let evals_q2 = KZG::<P>::get_quotient_eval_lagrange(&evals_q2, &y, &y_domain);
@@ -431,15 +422,13 @@ impl<P: Pairing> BivariateKZG<P> {
         let mut divider_vec: Vec<P::ScalarField> = x_domain.elements().map(|element| element - *x).collect();
         batch_inversion(divider_vec.as_mut_slice());
         let evals_lagrange: Vec<P::ScalarField> = x_domain.evaluate_all_lagrange_coefficients(*x);
-        let xy_srs: Vec<<P as Pairing>::G1Affine> = powers.concat();
 
-        let evals_q1: Vec<Vec<P::ScalarField>> = lag_biv_poly.double_evals.into_par_iter().map(|x_evals| {
+        let evals_q1: Vec<P::ScalarField> = lag_biv_poly.evals.par_chunks(x_domain.size()).flat_map(|x_evals| {
             KZG::<P>::get_quotient_eval_lagrange_no_repeat(&x_evals, &evals_lagrange, &divider_vec)
         }).collect();
-        let evals_q1 = evals_q1.concat();
 
         let proof = (
-            P::G1MSM::msm_unchecked_par_auto(&xy_srs, &evals_q1).into().into(), 
+            P::G1MSM::msm_unchecked_par_auto(&powers, &evals_q1).into().into(), 
             P::G1MSM::msm_unchecked_par_auto(&y_srs, &evals_q2).into().into());
         
         Ok(proof)
@@ -480,9 +469,11 @@ mod tests {
     #[test]
     fn bivariate_poly_commit_test() {
         let mut rng = StdRng::seed_from_u64(0u64);
-        let srs =
+        let (xy_srs, y_srs, verifier) =
             TestBivariatePolyCommitment::setup(&mut rng, BIVARIATE_X_DEGREE, BIVARIATE_Y_DEGREE)
                 .unwrap();
+        
+        let x_domain = EvaluationDomain::new(BIVARIATE_X_DEGREE + 1).unwrap();
 
         let mut x_polynomials = Vec::new();
         for _ in 0..BIVARIATE_Y_DEGREE + 1 {
@@ -500,15 +491,17 @@ mod tests {
 
         // Commit to polynomial
         let com =
-            TestBivariatePolyCommitment::commit(&srs.0, bivariate_polynomial).unwrap();
+            TestBivariatePolyCommitment::commit(&xy_srs, bivariate_polynomial, &x_domain).unwrap();
 
         // Evaluate at challenge point
         let point = (UniformRand::rand(&mut rng), UniformRand::rand(&mut rng));
         let time = Instant::now();
         let eval_proof = TestBivariatePolyCommitment::open(
-            &srs.0,
+            &xy_srs,
+            &y_srs,
             bivariate_polynomial,
-            &point
+            &point,
+            &x_domain,
         )
         .unwrap();
         println!("Bivaraite KZG open  time: {:?} ms", time.elapsed().as_millis());
@@ -519,7 +512,7 @@ mod tests {
 
         // Verify proof
         assert!(
-            TestBivariatePolyCommitment::verify(&srs.1, &com, &point, &eval, &eval_proof).unwrap()
+            TestBivariatePolyCommitment::verify(&verifier, &com, &point, &eval, &eval_proof).unwrap()
         );
     }
 
@@ -527,13 +520,10 @@ mod tests {
     fn bivariate_poly_commit_lagrange_test() {
         let mut rng = StdRng::seed_from_u64(0u64);
         let domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(BIVARIATE_Y_DEGREE+1).unwrap();
-        let srs =
+        let ((xy_srs, _, y_srs), verifier) =
             TestBivariatePolyCommitment::setup_lagrange(&mut rng, BIVARIATE_X_DEGREE, BIVARIATE_Y_DEGREE, &domain).unwrap();
-        // let v_srs = srs.0.get_verifier_key();
-        let y_srs = srs.0.0.par_iter()
-            .filter_map(|row| row.get(0))
-            .cloned()
-            .collect();
+
+        let x_domain = EvaluationDomain::new(BIVARIATE_X_DEGREE + 1).unwrap();
 
         let mut x_polynomials = Vec::new();
         for _ in 0..BIVARIATE_Y_DEGREE + 1 {
@@ -552,17 +542,18 @@ mod tests {
         // Commit to polynomial
         let time = Instant::now();
         let com =
-            TestBivariatePolyCommitment::commit(&srs.0.0, bivariate_polynomial).unwrap();
+            TestBivariatePolyCommitment::commit(&xy_srs, bivariate_polynomial, &x_domain).unwrap();
          println!("Bivaraite KZG commit  time: {:?} ms", time.elapsed().as_millis());
 
         // Evaluate at challenge point
         let point = (UniformRand::rand(&mut rng), UniformRand::rand(&mut rng));
         let time = Instant::now();
         let eval_proof = TestBivariatePolyCommitment::open_lagrange(
-            &srs.0.0,
+            &xy_srs,
             &y_srs,
             bivariate_polynomial,
             &point,
+            &x_domain,
             &domain,
         ).unwrap();
         println!("Bivaraite KZG open  time: {:?} ms", time.elapsed().as_millis());
@@ -573,7 +564,7 @@ mod tests {
 
         // Verify proof
         assert!(
-            TestBivariatePolyCommitment::verify(&srs.1, &com, &point, &eval, &eval_proof).unwrap()
+            TestBivariatePolyCommitment::verify(&verifier, &com, &point, &eval, &eval_proof).unwrap()
         );
 
     }
@@ -600,11 +591,11 @@ mod tests {
             for _ in 0..BIVARIATE_X_DEGREE + 1 {
                 x_evals.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
             }
-            xy_evals.push(x_evals);
+            xy_evals.extend(x_evals);
         };
 
         // generate double_lagrange polynomials
-        let lag_biv_poly = LagrangeBivariatePolynomial { double_evals: xy_evals };
+        let lag_biv_poly = LagrangeBivariatePolynomial { evals: xy_evals };
 
         // Commit to polynomial
         let time = Instant::now();
