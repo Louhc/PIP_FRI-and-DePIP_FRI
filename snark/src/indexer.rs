@@ -167,7 +167,8 @@ pub struct PreMesProver<P: Pairing> {
     pub lower_a_b_evals: DeLowerAandBEvals<P>,
     pub lower_a_b_polys: DeLowerAandBPolys<P>,
     pub n_evals: NEvals<P>,
-    pub n_polys: NPolys<P>
+    pub n_polys: NPolys<P>,
+    pub de_poly_l: UnivariatePolynomial<P::ScalarField>
 }
 
 #[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
@@ -210,9 +211,9 @@ impl<P: Pairing> Indexer<P> {
         let n_evals = Indexer::<P>::build_n_evals(&de_row_index_vecs, &de_col_index_vecs, l, m, m_prime);
         let n_polys = Indexer::<P>::compute_n_polys(&x_domain, &n_evals);
         let coms_n = Indexer::<P>::commit_n_polys(&x_srs, &n_polys);
-        let com_l = Indexer::<P>::commit_poly_upper_l(sub_prover_id, &powers, l, &y_domain);
+        let (com_l, de_poly_l) = Indexer::<P>::compute_and_commit_poly_upper_l(sub_prover_id, &powers, l, &y_domain);
         (
-            PreMesProver{upper_r_poly, de_row_index_vecs, de_col_index_vecs, val_evals: de_val_evals_vecs[sub_prover_id].clone(), val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys}, 
+            PreMesProver{upper_r_poly, de_row_index_vecs, de_col_index_vecs, val_evals: de_val_evals_vecs[sub_prover_id].clone(), val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys, de_poly_l}, 
             PreMesVerifier{com_upper_r, coms_val, coms_lower_a_b, com_l, coms_n}
         )
     }
@@ -828,12 +829,12 @@ impl<P: Pairing> Indexer<P> {
         (x_polynomial, com)
     }
 
-    pub fn commit_poly_upper_l (
+    pub fn compute_and_commit_poly_upper_l (
         sub_prover_id: usize,
         powers: &Vec<Vec<P::G1Affine>>,
         l: usize,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
-    ) -> P::G1 {
+    ) -> (P::G1, UnivariatePolynomial<P::ScalarField>) {
         // use interpolatation to get lagrange polynomials
         let mut vec = vec![P::ScalarField::zero(); l];
         vec[sub_prover_id] = P::ScalarField::one();
@@ -846,7 +847,7 @@ impl<P: Pairing> Indexer<P> {
             P::G1::zero()
         };
 
-        com
+        (com, x_polynomial)
     }
 
 }

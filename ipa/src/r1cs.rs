@@ -12,6 +12,7 @@ use ark_relations::{
 };
 use ark_std::{UniformRand, test_rng};
 use std::marker::PhantomData;
+use std::time::Instant;
 
 #[derive(Clone)]
 pub struct RandomCircuit<P: Pairing> {
@@ -138,7 +139,9 @@ impl<P:Pairing> R1CSVectors<P> {
     
         let step = start_timer!(|| "CS to matrices");
         let mut cs = cs.borrow_mut().unwrap();
+        let time = Instant::now();
         cs.finalize();
+        println!("finalize time: {:?}", time.elapsed());
         let cs_matrix = cs.to_matrices().unwrap();
         end_timer!(step);
 

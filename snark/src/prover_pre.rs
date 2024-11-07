@@ -1424,23 +1424,18 @@ impl<P: Pairing> PreProver<P> {
     // so here use unchecked msm
     pub fn open_l_beta_zeta (
         sub_prover_id: usize,
-        l: usize,
-        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         powers: &Vec<Vec<P::G1Affine>>,
         y_srs: &Vec<P::G1Affine>,
+        de_poly_l: &UnivariatePolynomial<P::ScalarField>,
         eval_beta: &P::ScalarField,
+        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         beta: &P::ScalarField,
         zeta: &P::ScalarField,
         gamma: &P::ScalarField,
     ) -> (Vec<P::ScalarField>, (P::G1, P::G1)) {
 
-        // compute L_i(X)
-        let mut evals = vec![P::ScalarField::zero(); l];
-        evals[sub_prover_id] = P::ScalarField::one();
-        let poly_l = NoPreProver::<P>::interpolate_from_eval_domain(evals, &y_domain);
-
         // invoke the de-open
-        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &powers, &y_srs, &vec![&poly_l], &vec![*eval_beta], &(*beta, *zeta), &y_domain, &gamma);
+        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &powers, &y_srs, &vec![de_poly_l], &vec![*eval_beta], &(*beta, *zeta), &y_domain, &gamma);
         if Net::am_master() {
             let proof = proof.unwrap();
             assert_eq!(proof.0.len(), 1);
