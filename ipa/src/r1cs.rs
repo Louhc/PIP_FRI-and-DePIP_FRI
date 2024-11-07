@@ -138,10 +138,10 @@ impl<P:Pairing> R1CSVectors<P> {
         let f_zero = P::ScalarField::zero();
     
         let step = start_timer!(|| "CS to matrices");
-        let mut cs = cs.borrow_mut().unwrap();
-        let time = Instant::now();
-        cs.finalize();
-        println!("finalize time: {:?}", time.elapsed());
+        let cs = cs.borrow_mut().unwrap();
+        // let time = Instant::now();
+        // cs.finalize();
+        // println!("finalize time: {:?}", time.elapsed());
         let cs_matrix = cs.to_matrices().unwrap();
         end_timer!(step);
 
@@ -252,8 +252,8 @@ impl<P:Pairing> R1CSPubVectors<P> {
         assert_eq!(m, cs.num_constraints() / l);
         let f_zero = P::ScalarField::zero();
     
-        let mut cs = cs.borrow_mut().unwrap();
-        cs.finalize();
+        let cs = cs.borrow_mut().unwrap();
+        // cs.finalize();
         let cs_matrix = cs.to_matrices().unwrap();
     
         let vec_r = generate_powers(challenge_r, m * l);

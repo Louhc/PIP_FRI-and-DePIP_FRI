@@ -63,6 +63,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let m = cs.num_constraints() / Net::n_parties();
     println!("number of constraints: {:?}", cs.num_constraints());
     println!("number of variables: {:?}", cs.num_witness_variables() + cs.num_instance_variables());
+    cs.finalize();
 
     let mut rng = StdRng::seed_from_u64(0u64);
     let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, m_prime): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<Bls12_381>::build_de_r1cs_index(l, m, &cs).unwrap();
