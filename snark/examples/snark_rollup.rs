@@ -37,7 +37,7 @@ struct Opt {
     input: PathBuf,
 }
 
-const NUM_TX: usize = 4;
+const NUM_TX: usize = 1 << 5;
 const L: usize = 4;
 
 fn init() -> (usize, usize) {
@@ -52,8 +52,8 @@ fn init() -> (usize, usize) {
 
 fn test_helper(l: usize, sub_prover_id: usize) {
     let time = Instant::now();
-    // In Pianist, a rollup transaction constraint number is 86k, while ours is 196k, two times than it
-    let num_tx_in_pianist = NUM_TX * 2;
+    // In Pianist, 3 rollup transaction R1CS constraint number is 1<<18, in ours 1 tx is 1<<18
+    let num_tx_in_pianist = NUM_TX * 3;
     if NUM_TX % Net::n_parties() != 0 {
         println!("The transaction number is not enough to assign each sub-prover distributedly!");
     }

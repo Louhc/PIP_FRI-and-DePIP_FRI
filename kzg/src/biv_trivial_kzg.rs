@@ -224,14 +224,12 @@ impl<P: Pairing> BivariateKZG<P> {
         let y_srs = <P as Pairing>::G1::normalize_batch(&y_srs);
 
         // get x_srs
-        let time = Instant::now();
         let x_srs = structured_generators_scalar_power(
             x_degree + 1,
             &g,
             &alpha,
         );
         let x_srs = <P as Pairing>::G1::normalize_batch(&x_srs);
-        println!("get srs from MSM: {:?}", time.elapsed());
 
 
         Ok(((xy_srs, x_srs, y_srs),
