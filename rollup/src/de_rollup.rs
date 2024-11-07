@@ -1,7 +1,7 @@
 use crate::account::AccountInformationVar;
 use crate::ledger::*;
 use crate::transaction::TransactionVar;
-use crate::ConstraintF;
+use ark_simple_payments::ConstraintF;
 use ark_r1cs_std::prelude::*;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use ark_simple_payments::{
@@ -352,6 +352,8 @@ mod test {
         // assert!(cs.is_satisfied().unwrap());
         println!("number of constraints: {:?}", cs.num_constraints());
         println!("number of variables: {:?}", cs.num_witness_variables() + cs.num_instance_variables());
+        let mut cs = cs.borrow_mut().unwrap();
+        cs.finalize();
         let _cs_matrix = cs.to_matrices().unwrap();
         // println!("cs_matrix.a[0].len(): {:?}", cs_matrix.a.0.len());
     }

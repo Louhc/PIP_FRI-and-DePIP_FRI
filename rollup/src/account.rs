@@ -1,6 +1,5 @@
 use crate::ledger::*;
-use crate::ConstraintF;
-use ark_ed_on_bls12_381::{constraints::EdwardsVar, EdwardsProjective};
+use ark_simple_payments::{ConstraintF, EdwardsVar, EdwardsProjective};
 use ark_r1cs_std::bits::{uint8::UInt8, ToBytesGadget};
 use ark_r1cs_std::prelude::*;
 use ark_relations::r1cs::{Namespace, SynthesisError};
@@ -46,7 +45,7 @@ pub struct AccountInformationVar {
 impl AccountInformationVar {
     /// Convert the account information to bytes.
     #[tracing::instrument(target = "r1cs", skip(self))]
-    pub fn to_bytes_le(&self) -> Vec<UInt8<crate::ConstraintF>> {
+    pub fn to_bytes_le(&self) -> Vec<UInt8<ark_simple_payments::ConstraintF>> {
         self.public_key
             .to_bytes()
             .unwrap()

@@ -1,7 +1,6 @@
 use crate::account::{AccountIdVar, AccountInformationVar, AccountPublicKeyVar};
 use crate::ledger::{self, AccPathVar, AccRootVar, AmountVar, ParametersVar};
-use crate::ConstraintF;
-use ark_ed_on_bls12_381::{constraints::EdwardsVar, EdwardsProjective};
+use ark_simple_payments::{ConstraintF, EdwardsVar, EdwardsProjective};
 use ark_r1cs_std::prelude::*;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Namespace, SynthesisError};
 use ark_simple_payments::account::AccountInformation;

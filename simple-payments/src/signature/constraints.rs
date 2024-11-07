@@ -38,8 +38,8 @@ pub trait SigRandomizePkGadget<S: SignatureScheme, ConstraintF: Field> {
 #[cfg(test)]
 mod test {
     use crate::signature::{schnorr, schnorr::constraints::*, *};
-    use ark_ed_on_bls12_381::constraints::EdwardsVar as JubJubVar;
-    use ark_ed_on_bls12_381::{EdwardsProjective as JubJub, Fq};
+    use crate::EdwardsVar as JubJubVar;
+    use crate::{EdwardsProjective as JubJub, ConstraintF};
     use ark_ff::PrimeField;
     use ark_r1cs_std::prelude::*;
     use ark_relations::r1cs::ConstraintSystem;
@@ -79,7 +79,7 @@ mod test {
 
     #[test]
     fn schnorr_signature_test() {
-        type F = Fq;
+        type F = crate::ConstraintFq;
         let message = "Hi, I am a Schnorr signature!";
         sign_and_verify::<
             F,

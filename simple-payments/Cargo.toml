@@ -31,7 +31,9 @@ derivative = { version = "2.0", features = ["use_core"] }
 tracing = { version = "0.1", default-features = false, features = [ "attributes" ], optional = true }
 hashbrown = { version = "0.14", default-features = false, features = ["inline-more", "allocator-api2"], optional = true  }
 ark-ed-on-bls12-381 = { version = "^0.4.0", default-features = false, features = [ "r1cs" ] }
-
+ark-bls12-381 = { version = "^0.4.0" }
+ark-ed-on-bn254 = { version = "0.4.0-alpha.2", default-features = false, features = [ "r1cs" ] }
+ark-bn254 = { version = "0.4.0-alpha.2", features = [ "curve", "asm" ] }
 
 [features]
 default = [ "std", "parallel", "r1cs", "merkle_tree", "prf" ]

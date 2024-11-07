@@ -1,7 +1,6 @@
-use crate::ConstraintF;
 use ark_crypto_primitives::crh::constraints::{CRHSchemeGadget, TwoToOneCRHSchemeGadget};
 use ark_crypto_primitives::merkle_tree::constraints::PathVar;
-use ark_ed_on_bls12_381::{constraints::EdwardsVar, EdwardsProjective};
+use ark_simple_payments::{ConstraintF, EdwardsVar, EdwardsProjective};
 use ark_r1cs_std::bits::uint64::UInt64;
 use ark_r1cs_std::prelude::*;
 use ark_r1cs_std::alloc::AllocVar;
