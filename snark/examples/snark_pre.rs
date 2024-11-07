@@ -55,6 +55,7 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     let mut cs_ref = cs.borrow_mut().unwrap();
     cs_ref.finalize();
     let cs_matrix = cs_ref.to_matrices().unwrap();
+    drop(cs_ref);
 
     let mut rng = StdRng::seed_from_u64(0u64);
     let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, m_prime): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<E>::build_de_r1cs_index(l, m, &cs_matrix).unwrap();
