@@ -81,16 +81,18 @@ fn random_r1cs_preprocessing_test() {
     c.generate_constraints(cs.clone()).unwrap();
     assert!(cs.is_satisfied().unwrap());
 
-    let m = cs.num_constraints() / l;
-    println!("Number of constraints: {:?}", cs.num_constraints());
+    let mut cs = cs.borrow_mut().unwrap();
+    cs.finalize();
+    let cs_matrix = cs.to_matrices().unwrap();
 
-    let (de_row_index_vecs, de_col_index_vecs, de_val_evals_vecs, pow_of_two): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<Bls12_381>::build_de_r1cs_index(l, m, &cs).unwrap();
+    let m = cs.num_constraints / l;
+    println!("Number of constraints: {:?}", cs.num_constraints);
+
+    let (de_row_index_vecs, de_col_index_vecs, de_val_evals_vecs, pow_of_two): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<Bls12_381>::build_de_r1cs_index(l, m, &cs_matrix).unwrap();
     
     let n_evals = Indexer::<Bls12_381>::build_n_evals(&de_row_index_vecs, &de_col_index_vecs, l, m, pow_of_two);
 
-    let cs_matrix = cs.to_matrices();
     println!("r1cs matrix: {:?}", cs_matrix);
-    let cs = cs.borrow().unwrap();
     let vec_w = [&cs.instance_assignment[..], &cs.witness_assignment[..]].concat();
     println!("witness vector: {:?}", vec_w);
     

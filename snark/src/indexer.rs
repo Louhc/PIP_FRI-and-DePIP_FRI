@@ -10,7 +10,7 @@ use rayon::prelude::*;
 use crate::prover_pre::{DeValPolys, NPolys, DeLowerAandBEvals, DeLowerAandBPolys};
 use my_ipa::de_ipa::DeIPA;
 use ark_std::error::Error;
-use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError, ConstraintMatrices};
 use itertools::MultiUnzip;
 use de_network::{DeMultiNet as Net, DeNet};
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
@@ -194,7 +194,7 @@ impl<P: Pairing> Indexer<P> {
         sub_prover_id: usize,
         m: usize,
         l: usize,
-        cs: &ConstraintSystemRef<P::ScalarField>,
+        cs_matrix: &ConstraintMatrices<P::ScalarField>,
         powers: &Vec<P::G1Affine>,
         m_powers: &Vec<P::G1Affine>,
         x_srs: &Vec<P::G1Affine>,
@@ -202,7 +202,7 @@ impl<P: Pairing> Indexer<P> {
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         m_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (PreMesProver<P>, PreMesVerifier<P>) {
-        let (de_row_index_vecs, de_col_index_vecs, de_val_evals_vecs, m_prime) = Indexer::<P>::build_de_r1cs_index(l, m, &cs).unwrap();
+        let (de_row_index_vecs, de_col_index_vecs, de_val_evals_vecs, m_prime) = Indexer::<P>::build_de_r1cs_index(l, m, &cs_matrix).unwrap();
         let (upper_r_poly, com_upper_r) = Indexer::<P>::compute_and_commit_poly_upper_r(sub_prover_id, &powers, x_domain);
         let val_polys = Indexer::<P>::de_compute_val_polys(&m_domain, &de_val_evals_vecs[sub_prover_id]);
         let coms_val = Indexer::<P>::de_commit_val_polys(sub_prover_id, &m_powers, &val_polys, x_domain);
@@ -223,7 +223,7 @@ impl<P: Pairing> Indexer<P> {
         sub_prover_id: usize,
         m: usize,
         l: usize,
-        cs: &ConstraintSystemRef<P::ScalarField>,
+        cs_matrix: &ConstraintMatrices<P::ScalarField>,
         powers: &Vec<P::G1Affine>,
         m_powers: &Vec<P::G1Affine>,
         x_srs: &Vec<P::G1Affine>,
@@ -233,7 +233,7 @@ impl<P: Pairing> Indexer<P> {
         file_path_prover: &str, 
         file_path_verifier: &str, 
     ) -> Result<(PreMesProver<P>, PreMesVerifier<P>), Box<dyn Error>> {
-        let (pre_mes_prover, pre_mes_verifier) = Self::preprocess(sub_prover_id, m, l, cs, powers, m_powers, x_srs, x_domain, y_domain, m_domain);
+        let (pre_mes_prover, pre_mes_verifier) = Self::preprocess(sub_prover_id, m, l, &cs_matrix, powers, m_powers, x_srs, x_domain, y_domain, m_domain);
 
         let file_prover = std::fs::File::create(file_path_prover)?;
         let writer_prover = std::io::BufWriter::new(file_prover);
@@ -263,7 +263,7 @@ impl<P: Pairing> Indexer<P> {
         sub_prover_id: usize,
         m: usize,
         l: usize,
-        cs: &ConstraintSystemRef<P::ScalarField>,
+        cs_matrix: &ConstraintMatrices<P::ScalarField>,
         powers: &Vec<P::G1Affine>,
         m_powers: &Vec<P::G1Affine>,
         x_srs: &Vec<P::G1Affine>,
@@ -275,7 +275,7 @@ impl<P: Pairing> Indexer<P> {
         let pre_mes_verifier_filepath = format!("./data/Pre_Mes_Verifier-{}-{}.paras", m, l);
 
         let time = Instant::now();
-        let (pre_mes_prover, pre_mes_verifier) = Self::new_to_file(sub_prover_id, m, l, cs, powers, m_powers, x_srs, x_domain, y_domain, m_domain, &pre_mes_prover_filepath, &pre_mes_verifier_filepath).unwrap();
+        let (pre_mes_prover, pre_mes_verifier) = Self::new_to_file(sub_prover_id, m, l, cs_matrix, powers, m_powers, x_srs, x_domain, y_domain, m_domain, &pre_mes_prover_filepath, &pre_mes_verifier_filepath).unwrap();
         println!("Indexer preprocessing and writes to file time: {:?}", time.elapsed());
         
         (pre_mes_prover, pre_mes_verifier)
@@ -307,11 +307,8 @@ impl<P: Pairing> Indexer<P> {
     pub fn build_de_r1cs_index(
         l: usize,
         m: usize,
-        cs: &ConstraintSystemRef<P::ScalarField>,
+        cs_matrix: &ConstraintMatrices<P::ScalarField>,
     )-> Result<(Vec<DeRowIndex>, Vec<DeColIndex>, Vec<DeValEvals<P>>, usize), SynthesisError> {
-        let cs = cs.borrow_mut().unwrap();
-        // cs.finalize();
-        let cs_matrix = cs.to_matrices().unwrap();
         let ml = m * l;
         let sqrt_ml = (ml as f64).sqrt() as usize;
         assert_eq!(cs_matrix.a.1.len(), ml);
@@ -414,12 +411,10 @@ impl<P: Pairing> Indexer<P> {
         sub_prover_id: usize,
         l: usize,
         m: usize,
-        cs: &ConstraintSystemRef<P::ScalarField>,
+        cs_matrix: &ConstraintMatrices<P::ScalarField>,
         m_prime: usize,
     )-> Result<(DeRowIndex, DeColIndex, DeValEvals<P>), SynthesisError> {
-        let cs = cs.borrow_mut().unwrap();
-        // cs.finalize();
-        let cs_matrix = cs.to_matrices().unwrap();
+
         let ml = m * l;
         let sqrt_ml = (ml as f64).sqrt() as usize;
         assert_eq!(cs_matrix.a.1.len(), ml);

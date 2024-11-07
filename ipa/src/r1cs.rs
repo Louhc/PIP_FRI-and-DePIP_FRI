@@ -8,7 +8,7 @@ use ark_std::ops::AddAssign;
 use ark_std::{cfg_iter, start_timer, end_timer};
 use ark_relations::{
     lc,
-    r1cs::{ConstraintSystemRef, ConstraintSynthesizer, SynthesisError},
+    r1cs::{ConstraintSystemRef, ConstraintSynthesizer, SynthesisError, ConstraintMatrices},
 };
 use ark_std::{UniformRand, test_rng};
 use std::marker::PhantomData;
@@ -129,25 +129,19 @@ impl<P:Pairing> R1CSVectors<P> {
         l: usize,
         challenge_r: P::ScalarField,
         cs: &ConstraintSystemRef<P::ScalarField>,
+        cs_matrix: &ConstraintMatrices<P::ScalarField>,
     )-> Result<Self, SynthesisError> {
         let timer = start_timer!(|| "R1CSVector build");
     
         // Each sub-prover holds m constraints
         assert_eq!(m, cs.num_constraints() / l);
         let f_zero = P::ScalarField::zero();
-    
-        let step = start_timer!(|| "CS to matrices");
-        let cs = cs.borrow_mut().unwrap();
-        // let time = Instant::now();
-        // cs.finalize();
-        // println!("finalize time: {:?}", time.elapsed());
-        let cs_matrix = cs.to_matrices().unwrap();
-        end_timer!(step);
 
         let step = start_timer!(|| "Evaluate constraints");
         let start = m * sub_prover_id;
         let end = start + m;
 
+        let cs = cs.borrow().unwrap();
         let num_instance_variables = cs.num_instance_variables;
         let instance_assignment = &cs.instance_assignment;
         let witness_assignment = &cs.witness_assignment;
@@ -245,15 +239,12 @@ impl<P:Pairing> R1CSPubVectors<P> {
         l: usize,
         challenge_r: &P::ScalarField,
         cs: ConstraintSystemRef<P::ScalarField>,
+        cs_matrix: &ConstraintMatrices<P::ScalarField>,
     )-> Result<Self, SynthesisError> {
     
         // Each sub-prover holds m constraints
         assert_eq!(m, cs.num_constraints() / l);
         let f_zero = P::ScalarField::zero();
-    
-        let cs = cs.borrow_mut().unwrap();
-        // cs.finalize();
-        let cs_matrix = cs.to_matrices().unwrap();
     
         let vec_r = generate_powers(challenge_r, m * l);
 

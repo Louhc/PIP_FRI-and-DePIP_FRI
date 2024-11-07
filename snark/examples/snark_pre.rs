@@ -52,8 +52,12 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     assert!(cs.is_satisfied().unwrap());
     println!("Generate R1CS instances time: {:?}", time.elapsed());
 
+    let mut cs_ref = cs.borrow_mut().unwrap();
+    cs_ref.finalize();
+    let cs_matrix = cs_ref.to_matrices().unwrap();
+
     let mut rng = StdRng::seed_from_u64(0u64);
-    let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, m_prime): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<E>::build_de_r1cs_index(l, m, &cs).unwrap();
+    let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, m_prime): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<E>::build_de_r1cs_index(l, m, &cs_matrix).unwrap();
     println!("log m_prime: {:?}", log2(m_prime));
 
     let time = Instant::now();
@@ -83,7 +87,7 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     // indexer works
     // common preprocess
     let time = Instant::now();
-    let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::preprocess(sub_prover_id, m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
+    let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::preprocess(sub_prover_id, m, l, &cs_matrix, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
     // new preprocess to file
     // let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
     // println!("Prover {:?} Indexer time: {:?}", sub_prover_id, time.elapsed());
@@ -106,7 +110,8 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     let timer1 = start_timer!(|| "Prover starts to prove");
     let mut transcript : Transcript = Transcript::new(b"Random R1CS");
     let timer2 = start_timer!(|| "Build r1cs vecs and polys");
-    let r1cs_de_vecs: R1CSVectors<E> = R1CSVectors::<E>::build(sub_prover_id, m, l, challenge_r, &cs).unwrap();
+
+    let r1cs_de_vecs: R1CSVectors<E> = R1CSVectors::<E>::build(sub_prover_id, m, l, challenge_r, &cs, &cs_matrix).unwrap();
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<E>(m, l, r1cs_de_vecs);
     end_timer!(timer2);
     let proof = DeSNARKLog::<E>::de_r1cs_prove(sub_prover_id, &powers, 

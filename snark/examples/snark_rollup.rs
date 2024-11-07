@@ -59,14 +59,18 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let _circuit = build_multi_tx_circuit::<NUM_TX, L>().generate_constraints(cs.clone()).unwrap();
     // assert!(cs.is_satisfied().unwrap());
     assert!(cs.is_satisfied().unwrap());
-    println!("Generate R1CS of {:?} transactions time: {:?}", num_tx_in_pianist, time.elapsed());
-    let m = cs.num_constraints() / Net::n_parties();
-    println!("number of constraints: {:?}", cs.num_constraints());
-    println!("number of variables: {:?}", cs.num_witness_variables() + cs.num_instance_variables());
+
+    let mut cs = cs.borrow_mut().unwrap();
     cs.finalize();
+    let cs_matrix = cs.to_matrices().unwrap();
+
+    println!("Generate R1CS of {:?} transactions time: {:?}", num_tx_in_pianist, time.elapsed());
+    let m = cs.num_constraints / Net::n_parties();
+    println!("number of constraints: {:?}", cs.num_constraints);
+    println!("number of variables: {:?}", cs.num_witness_variables + cs.num_instance_variables);
 
     let mut rng = StdRng::seed_from_u64(0u64);
-    let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, m_prime): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<Bls12_381>::build_de_r1cs_index(l, m, &cs).unwrap();
+    let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, m_prime): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<Bls12_381>::build_de_r1cs_index(l, m, &cs_matrix).unwrap();
     println!("log m_prime: {:?}", log2(m_prime));
 
     let time = Instant::now();
@@ -96,7 +100,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     // indexer works
     // common preprocess
     let time = Instant::now();
-    let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bls12_381>::preprocess(sub_prover_id, m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
+    let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bls12_381>::preprocess(sub_prover_id, m, l, &cs_matrix, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
     // new preprocess to file
     // let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bls12_381>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
     // println!("Prover {:?} Indexer time: {:?}", sub_prover_id, time.elapsed());
@@ -119,7 +123,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let timer1 = start_timer!(|| "Prover starts to prove");
     let mut transcript : Transcript = Transcript::new(b"Random R1CS");
     let timer2 = start_timer!(|| "Build r1cs vecs and polys");
-    let r1cs_de_vecs: R1CSVectors<Bls12_381> = R1CSVectors::<Bls12_381>::build(sub_prover_id, m, l, challenge_r, &cs).unwrap();
+    let r1cs_de_vecs: R1CSVectors<Bls12_381> = R1CSVectors::<Bls12_381>::build(sub_prover_id, m, l, challenge_r, &cs, &cs_matrix).unwrap();
 
     //self tets
     // let vec_r = generate_powers(&challenge_r, m * l);

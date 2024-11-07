@@ -77,9 +77,14 @@ fn main() {
     println!("Number of variables: {:?}", c.num_variables);
     let cs = ConstraintSystem::<<Bls12_381 as Pairing>::ScalarField>::new_ref();
     c.generate_constraints(cs.clone()).unwrap();
+
     assert!(cs.is_satisfied().unwrap());
+    let mut cs_ref = cs.borrow_mut().unwrap();
+    cs_ref.finalize();
+    let cs_matrix = cs_ref.to_matrices().unwrap();
+
     let r1cs_vecs_all: Vec<R1CSVectors<Bls12_381>> = (0..l).map(|sub_prover_id| {
-        R1CSVectors::<Bls12_381>::build(sub_prover_id, m, l, challenge_r, &cs).unwrap()
+        R1CSVectors::<Bls12_381>::build(sub_prover_id, m, l, challenge_r, &cs, &cs_matrix).unwrap()
     }).collect();
     let r1cs_de_vecs = r1cs_vecs_all[sub_prover_id].clone();
     let r1cs_de_pub_vecs: Vec<R1CSPubVectors<Bls12_381>> = r1cs_vecs_all.par_iter().map(|vec| R1CSPubVectors{vec_x: vec.vec_x.clone(), vec_y: vec.vec_y.clone(), vec_z: vec.vec_z.clone()}).collect();
