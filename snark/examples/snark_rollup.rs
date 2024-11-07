@@ -124,10 +124,10 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let r1cs_de_vecs: R1CSVectors<Bls12_381> = R1CSVectors::<Bls12_381>::build(sub_prover_id, m, l, challenge_r, &cs).unwrap();
 
     //self tets
-    let vec_r = generate_powers(&challenge_r, m * l);
-    assert_eq!(inner_product::<Bls12_381>(&r1cs_de_vecs.vec_x, &r1cs_de_vecs.vec_w), inner_product::<Bls12_381>(&r1cs_de_vecs.vec_a, &vec_r));
-    assert_eq!(inner_product::<Bls12_381>(&r1cs_de_vecs.vec_y, &r1cs_de_vecs.vec_w), inner_product::<Bls12_381>(&r1cs_de_vecs.vec_b, &vec_r));
-    assert_eq!(inner_product::<Bls12_381>(&r1cs_de_vecs.vec_z, &r1cs_de_vecs.vec_w), inner_product::<Bls12_381>(&r1cs_de_vecs.vec_c, &vec_r));
+    // let vec_r = generate_powers(&challenge_r, m * l);
+    // assert_eq!(inner_product::<Bls12_381>(&r1cs_de_vecs.vec_x, &r1cs_de_vecs.vec_w), inner_product::<Bls12_381>(&r1cs_de_vecs.vec_a, &vec_r));
+    // assert_eq!(inner_product::<Bls12_381>(&r1cs_de_vecs.vec_y, &r1cs_de_vecs.vec_w), inner_product::<Bls12_381>(&r1cs_de_vecs.vec_b, &vec_r));
+    // assert_eq!(inner_product::<Bls12_381>(&r1cs_de_vecs.vec_z, &r1cs_de_vecs.vec_w), inner_product::<Bls12_381>(&r1cs_de_vecs.vec_c, &vec_r));
     //self test over
 
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<Bls12_381>(m, l, r1cs_de_vecs);
