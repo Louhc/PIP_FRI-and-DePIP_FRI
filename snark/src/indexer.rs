@@ -195,23 +195,23 @@ impl<P: Pairing> Indexer<P> {
         m: usize,
         l: usize,
         cs: &ConstraintSystemRef<P::ScalarField>,
-        powers: &Vec<Vec<P::G1Affine>>,
-        m_powers: &Vec<Vec<P::G1Affine>>,
+        powers: &Vec<P::G1Affine>,
+        m_powers: &Vec<P::G1Affine>,
         x_srs: &Vec<P::G1Affine>,
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         m_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (PreMesProver<P>, PreMesVerifier<P>) {
         let (de_row_index_vecs, de_col_index_vecs, de_val_evals_vecs, m_prime) = Indexer::<P>::build_de_r1cs_index(l, m, &cs).unwrap();
-        let (upper_r_poly, com_upper_r) = Indexer::<P>::compute_and_commit_poly_upper_r(sub_prover_id, &powers);
+        let (upper_r_poly, com_upper_r) = Indexer::<P>::compute_and_commit_poly_upper_r(sub_prover_id, &powers, x_domain);
         let val_polys = Indexer::<P>::de_compute_val_polys(&m_domain, &de_val_evals_vecs[sub_prover_id]);
-        let coms_val = Indexer::<P>::de_commit_val_polys(sub_prover_id, &m_powers, &val_polys);
+        let coms_val = Indexer::<P>::de_commit_val_polys(sub_prover_id, &m_powers, &val_polys, x_domain);
         let (lower_a_b_evals, lower_a_b_polys) = Indexer::<P>::compute_lower_a_b_evals_and_polys(sub_prover_id, &de_row_index_vecs, &de_col_index_vecs, &m_domain, &x_domain);
-        let coms_lower_a_b = Indexer::<P>::de_commit_lower_a_b_polys(sub_prover_id, &m_powers, &lower_a_b_polys);
+        let coms_lower_a_b = Indexer::<P>::de_commit_lower_a_b_polys(sub_prover_id, &m_powers, &lower_a_b_polys, x_domain);
         let n_evals = Indexer::<P>::build_n_evals(&de_row_index_vecs, &de_col_index_vecs, l, m, m_prime);
         let n_polys = Indexer::<P>::compute_n_polys(&x_domain, &n_evals);
         let coms_n = Indexer::<P>::commit_n_polys(&x_srs, &n_polys);
-        let (com_l, de_poly_l) = Indexer::<P>::compute_and_commit_poly_upper_l(sub_prover_id, &powers, l, &y_domain);
+        let (com_l, de_poly_l) = Indexer::<P>::compute_and_commit_poly_upper_l(sub_prover_id, &powers, l, x_domain, &y_domain);
         (
             PreMesProver{upper_r_poly, de_row_index_vecs, de_col_index_vecs, val_evals: de_val_evals_vecs[sub_prover_id].clone(), val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys, de_poly_l}, 
             PreMesVerifier{com_upper_r, coms_val, coms_lower_a_b, com_l, coms_n}
@@ -224,8 +224,8 @@ impl<P: Pairing> Indexer<P> {
         m: usize,
         l: usize,
         cs: &ConstraintSystemRef<P::ScalarField>,
-        powers: &Vec<Vec<P::G1Affine>>,
-        m_powers: &Vec<Vec<P::G1Affine>>,
+        powers: &Vec<P::G1Affine>,
+        m_powers: &Vec<P::G1Affine>,
         x_srs: &Vec<P::G1Affine>,
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
@@ -264,8 +264,8 @@ impl<P: Pairing> Indexer<P> {
         m: usize,
         l: usize,
         cs: &ConstraintSystemRef<P::ScalarField>,
-        powers: &Vec<Vec<P::G1Affine>>,
-        m_powers: &Vec<Vec<P::G1Affine>>,
+        powers: &Vec<P::G1Affine>,
+        m_powers: &Vec<P::G1Affine>,
         x_srs: &Vec<P::G1Affine>,
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
@@ -580,7 +580,7 @@ impl<P: Pairing> Indexer<P> {
     }
 
     pub fn commit_val_polys (
-        m_powers: &Vec<Vec<P::G1Affine>>,
+        m_powers: &Vec<P::G1Affine>,
         val_total_polys: &Vec<DeValPolys<P>>,
     ) -> Vec<P::G1> {
         let x_polys_val_a: Vec<&UnivariatePolynomial<P::ScalarField>> = val_total_polys.iter().map(|polys| &polys.val_pa).collect();
@@ -612,12 +612,13 @@ impl<P: Pairing> Indexer<P> {
 
     pub fn de_commit_val_polys (
         sub_prover_id: usize,
-        m_powers: &Vec<Vec<P::G1Affine>>,
+        m_powers: &Vec<P::G1Affine>,
         val_polys: &DeValPolys<P>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> Vec<P::G1> {
         let vecs = &[&val_polys.val_pa, &val_polys.val_pb, &val_polys.val_pc];
 
-        let coms_val = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, vecs);
+        let coms_val = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, vecs, x_domain);
         let coms_val = if Net::am_master() {
             coms_val.unwrap()
         } else {
@@ -756,7 +757,7 @@ impl<P: Pairing> Indexer<P> {
     }
 
     pub fn commit_lower_a_b_polys (
-        m_powers: &Vec<Vec<P::G1Affine>>,
+        m_powers: &Vec<P::G1Affine>,
         de_polys: &Vec<DeLowerAandBPolys<P>>,
     ) -> Vec<P::G1> {
         let x_polys_la_pa_low: Vec<_> = de_polys.iter().map(|polys| &polys.la_pa_low).collect();
@@ -789,14 +790,15 @@ impl<P: Pairing> Indexer<P> {
 
     pub fn de_commit_lower_a_b_polys (
         sub_prover_id: usize,
-        m_powers: &Vec<Vec<P::G1Affine>>,
+        m_powers: &Vec<P::G1Affine>,
         de_polys: &DeLowerAandBPolys<P>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> Vec<P::G1> {
         let x_polys = &[&de_polys.la_pa_low, &de_polys.la_pa_high, &de_polys.la_pb_low,
             &de_polys.la_pb_high, &de_polys.la_pc_low, &de_polys.la_pc_high, 
             &de_polys.lb_pa, &de_polys.lb_pb, &de_polys.lb_pc];
 
-        let coms = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, x_polys);
+        let coms = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, x_polys, x_domain);
         if Net::am_master() {
             coms.unwrap()
         } else {
@@ -806,7 +808,8 @@ impl<P: Pairing> Indexer<P> {
 
     pub fn compute_and_commit_poly_upper_r (
         sub_prover_id: usize,
-        powers: &Vec<Vec<P::G1Affine>>
+        powers: &Vec<P::G1Affine>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (UnivariatePolynomial<P::ScalarField>, P::G1) {
         // let x_polynomials: Vec<UnivariatePolynomial<P::ScalarField>> = (0..l).into_par_iter().map(|i| {
         //     let mut vec = vec![P::ScalarField::zero(); i+1];
@@ -819,7 +822,7 @@ impl<P: Pairing> Indexer<P> {
         let x_polynomial = UnivariatePolynomial::from_coefficients_vec(vec);
 
         // let biv_poly = BivariatePolynomial{x_polynomials};
-        let com = BivBatchKZG::<P>::de_commit(sub_prover_id, &powers, &[&x_polynomial]);
+        let com = BivBatchKZG::<P>::de_commit(sub_prover_id, &powers, &[&x_polynomial], x_domain);
         let com = if Net::am_master() {
             com.unwrap()[0]
         } else {
@@ -831,8 +834,9 @@ impl<P: Pairing> Indexer<P> {
 
     pub fn compute_and_commit_poly_upper_l (
         sub_prover_id: usize,
-        powers: &Vec<Vec<P::G1Affine>>,
+        powers: &Vec<P::G1Affine>,
         l: usize,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (P::G1, UnivariatePolynomial<P::ScalarField>) {
         // use interpolatation to get lagrange polynomials
@@ -840,7 +844,7 @@ impl<P: Pairing> Indexer<P> {
         vec[sub_prover_id] = P::ScalarField::one();
         let x_polynomial = DeIPA::<P>::interpolate_from_eval_domain(vec, &y_domain);
 
-        let com = BivBatchKZG::<P>::de_commit(sub_prover_id, &powers, &[&x_polynomial]);
+        let com = BivBatchKZG::<P>::de_commit(sub_prover_id, &powers, &[&x_polynomial], x_domain);
         let com = if Net::am_master() {
             com.unwrap()[0]
         } else {

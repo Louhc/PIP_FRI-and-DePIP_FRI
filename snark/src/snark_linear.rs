@@ -44,7 +44,7 @@ impl<P: Pairing> DeSNARKLinear<P> {
     pub fn de_r1cs_prove (
         // id can be zero
         sub_prover_id: usize,
-        powers: &Vec<Vec<P::G1Affine>>,
+        powers: &Vec<P::G1Affine>,
         // x_srs for univariate polynomials over X
         x_srs: &Vec<P::G1Affine>,
         y_srs: &Vec<P::G1Affine>,
@@ -56,13 +56,12 @@ impl<P: Pairing> DeSNARKLinear<P> {
         transcript: &mut Transcript,
     ) -> Option<SNARKProofLinear<P>> {
 
-        assert_eq!(powers[0].len(), x_srs.len());
         let m = x_srs.len();
         let l = Net::n_parties();
 
         // commit secret polynomials
         let time = Instant::now();
-        let coms_wit_polys = NoPreProver::<P>::commit_wit_polys(sub_prover_id, &powers, &wit_polys);
+        let coms_wit_polys = NoPreProver::<P>::commit_wit_polys(sub_prover_id, &powers, &wit_polys, &x_domain);
         println!("Prover {:?} commit time: {:?}", sub_prover_id, time.elapsed());
 
         // generate challenges v and u1
@@ -189,7 +188,7 @@ impl<P: Pairing> DeSNARKLinear<P> {
         let time = Instant::now();
         let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r]];
         let sub_polynomials = vec![&wit_polys.poly_w, &wit_polys.poly_a, &wit_polys.poly_b, &wit_polys.poly_c];
-        let proofs_wit_polys= BivBatchKZG::<P>::de_open_lagrange_at_same_y(sub_prover_id, &powers, &x_srs, &y_srs, &sub_polynomials, &x_points, &beta, &y_domain, transcript, &gamma);
+        let proofs_wit_polys= BivBatchKZG::<P>::de_open_lagrange_at_same_y(sub_prover_id, &powers, &x_srs, &y_srs, &sub_polynomials, &x_points, &beta, &x_domain, &y_domain, transcript, &gamma);
         println!("Prover {:?} computs proofs of bivariate polynomials time: {:?}", sub_prover_id, time.elapsed());
 
         let time = Instant::now();

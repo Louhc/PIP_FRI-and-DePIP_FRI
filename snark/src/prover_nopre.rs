@@ -25,11 +25,12 @@ impl<P: Pairing> NoPreProver<P> {
 
     pub fn commit_wit_polys (
         sub_prover_id: usize,
-        powers: &Vec<Vec<P::G1Affine>>,
+        powers: &Vec<P::G1Affine>,
         wit_polys: &R1CSWitnessPolys<P>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> Vec<P::G1> {
         let sub_polynomials = vec![&wit_polys.poly_w, &wit_polys.poly_a, &wit_polys.poly_b, &wit_polys.poly_c];
-        let coms_wit_polys = BivBatchKZG::<P>::de_commit(sub_prover_id, &powers, &sub_polynomials);
+        let coms_wit_polys = BivBatchKZG::<P>::de_commit(sub_prover_id, &powers, &sub_polynomials, x_domain);
 
         if Net::am_master() {
             coms_wit_polys.unwrap()

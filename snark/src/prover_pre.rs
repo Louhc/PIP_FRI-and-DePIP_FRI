@@ -198,18 +198,19 @@ impl<P: Pairing> PreProver<P> {
 
     pub fn commit_g1_h1_upper_a_t_polys (
         sub_prover_id: usize,
-        m_powers: &Vec<Vec<P::G1Affine>>,
+        m_powers: &Vec<P::G1Affine>,
         x_srs: &Vec<P::G1Affine>,
         g1: &UnivariatePolynomial<P::ScalarField>, 
         h1: &UnivariatePolynomial<P::ScalarField>,
         upper_a_t_polys: &DeAandTPolys<P>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (Vec<P::G1>, Vec<P::G1>) {
         
         let step = start_timer!(|| "compute upper a");
         let set = upper_a_t_polys;
         let polys_upper_a = vec![&set.a_pa_low, &set.a_pa_high, &set.a_pb_low, 
             &set.a_pb_high, &set.a_pc_low, &set.a_pc_high];
-        let coms_upper_a = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &polys_upper_a);
+        let coms_upper_a = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &polys_upper_a, x_domain);
         let coms_upper_a = if Net::am_master() {
             coms_upper_a.unwrap()
         } else {
@@ -330,11 +331,12 @@ impl<P: Pairing> PreProver<P> {
 
     pub fn commit_upper_b_polys (
         sub_prover_id: usize,
-        m_powers: &Vec<Vec<P::G1Affine>>,
+        m_powers: &Vec<P::G1Affine>,
         upper_b_t_polys: &DeBandTPolys<P>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> Vec<P::G1> {
         let polys_m_srs = vec![&upper_b_t_polys.b_pa, &upper_b_t_polys.b_pb, &upper_b_t_polys.b_pc];
-        let coms_upper_b = BivBatchKZG::<P>::de_commit(sub_prover_id,&m_powers, &polys_m_srs);
+        let coms_upper_b = BivBatchKZG::<P>::de_commit(sub_prover_id,&m_powers, &polys_m_srs, x_domain);
 
         if Net::am_master() {
             coms_upper_b.unwrap()
@@ -723,13 +725,14 @@ impl<P: Pairing> PreProver<P> {
 
     pub fn commit_f1_f2 (
         sub_prover_id: usize,
-        m_powers: &Vec<Vec<P::G1Affine>>,
+        m_powers: &Vec<P::G1Affine>,
         x_srs: &Vec<P::G1Affine>,
         sub_polys_f1: &Vec<UnivariatePolynomial<P::ScalarField>>,
         polys_f2: &Vec<UnivariatePolynomial<P::ScalarField>>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (Vec<P::G1>, Vec<P::G1>) {
         let time = Instant::now();
-        let coms_f1 = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &sub_polys_f1.iter().collect::<Vec<_>>());
+        let coms_f1 = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &sub_polys_f1.iter().collect::<Vec<_>>(), x_domain);
         println!("Prover {:?} commits f1 time: {:?}", sub_prover_id, time.elapsed());
     
         // REPEAT COMPUTE: only need commitments to f2's but all sub-provers have f2's
@@ -1334,7 +1337,7 @@ impl<P: Pairing> PreProver<P> {
     // TODO: here the evals are sent again
     pub fn open_val_upper_lower_a_b_f1 (
         sub_prover_id: usize,
-        m_powers: &Vec<Vec<P::G1Affine>>,
+        m_powers: &Vec<P::G1Affine>,
         m_y_srs: &Vec<P::G1Affine>,
         val_polys: &DeValPolys<P>,
         upper_a_t_polys: &DeAandTPolys<P>,
@@ -1343,6 +1346,7 @@ impl<P: Pairing> PreProver<P> {
         val_upper_l_evals: &Vec<P::ScalarField>,
         lower_evals: &Vec<P::ScalarField>,
         sub_polys_f1: &Vec<UnivariatePolynomial<P::ScalarField>>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         delta: &P::ScalarField,
         zeta: &P::ScalarField,
@@ -1371,7 +1375,7 @@ impl<P: Pairing> PreProver<P> {
         let evals_f: Vec<P::ScalarField> = sub_polys_f1.par_iter().map(|poly| poly.evaluate(delta)).collect();
         evals_slice.extend(evals_f);
 
-        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &m_powers, &m_y_srs, &sub_polys, &evals_slice, &(*delta, *zeta), &y_domain, gamma);
+        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &m_powers, &m_y_srs, &sub_polys, &evals_slice, &(*delta, *zeta), &x_domain, &y_domain, gamma);
         if Net::am_master() {
             let (evals, proof) = proof.unwrap();
             (precombined_f1, evals, proof)
@@ -1384,16 +1388,17 @@ impl<P: Pairing> PreProver<P> {
     // open at zero, zero
     pub fn open_f1 (
         sub_prover_id: usize,
-        m_powers: &Vec<Vec<P::G1Affine>>,
+        m_powers: &Vec<P::G1Affine>,
         m_y_srs: &Vec<P::G1Affine>,
         sub_polys_f1: &Vec<UnivariatePolynomial<P::ScalarField>>,
         precombined_f1: &UnivariatePolynomial<P::ScalarField>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         gamma: &P::ScalarField,
     ) -> (Vec<P::ScalarField>, (P::G1, P::G1)) {
         let evals_slice = sub_polys_f1.par_iter().map(|poly| poly.coeffs[0]).collect();
 
-        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &m_powers, &m_y_srs, &[precombined_f1], &evals_slice, &(P::ScalarField::zero(), P::ScalarField::zero()), &y_domain, gamma);
+        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &m_powers, &m_y_srs, &[precombined_f1], &evals_slice, &(P::ScalarField::zero(), P::ScalarField::zero()), &x_domain, &y_domain, gamma);
         if Net::am_master() {
             proof.unwrap()
         } else {
@@ -1424,10 +1429,11 @@ impl<P: Pairing> PreProver<P> {
     // so here use unchecked msm
     pub fn open_l_beta_zeta (
         sub_prover_id: usize,
-        powers: &Vec<Vec<P::G1Affine>>,
+        powers: &Vec<P::G1Affine>,
         y_srs: &Vec<P::G1Affine>,
         de_poly_l: &UnivariatePolynomial<P::ScalarField>,
         eval_beta: &P::ScalarField,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
         y_domain: &GeneralEvaluationDomain<P::ScalarField>,
         beta: &P::ScalarField,
         zeta: &P::ScalarField,
@@ -1435,7 +1441,7 @@ impl<P: Pairing> PreProver<P> {
     ) -> (Vec<P::ScalarField>, (P::G1, P::G1)) {
 
         // invoke the de-open
-        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &powers, &y_srs, &vec![de_poly_l], &vec![*eval_beta], &(*beta, *zeta), &y_domain, &gamma);
+        let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &powers, &y_srs, &vec![de_poly_l], &vec![*eval_beta], &(*beta, *zeta), x_domain, &y_domain, &gamma);
         if Net::am_master() {
             let proof = proof.unwrap();
             assert_eq!(proof.0.len(), 1);
