@@ -714,7 +714,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         let check9 = BivBatchKZG::<P>::verify(&m_v_srs, &coms_f1, &(P::ScalarField::zero(), P::ScalarField::zero()), &evals_f1, &proof_f1, &gamma).unwrap();
         assert!(check9);
         let check10 = BivBatchKZG::<P>::verify(&v_srs, &vec![com_l.clone()], &(beta, zeta), &eval_l, &proof_l, &gamma).unwrap();
-        assert!(!check10);
+        assert!(check10);
         println!("Verifier f1, L open check: {:?}", time.elapsed());
 
         // evaluation check of f_pa(alpha, beta), f_pb(alpha, beta), f_pc(alpha, beta)

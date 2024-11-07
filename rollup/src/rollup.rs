@@ -9,8 +9,6 @@ use ark_simple_payments::{
     ledger::{AccPath, AccRoot, Parameters, State, Amount},
     transaction::Transaction,
 };
-use ark_std::Zero;
-use ark_relations::lc;
 
 pub struct Rollup<const NUM_TX: usize> {
     /// The ledger parameters.
@@ -496,7 +494,7 @@ mod test {
         // assert!(cs.is_satisfied().unwrap());
         println!("number of constraints: {:?}", cs.num_constraints());
         println!("number of variables: {:?}", cs.num_witness_variables() + cs.num_instance_variables());
-        let cs_matrix = cs.to_matrices().unwrap();
+        let _cs_matrix = cs.to_matrices().unwrap();
         // println!("cs_matrix.a[0].len(): {:?}", cs_matrix.a[0].len());
     }
 

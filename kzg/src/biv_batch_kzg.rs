@@ -231,7 +231,11 @@ impl<P: Pairing> BivBatchKZG<P> {
                 ])
         };
 
-        let sub_proof = P::G1MSM::msm_unchecked_par_auto(&sub_powers, &polynomial_q1.coeffs).into();
+        let mut coeff_q1 = polynomial_q1.coeffs;
+        if sub_powers.len() > coeff_q1.len() {
+            coeff_q1.resize(sub_powers.len(), P::ScalarField::zero());
+        }
+        let sub_proof = P::G1MSM::msm_unchecked_par_auto(&sub_powers, &coeff_q1).into();
         let sub_proofs = Net::send_to_master(&sub_proof);
         let evals = Net::send_to_master(evals_slice);
 

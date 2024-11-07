@@ -12,7 +12,7 @@ use ark_simple_payments::{
 use ark_std::Zero;
 use ark_relations::lc;
 
-pub struct deRollup<const NUM_TX: usize, const NUM_PARTIES: usize> {
+pub struct DeRollup<const NUM_TX: usize, const NUM_PARTIES: usize> {
     /// The ledger parameters.
     pub ledger_params: Parameters,
     /// The Merkle tree root before applying this batch of transactions.
@@ -41,7 +41,7 @@ pub struct deRollup<const NUM_TX: usize, const NUM_PARTIES: usize> {
     pub post_tx_roots: Option<Vec<AccRoot>>,
 }
 
-impl<const NUM_TX: usize, const NUM_PARTIES: usize> deRollup<NUM_TX, NUM_PARTIES> {
+impl<const NUM_TX: usize, const NUM_PARTIES: usize> DeRollup<NUM_TX, NUM_PARTIES> {
     pub fn new_empty(ledger_params: Parameters) -> Self {
         Self {
             ledger_params,
@@ -147,7 +147,7 @@ impl<const NUM_TX: usize, const NUM_PARTIES: usize> deRollup<NUM_TX, NUM_PARTIES
     }
 }
 
-impl<const NUM_TX: usize, const NUM_PARTIES: usize> ConstraintSynthesizer<ConstraintF> for deRollup<NUM_TX, NUM_PARTIES> {
+impl<const NUM_TX: usize, const NUM_PARTIES: usize> ConstraintSynthesizer<ConstraintF> for DeRollup<NUM_TX, NUM_PARTIES> {
     #[tracing::instrument(target = "r1cs", skip(self, cs))]
     fn generate_constraints(
         self,
@@ -175,7 +175,6 @@ impl<const NUM_TX: usize, const NUM_PARTIES: usize> ConstraintSynthesizer<Constr
         let mut last_cons_num = 0;
         let mut last_vars_num = 0;
         let mut last_power_of_two = 0;
-        let f_zero = ConstraintF::zero();
 
         for j in 0..NUM_PARTIES {
             for k in 0..num_tx_per {
@@ -309,7 +308,7 @@ impl<const NUM_TX: usize, const NUM_PARTIES: usize> ConstraintSynthesizer<Constr
     }
 }
 
-pub fn build_multi_tx_circuit<const NUM_TX: usize, const NUM_PARTIES: usize>() -> deRollup<NUM_TX, NUM_PARTIES> {
+pub fn build_multi_tx_circuit<const NUM_TX: usize, const NUM_PARTIES: usize>() -> DeRollup<NUM_TX, NUM_PARTIES> {
     let mut rng = ark_std::test_rng();
     let pp = Parameters::sample(&mut rng);
     let mut state = State::new(32, &pp);
@@ -329,7 +328,7 @@ pub fn build_multi_tx_circuit<const NUM_TX: usize, const NUM_PARTIES: usize>() -
     let mut temp_state = state.clone();
     let tx1 = Transaction::create(&pp, alice_id, bob_id, Amount(amount_to_send), &alice_sk, &mut rng);
     
-    let rollup = deRollup::<NUM_TX, NUM_PARTIES>::with_state_and_transactions(
+    let rollup = DeRollup::<NUM_TX, NUM_PARTIES>::with_state_and_transactions(
         pp.clone(),
         &[tx1.clone(); NUM_TX],
         &mut temp_state,
@@ -342,13 +341,7 @@ pub fn build_multi_tx_circuit<const NUM_TX: usize, const NUM_PARTIES: usize>() -
 #[cfg(test)]
 mod test {
     use super::*;
-    use ark_relations::r1cs::{
-        ConstraintLayer, ConstraintSynthesizer, ConstraintSystem, TracingMode::OnlyConstraints,
-    };
-    use ark_simple_payments::account::AccountId;
-    use ark_simple_payments::ledger::{Amount, Parameters, State};
-    use ark_simple_payments::transaction::Transaction;
-    use tracing_subscriber::layer::SubscriberExt;
+    use ark_relations::r1cs::ConstraintSystem;
 
     #[test]
     fn test_de_padding () {
@@ -359,7 +352,7 @@ mod test {
         // assert!(cs.is_satisfied().unwrap());
         println!("number of constraints: {:?}", cs.num_constraints());
         println!("number of variables: {:?}", cs.num_witness_variables() + cs.num_instance_variables());
-        let cs_matrix = cs.to_matrices().unwrap();
+        let _cs_matrix = cs.to_matrices().unwrap();
         // println!("cs_matrix.a[0].len(): {:?}", cs_matrix.a.0.len());
     }
 }
