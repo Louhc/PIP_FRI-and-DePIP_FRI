@@ -17,14 +17,13 @@ use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_ff::UniformRand;
 use std::time::Instant;
 use ark_relations::r1cs::{ConstraintSystem, ConstraintSynthesizer};
-use my_snark::{gadgets_and_tests::inner_product, snark_log::DeSNARKLog};
+use my_snark::snark_log::DeSNARKLog;
 use my_snark::indexer::Indexer;
 use my_ipa::r1cs::R1CSVectors;
 use ark_rollup::{de_rollup::build_multi_tx_circuit, ConstraintF};
 // use ark_bn254::Bn254;
 use ark_std::{start_timer, end_timer};
 // use ark_ed_on_bls12_381::E
-use my_kzg::helper::generate_powers;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "example", about = "An example of StructOpt usage.")]
