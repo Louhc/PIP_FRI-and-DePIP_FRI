@@ -6,12 +6,12 @@ use ark_ec::{
 };
 use ark_ff::{batch_inversion, Field, One, PrimeField, UniformRand, Zero};
 use ark_poly::polynomial::{
-    univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
+    univariate::DensePolynomial as UnivariatePolynomial, Polynomial,
 };
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use std::marker::PhantomData;
 use ark_std::rand::Rng;
-use crate::helper::generate_powers;
+use crate::helper::{divide_by_x_minus_k, generate_powers};
 use crate::Error;
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
@@ -138,11 +138,8 @@ impl<P: Pairing> KZG<P> {
         assert!(powers.len() >= polynomial.degree() + 1);
 
         // Trick to calculate (p(x) - p(z)) / (x - z) as p(x) / (x - z) ignoring remainder p(z)
-        let quotient_polynomial = polynomial
-            / &UnivariatePolynomial::from_coefficients_vec(vec![
-                -point.clone(),
-                P::ScalarField::one(),
-            ]);
+        let mut quotient_polynomial = polynomial.clone();
+        divide_by_x_minus_k(&mut quotient_polynomial, point);
 
         // Can unwrap because quotient_coeffs.len() is guaranteed to be equal to powers.len()
         Ok(P::G1MSM::msm_unchecked_par_auto(powers, &quotient_polynomial.coeffs).into().into())
@@ -284,11 +281,8 @@ impl<P: Pairing> DeKZG<P> {
         assert!(powers.len() >= sub_polynomial.degree() + 1);
 
         // Trick to calculate (p(x) - p(z)) / (x - z) as p(x) / (x - z) ignoring remainder p(z)
-        let quotient_polynomial = sub_polynomial
-            / &UnivariatePolynomial::from_coefficients_vec(vec![
-                -point.clone(),
-                P::ScalarField::one(),
-            ]);
+        let mut quotient_polynomial = sub_polynomial.clone();
+        divide_by_x_minus_k(&mut quotient_polynomial, point);
         let sub_proof = P::G1MSM::msm_unchecked_par_auto(powers, &quotient_polynomial.coeffs).into();
         let final_proof_slice = Net::send_to_master(&sub_proof);
 
@@ -308,11 +302,8 @@ impl<P: Pairing> DeKZG<P> {
         assert!(powers.len() >= sub_polynomial.degree() + 1);
 
         // Trick to calculate (p(x) - p(z)) / (x - z) as p(x) / (x - z) ignoring remainder p(z)
-        let quotient_polynomial = sub_polynomial
-            / &UnivariatePolynomial::from_coefficients_vec(vec![
-                -point.clone(),
-                P::ScalarField::one(),
-            ]);
+        let mut quotient_polynomial = sub_polynomial.clone();
+        divide_by_x_minus_k(&mut quotient_polynomial, point);
 
         let sub_eval = sub_polynomial.evaluate(point);
         let sub_proof = P::G1MSM::msm_unchecked_par_auto(powers, &quotient_polynomial.coeffs).into();

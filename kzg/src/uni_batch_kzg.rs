@@ -10,7 +10,7 @@ use ark_poly::{polynomial::{
     GeneralEvaluationDomain,
     Evaluations
 };
-use crate::helper::{generator_numerator_polynomial, interpolate_on_trivial_domain, generate_powers};
+use crate::helper::{divide_by_x_minus_k, generate_powers, generator_numerator_polynomial, interpolate_on_trivial_domain};
 use merlin::Transcript;
 use crate::transcript::ProofTranscript;
 use crate::uni_trivial_kzg::{KZG, structured_generators_scalar_power, UniVerifierSRS};
@@ -104,7 +104,7 @@ impl<P: Pairing> BatchKZG<P> {
 
         let step = start_timer!(|| "combined polynomial");
         // an example of polynomial rlc using par_iter()
-        let combined_polynomial = polynomials.par_iter().zip(linear_factors.par_iter())
+        let mut combined_polynomial = polynomials.par_iter().zip(linear_factors.par_iter())
             .map(|(poly, factor)| *poly * *factor)
             .reduce_with(|acc, poly| acc + poly)
             .unwrap_or(UnivariatePolynomial::zero());
@@ -112,15 +112,11 @@ impl<P: Pairing> BatchKZG<P> {
 
         let step = start_timer!(|| "quotient polynomial");
         // Trick to calculate (p(x) - p(z)) / (x - z) as p(x) / (x - z) ignoring remainder p(z)
-        let quotient_polynomial = &combined_polynomial
-            / &UnivariatePolynomial::from_coefficients_vec(vec![
-                -point.clone(),
-                P::ScalarField::one(),
-            ]);
+        divide_by_x_minus_k(&mut combined_polynomial, point);
         end_timer!(step);
 
         let step = start_timer!(|| "msm");
-        let result = P::G1MSM::msm_unchecked_par_auto(powers, &quotient_polynomial.coeffs).into().into();
+        let result = P::G1MSM::msm_unchecked_par_auto(powers, &combined_polynomial.coeffs).into().into();
         end_timer!(step);
 
         end_timer!(timer);
@@ -188,8 +184,8 @@ impl<P: Pairing> BatchKZG<P> {
             )
             .reduce_with(|acc, poly| acc + poly)
             .unwrap_or_else(UnivariatePolynomial::zero);
-        let poly_l = &(&target_poly - &(&poly_h * numerator_polynomial.evaluate(&z))) / 
-                                    &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);                  
+        let mut poly_l = &target_poly - &(&poly_h * numerator_polynomial.evaluate(&z));
+        divide_by_x_minus_k(&mut poly_l, &z);
         let com_l = KZG::<P>::commit(&powers, &poly_l).unwrap();
         println!("compute and commit poly_l: {:?}", time.elapsed());          
 

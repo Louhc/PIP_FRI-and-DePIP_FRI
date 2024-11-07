@@ -2,12 +2,12 @@ use ark_ec::{
     pairing::Pairing, scalar_mul::variable_base::VariableBaseMSM, CurveGroup, Group,
     scalar_mul::fixed_base::FixedBase,
 };
-use ark_ff::{One, Field, UniformRand, Zero, FftField, PrimeField, batch_inversion};
+use ark_ff::{Field, UniformRand, Zero, FftField, PrimeField, batch_inversion};
 use ark_poly::{polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, Polynomial,
     }, DenseUVPolynomial, EvaluationDomain, 
     GeneralEvaluationDomain};
-use crate::{helper::generate_powers, uni_trivial_kzg::structured_generators_scalar_power};
+use crate::{helper::{divide_by_x_minus_k, generate_powers}, uni_trivial_kzg::structured_generators_scalar_power};
 use crate::uni_trivial_kzg::KZG;
 use std::marker::PhantomData;
 use ark_std::rand::Rng;
@@ -320,21 +320,16 @@ impl<P: Pairing> BivariateKZG<P> {
 
         // the concatenation of the q1(x,y)
         let coeffs_q1: Vec<P::ScalarField> = bivariate_polynomial.x_polynomials.par_iter().flat_map(|poly| {
-            let mut polynomial_slice_q1 = *poly
-            / &UnivariatePolynomial::from_coefficients_vec(vec![
-                -x.clone(),
-                P::ScalarField::one()
-            ]);
+            let mut polynomial_slice_q1 = (*poly).clone();
+            divide_by_x_minus_k(&mut polynomial_slice_q1, x);
             let mut coeffs_slice_q1 = take(&mut polynomial_slice_q1.coeffs);
             coeffs_slice_q1.resize(x_domain.size(), <P::ScalarField>::zero());
             coeffs_slice_q1
         }).collect();
 
-        let polynomial_q2 = &UnivariatePolynomial::from_coefficients_vec(evals_z1) 
-            / &UnivariatePolynomial::from_coefficients_vec(vec![
-                -y.clone(),
-                P::ScalarField::one(),
-            ]);
+        let mut polynomial_q2 = UnivariatePolynomial::from_coefficients_vec(evals_z1);
+        divide_by_x_minus_k(&mut polynomial_q2, y);
+
         let proof = (
             P::G1MSM::msm_unchecked_par_auto(&powers, &coeffs_q1).into().into(), 
             P::G1MSM::msm_unchecked_par_auto(&y_srs, &polynomial_q2.coeffs).into().into());
@@ -367,11 +362,8 @@ impl<P: Pairing> BivariateKZG<P> {
 
         // the concatenation of the q1(x,y)
         let coeffs_q1: Vec<P::ScalarField> = bivariate_polynomial.x_polynomials.par_iter().flat_map(|poly| {
-            let mut polynomial_slice_q1 = *poly
-            / &UnivariatePolynomial::from_coefficients_vec(vec![
-                -x.clone(),
-                P::ScalarField::one()
-            ]);
+            let mut polynomial_slice_q1 = (*poly).clone();
+            divide_by_x_minus_k(&mut polynomial_slice_q1, x);
             let mut coeffs_slice_q1 = take(&mut polynomial_slice_q1.coeffs);
             coeffs_slice_q1.resize(x_domain.size(), <P::ScalarField>::zero());
             coeffs_slice_q1

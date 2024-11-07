@@ -178,16 +178,29 @@ pub fn generate_powers<F: Field>(
     result
 }
 
+#[inline]
+pub fn divide_by_x_minus_k<F: Field>(
+    poly: &mut UnivariatePolynomial<F>,
+    k: &F
+) {
+    let mut cur = poly.coeffs[poly.coeffs.len() - 1];
+    for i in (0..poly.coeffs.len() - 1).rev() {
+        (poly.coeffs[i], cur) = (cur, poly.coeffs[i] + cur * k);
+    }
+    poly.coeffs.pop();
+}
+
 #[cfg(test)]
 mod tests {
     use ark_ec::pairing::Pairing;
     use ark_bls12_381::Bls12_381;
-    use crate::helper::interpolate_on_trivial_domain;
+    use crate::helper::{divide_by_x_minus_k, interpolate_on_trivial_domain};
     use ark_std::rand::{rngs::StdRng, SeedableRng};
     use ark_poly::polynomial::{
         univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
     };
     use ark_ff::UniformRand;
+    use ark_std::One;
 
     #[test]
     fn trivial_polynomial_interpolation_test() {
@@ -203,4 +216,18 @@ mod tests {
 
     }
 
+
+    #[test]
+    fn divide_by_x_minus_k_test() {
+        const DEGREE: usize = 10;
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let polynomial = UnivariatePolynomial::rand(DEGREE, &mut rng);
+
+        let k = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+        let mut poly_a = polynomial.clone();
+        divide_by_x_minus_k(&mut poly_a, &k);
+
+        let poly_b = &polynomial / &UnivariatePolynomial::from_coefficients_vec(vec![-k, <Bls12_381 as Pairing>::ScalarField::one()]);
+        assert_eq!(poly_a, poly_b);
+    }
 }

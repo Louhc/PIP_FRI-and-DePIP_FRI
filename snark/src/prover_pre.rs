@@ -18,7 +18,7 @@ use crate::prover_nopre::NoPreProver;
 use crate::par_join_4;
 use my_ipa::de_ipa::DeIPA;
 use my_kzg::uni_trivial_kzg::KZG;
-use my_kzg::helper::{evaluate_one_lagrange, generate_powers, linear_combination_poly, linear_combination_poly_by_ref};
+use my_kzg::helper::{divide_by_x_minus_k, evaluate_one_lagrange, generate_powers, linear_combination_poly, linear_combination_poly_by_ref};
 use my_kzg::uni_trivial_kzg::DeKZG;
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use std::mem::take;
@@ -1317,8 +1317,8 @@ impl<P: Pairing> PreProver<P> {
             )
             .reduce_with(|acc, poly| acc + poly)
             .unwrap_or_else(UnivariatePolynomial::zero);
-        let poly_l = &(&(&target_poly - &poly_h) * num_eval) / 
-                                    &UnivariatePolynomial::from_coefficients_vec(vec![-z, P::ScalarField::one()]);
+        let mut poly_l = &(&target_poly - &poly_h) * num_eval;
+        divide_by_x_minus_k(&mut poly_l, &z);
 
         // try to generate com_h and com_l distributedly
         let sub_coeff_l = slice_inbounds(&poly_l.coeffs, start, end);
