@@ -308,7 +308,7 @@ impl<P: Pairing> Indexer<P> {
         m: usize,
         cs: &ConstraintSystemRef<P::ScalarField>,
     )-> Result<(Vec<DeRowIndex>, Vec<DeColIndex>, Vec<DeValEvals<P>>, usize), SynthesisError> {
-        let cs = cs.borrow_mut().unwrap();
+        let mut cs = cs.borrow_mut().unwrap();
         cs.finalize();
         let cs_matrix = cs.to_matrices().unwrap();
         let ml = m * l;
@@ -416,7 +416,7 @@ impl<P: Pairing> Indexer<P> {
         cs: &ConstraintSystemRef<P::ScalarField>,
         m_prime: usize,
     )-> Result<(DeRowIndex, DeColIndex, DeValEvals<P>), SynthesisError> {
-        let cs = cs.borrow_mut().unwrap();
+        let mut cs = cs.borrow_mut().unwrap();
         cs.finalize();
         let cs_matrix = cs.to_matrices().unwrap();
         let ml = m * l;

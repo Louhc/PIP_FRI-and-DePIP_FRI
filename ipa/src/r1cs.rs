@@ -249,7 +249,7 @@ impl<P:Pairing> R1CSPubVectors<P> {
         assert_eq!(m, cs.num_constraints() / l);
         let f_zero = P::ScalarField::zero();
     
-        let cs = cs.borrow_mut().unwrap();
+        let mut cs = cs.borrow_mut().unwrap();
         cs.finalize();
         let cs_matrix = cs.to_matrices().unwrap();
     
