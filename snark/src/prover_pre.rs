@@ -1164,18 +1164,26 @@ impl<P: Pairing> PreProver<P> {
                 let n_evals: Vec<P::ScalarField> = combined_n_poly.evaluate_over_domain_by_ref(domain_2x).evals;
                 n_evals
             });
+        
+        let factor = -(P::ScalarField::one() + P::ScalarField::one()).inverse().unwrap();
 
         let evals_left = (&evals_f2[0], &evals_f2[1], &evals_f2[2], &evals_common, &evals_t_row_low, &evals_t_row_high, &evals_t_col, &n_evals)
             .into_par_iter()
-            .map(|(f0, f1, f2, common, t_low, t_high, t_col, n)| {
-                *f0 * (*common + t_low) + *f1 * (*common + t_high) + *f2 * (*common + t_col) - n
+            .chunks(2)
+            .map(|chunk| {
+                let (f0, f1, f2, common, t_low, t_high, t_col, n) = chunk[1];
+                (*f0 * (*common + t_low) + *f1 * (*common + t_high) + *f2 * (*common + t_col) - n) * factor
             })
             .collect::<Vec<_>>();
 
-        let poly_left = DeIPA::<P>::interpolate_from_eval_domain(evals_left.clone(), &domain_2x);
-        let (poly_q2, remainder) = poly_left.divide_by_vanishing_poly(*x_domain).unwrap();
-        println!("poly_q2 degree is: {:?}", poly_q2.degree());
-        assert_eq!(remainder, UnivariatePolynomial::zero());
+        let mut poly_q2 = DeIPA::<P>::interpolate_from_eval_domain(evals_left, &x_domain);
+        let mut elem = domain_2x.group_gen_inv();
+        poly_q2.coeffs.iter_mut()
+            .skip(1)
+            .for_each(|coeff| {
+                *coeff *= elem;
+                elem *= domain_2x.group_gen_inv();
+            });
 
         // test for lagrange commit and open
         // let elements: Vec<P::ScalarField> = domain_2x.elements().collect();
