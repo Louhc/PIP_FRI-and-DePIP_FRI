@@ -12,7 +12,7 @@ use my_ipa::ipa::IPA;
 use my_kzg::{biv_batch_kzg::BivBatchKZG, par_join_3, uni_batch_kzg::BatchKZG};
 use ark_ff::{Zero, One, Field};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
-use rayon::prelude::*;
+use rayon::{prelude::*, result};
 use crate::indexer::{DeRowIndex, DeColIndex, NEvals, DeValEvals};
 use crate::prover_nopre::NoPreProver;
 use crate::par_join_4;
@@ -1275,8 +1275,20 @@ impl<P: Pairing> PreProver<P> {
         let poly_h= polys.par_iter().
             zip(polys_r.par_iter()).
             zip(numerator_polys.par_iter()).
-            map(|((poly, poly_r), numerator_poly)| 
-                &(*poly - poly_r) / &numerator_poly
+            map(|((poly, poly_r), numerator_poly)|  {
+                if numerator_poly == &numerator_poly2 {
+                    let mut result = *poly - poly_r;
+                    divide_by_x_minus_k(&mut result, delta);
+                    result.coeffs.remove(0);
+                    result
+                } else if numerator_poly == &numerator_poly3 {
+                    let mut result = *poly - poly_r;
+                    divide_by_x_minus_k(&mut result, delta);
+                    result
+                } else {
+                    &(*poly - poly_r) / &numerator_poly
+                }
+            }
             )
             .reduce_with(|acc, poly| acc + poly)
             .unwrap_or_else(UnivariatePolynomial::zero);
