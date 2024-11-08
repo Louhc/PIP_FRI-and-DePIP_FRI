@@ -491,8 +491,15 @@ impl<P: Pairing> PreProver<P> {
         let upper_polys = vec![&upper_a_t_polys.a_pa_low, &upper_a_t_polys.a_pa_high, &upper_a_t_polys.a_pb_low,
             &upper_a_t_polys.a_pb_high, &upper_a_t_polys.a_pc_low, &upper_a_t_polys.a_pc_high,
             &upper_b_t_polys.b_pa, &upper_b_t_polys.b_pb, &upper_b_t_polys.b_pc];
-        
-        let linear_factors = generate_powers(v, 9);
+
+        let mut linear_factors = generate_powers(v, 9);
+        let multiplier = (domain.group_gen().pow([m_domain.size() as u64]) - P::ScalarField::one()).inverse().unwrap();
+
+        linear_factors.iter_mut()
+            .for_each(|factor| {
+                *factor *= multiplier;
+            });
+    
         let virtual_polys: Vec<UnivariatePolynomial<P::ScalarField>> = (&lower_polys, &upper_polys, &linear_factors)
             .into_par_iter()
             .map(|(lower, upper, factor)| {
@@ -503,22 +510,27 @@ impl<P: Pairing> PreProver<P> {
             .collect();
         let virtual_evals: Vec<Vec<P::ScalarField>> = virtual_polys.par_iter().map(|poly| poly.evaluate_over_domain_by_ref(domain).evals).collect();
 
-        let evals_max: Vec<Vec<P::ScalarField>> = f1_evals.par_iter()
-            .zip(virtual_evals.par_iter())
-            .map(|(f1_eval, aux_eval)|{
-                f1_eval.par_iter().zip(aux_eval.par_iter())
-                    .map(|(f1, aux)|{
-                        *f1 * aux
-                    }).collect()
-            }).collect();
-        let evals_target: Vec<P::ScalarField> = (0..domain.size()).into_par_iter().map(|row_index|{
-            evals_max.par_iter().map(|eval| eval[row_index]).sum()
-        }).collect();
-        let mut poly_target = DeIPA::<P>::interpolate_from_eval_domain(evals_target, &domain);
-        poly_target.coeffs[0] -= linear_factors.iter().sum::<P::ScalarField>();
-
-        let (sub_poly_q1, remainder) = poly_target.divide_by_vanishing_poly(*m_domain).unwrap();
-        assert_eq!(remainder, UnivariatePolynomial::zero());
+        let evals_target: Vec<P::ScalarField> = (0..domain.size() / 2).into_par_iter()
+            .map(|k| {
+                let col_index = 2 * k + 1;
+                f1_evals.par_iter()
+                    .zip(virtual_evals.par_iter())
+                    .map(|(f1_eval, aux_eval)|{
+                        f1_eval[col_index] * aux_eval[col_index]
+                    })
+                    .sum::<P::ScalarField>()
+            })
+            .collect();
+        // We are interpolating a polynomial q', and q_1(x) = q'(x / omega) where omega is the gen of the 2x domain
+        let mut sub_poly_q1 = DeIPA::<P>::interpolate_from_eval_domain(evals_target, &m_domain);
+        let mut elem = domain.group_gen_inv();
+        sub_poly_q1.coeffs.iter_mut()
+            .skip(1)
+            .for_each(|coeff| {
+                *coeff *= elem;
+                elem *= domain.group_gen_inv();
+            });
+        sub_poly_q1.coeffs[0] -= linear_factors.iter().sum::<P::ScalarField>();
         end_timer!(step);
 
         let step = start_timer!(|| "commit q1");
