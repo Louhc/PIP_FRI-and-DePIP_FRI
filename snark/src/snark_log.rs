@@ -121,7 +121,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         end_timer!(step);
         // Note:: here coms_upper_a are de_commitments
         let step = start_timer!(|| "commit g1 h1 upper a t");
-        let (coms_upper_a, de_coms_g1_h1_t) = PreProver::commit_g1_h1_upper_a_t_polys(sub_prover_id, &m_powers, &x_srs, &poly_g1, &poly_h1, &upper_a_t_polys, x_domain);
+        let (coms_upper_a, de_coms_g1_h1_t) = PreProver::commit_g1_h1_upper_a_t_polys(sub_prover_id, &m_powers, &x_srs, &poly_g1, &poly_h1, &upper_a_t_polys, m_domain);
         end_timer!(step);
 
         // send com of A_low, A_high, g1, h1 to P0
@@ -176,7 +176,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         end_timer!(step);
 
         let step = start_timer!(|| "commit upper b polys");
-        let coms_upper_b = PreProver::<P>::commit_upper_b_polys(sub_prover_id, &m_powers, &upper_b_t_polys, x_domain);
+        let coms_upper_b = PreProver::<P>::commit_upper_b_polys(sub_prover_id, &m_powers, &upper_b_t_polys, m_domain);
         end_timer!(step);
 
         // evaluate and send polynomial evaluations on alpha
@@ -297,7 +297,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         end_timer!(step);
 
         let step = start_timer!(|| "commit sub f1 f2");
-        let (coms_f1, coms_f2) = PreProver::<P>::commit_f1_f2(sub_prover_id, &m_powers, &x_srs, &de_polys_f1, &polys_f2, x_domain);
+        let (coms_f1, coms_f2) = PreProver::<P>::commit_f1_f2(sub_prover_id, &m_powers, &x_srs, &de_polys_f1, &polys_f2, m_domain);
         end_timer!(step);
 
         // generate challenges w, u3
@@ -433,12 +433,12 @@ impl<P: Pairing> DeSNARKLog<P> {
             &val_upper_and_l_evals, 
             &lower_evals, 
             &de_polys_f1, 
-            x_domain, &y_domain, &delta, &zeta, &gamma);
+            m_domain, &y_domain, &delta, &zeta, &gamma);
         end_timer!(step);
 
         // open f1 at (0, 0)
         let step = start_timer!(|| "open f1 at (0, 0)");
-        let (evals_f1, proof_f1) = PreProver::<P>::open_f1(sub_prover_id, &m_powers, &m_y_srs, &de_polys_f1, &precombined_f1, x_domain, &y_domain, &gamma);
+        let (evals_f1, proof_f1) = PreProver::<P>::open_f1(sub_prover_id, &m_powers, &m_y_srs, &de_polys_f1, &precombined_f1, m_domain, &y_domain, &gamma);
         end_timer!(step);
 
         // open L at (beta, zeta)
