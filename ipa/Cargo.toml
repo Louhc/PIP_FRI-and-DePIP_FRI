@@ -22,7 +22,7 @@ ark-rollup = {path = "../rollup"}
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.4.0-alpha.2", features = [ "curve" ] }
-ark-ed-on-bls12-381 = "0.4"
+ark-ed-on-bls12-381 = "0.4.0-alpha.2"
 
 ark-r1cs-std = "0.4"
 blake2 = "0.10.6"

@@ -28,7 +28,7 @@ serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.4.0-alpha.2", features = [ "curve" ] }
-ark-ed-on-bls12-381 = { version = "0.4.0", features = ["r1cs"] }
+ark-ed-on-bls12-381 = { version = "0.4.0-alpha.2", features = ["r1cs"] }
 ark-bn254 = { version = "0.4.0-alpha.2", features = [ "curve", "asm" ] }
 
 ark-relations = { version = "0.4", default-features = false }
