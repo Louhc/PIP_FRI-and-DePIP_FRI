@@ -15,7 +15,7 @@ ark-ec = { version = "0.4", default-features = false }
 ark-poly = { version = "0.4", default-features = false }
 ark-std = { version = "0.4", default-features = false }
 ark-crypto-primitives = { version = "0.4", features = ["r1cs", "prf" ] }
-ark-bls12-381 = { version = "0.4.0-alpha.2", features = [ "curve" ] }
+ark-bls12-381 = { version = "0.4.0-alpha.2", features = [ "curve", "asm" ] }
 ark-ed-on-bls12-381 = "0.4.0-alpha.2"
 criterion = "0.5.0"
 

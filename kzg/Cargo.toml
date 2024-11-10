@@ -18,7 +18,7 @@ de_network = { version = "0.1.0", path = "../de_network"}
 structopt = "0.3"
 
 [dev-dependencies]
-ark-bls12-381 = { version = "0.4.0-alpha.2", features = [ "curve" ] }
+ark-bls12-381 = { version = "0.4.0-alpha.2", features = [ "curve", "asm" ] }
 ark-ed-on-bls12-381 = "0.4.0-alpha.2"
 
 ark-relations = "0.4"
