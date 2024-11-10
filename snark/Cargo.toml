@@ -21,7 +21,7 @@ de_network = { version = "0.1.0", path = "../de_network"}
 structopt = "0.3"
 ark-r1cs-std = { version = "0.4", default-features = false, optional = true }
 ark-crypto-primitives = { version = "^0.3.0", default-features = true }
-ark-ff = { version = "0.4", default-features = false, optional = true}
+ark-ff = { version = "0.4", default-features = false, features = [ "asm" ], optional = true}
 
 bincode = "1.3.3"
 serde = { version = "1.0", features = ["derive"] }
@@ -29,7 +29,7 @@ serde = { version = "1.0", features = ["derive"] }
 [dev-dependencies]
 ark-bls12-381 = { version = "0.4.0", features = [ "curve" ] }
 ark-ed-on-bls12-381 = { version = "0.4.0", features = ["r1cs"] }
-ark-bn254 = { version = "0.4.0-alpha.2", features = [ "curve" ] }
+ark-bn254 = { version = "0.4.0-alpha.2", features = [ "curve", "asm" ] }
 
 ark-relations = { version = "0.4", default-features = false }
 blake2 = "0.10.6"
@@ -41,3 +41,4 @@ default = [ "parallel", "r1cs"]
 parallel = [ "rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel", "ark-relations/parallel"]
 print-trace = [ "ark-std/print-trace" ]
 r1cs = ["ark-r1cs-std", "ark-crypto-primitives/r1cs" ]
+asm = ["ark-ff"]
