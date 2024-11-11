@@ -2,6 +2,7 @@
 
 members = [
   "benches",
+  "circom-compat",
   "kzg",
   "ipa",
   "snark",
