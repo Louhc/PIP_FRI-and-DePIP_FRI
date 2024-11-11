@@ -469,7 +469,6 @@ impl<P: Pairing> PreProver<P> {
         (polys_f1, polys_f2)
     }
 
-    // TODO: optimized par_iter
     pub fn compute_and_commit_q1 (
         m_srs: &[P::G1Affine],
         m_domain: &GeneralEvaluationDomain<P::ScalarField>,
@@ -1047,7 +1046,6 @@ impl<P: Pairing> PreProver<P> {
                 coeffs_h4.resize(3 * l + 1, P::ScalarField::zero());
                 println!("Pad degree {} h4", poly_h4.degree())
             }
-            assert!(coeffs_h4.len() > 3 * l);
             assert!(coeffs_h4.len() < 4 * l);
             let (poly_h4_one, poly_h4_two, poly_h4_three, poly_h4_four): 
                 (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>, 

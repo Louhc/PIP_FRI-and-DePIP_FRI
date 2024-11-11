@@ -51,7 +51,7 @@ pub fn test_y_lagrange_biv_batch_kzg () {
     let domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(l).unwrap();
 
     let setup_start = Instant::now();
-    let ((xy_srs, x_srs, y_srs), verifier) = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, x_degree, y_degree, &domain).unwrap();
+    let ((xy_srs, _x_srs, y_srs), verifier) = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, x_degree, y_degree, &domain).unwrap();
     // generate x_srs
     println!("Prover {:?} setup time: {:?}", sub_prover_id, setup_start.elapsed());
 

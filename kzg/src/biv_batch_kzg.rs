@@ -468,7 +468,6 @@ impl<P: Pairing> BivBatchKZG<P> {
         transcript: &mut Transcript,
         challenge: &P::ScalarField
     ) -> Result<bool, Error> {
-        assert!(coms.len() >= 1);
         assert_eq!(coms.len(), evals.len());
         assert_eq!(coms.len(), x_points.len());
         
@@ -480,13 +479,14 @@ impl<P: Pairing> BivBatchKZG<P> {
         // check2: validity of \sum_i \gamma^{i-1} (f_i(X, beta) - r_i(X)) * Z_{T_1\R_i}(X) = q(X)Z_{T_1}(X)
         let x_point_vec = x_points.iter().flatten().cloned().collect();
         let numerator_polynomial = generator_numerator_polynomial::<P>(&x_point_vec);
-        let right_check2 = numerator_polynomial.evaluate(&eta) * proof.2;
+        let num_eval = numerator_polynomial.evaluate(&eta);
+        let right_check2 = num_eval * proof.2;
 
         let left_check2: P::ScalarField = x_points.par_iter().zip(evals.par_iter()).zip(linear_factors.par_iter()).zip(proof.1.par_iter())
             .map(|(((points, cur_evals), factor), proof)| {
                 let polynomial_r = interpolate_on_trivial_domain::<P>(&points, &cur_evals);
                 let eval_r = polynomial_r.evaluate(&eta);
-                let eval_helper = numerator_polynomial.evaluate(&eta) / generator_numerator_polynomial::<P>(&points).evaluate(&eta);
+                let eval_helper = num_eval / generator_numerator_polynomial::<P>(&points).evaluate(&eta);
 
                 *factor * eval_helper * (*proof - eval_r)
             }).sum();

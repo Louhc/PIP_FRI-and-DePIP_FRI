@@ -173,29 +173,9 @@ impl<P: Pairing> NoPreProver<P> {
 
             let polynomials_y: Vec<UnivariatePolynomial<P::ScalarField>> = evals_alpha.into_par_iter()
                 .map(|evals| Self::interpolate_from_eval_domain(evals, &y_domain)).collect();
-            // let poly_pa_alpha = polynomials_y[0].clone();
-            // let poly_pb_alpha = polynomials_y[1].clone();
-            // let poly_pc_alpha = polynomials_y[2].clone();
-            // let poly_w_alpha = polynomials_y[3].clone();
-            // let poly_a_r_alpha = polynomials_y[4].clone();
-            // let poly_a_r = polynomials_y[5].clone();
-            // let poly_b_alpha = polynomials_y[6].clone();
-            // let poly_b_r_inverse = polynomials_y[7].clone();
-            // let poly_b_0 = polynomials_y[8].clone();
-            // let poly_b_r_virtual = &polynomials_y[7] * *r_pow_m + &polynomials_y[8] * (P::ScalarField::one() - r_pow_m);
-            // let poly_c_r = polynomials_y[9].clone();
-            // let poly_r = polynomials_y[10].clone();
 
             // use fft to get evaluations can be two times faster
             let domain_2y = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(2 * l).unwrap();
-            // let evals_pa_alpha = poly_pa_alpha.evaluate_over_domain(domain_2y).evals;
-            // let evals_pb_alpha = poly_pb_alpha.evaluate_over_domain(domain_2y).evals;
-            // let evals_pc_alpha = poly_pc_alpha.evaluate_over_domain(domain_2y).evals;
-            // let evals_w_alpha = poly_w_alpha.evaluate_over_domain(domain_2y).evals;
-            // let evals_r = poly_r.evaluate_over_domain_by_ref(domain_2y).evals;
-            // let evals_a_r = poly_a_r.evaluate_over_domain(domain_2y).evals;
-            // let evals_b_r_virtual = poly_b_r_virtual.evaluate_over_domain_by_ref(domain_2y).evals;
-            // let evals_c_r = poly_c_r.evaluate_over_domain_by_ref(domain_2y).evals;
 
             let ((evals_pa_alpha, evals_pb_alpha, evals_pc_alpha),
             (evals_w_alpha, evals_r, evals_a_r, evals_c_r)) = rayon::join(
@@ -210,12 +190,8 @@ impl<P: Pairing> NoPreProver<P> {
                 || polynomials_y[9].evaluate_over_domain_by_ref(domain_2y).evals
             ));
 
-            // let evals_w_alpha = polynomials_y[3].evaluate_over_domain_by_ref(domain_2y).evals;
-            // let evals_r = polynomials_y[10].evaluate_over_domain_by_ref(domain_2y).evals;
-            // let evals_a_r = polynomials_y[5].evaluate_over_domain_by_ref(domain_2y).evals;
             let poly_b_r_virtual = &polynomials_y[7] * *r_pow_m + &polynomials_y[8] * (P::ScalarField::one() - r_pow_m);
             let evals_b_r_virtual = poly_b_r_virtual.evaluate_over_domain_by_ref(domain_2y).evals;
-            // let evals_c_r = polynomials_y[9].evaluate_over_domain_by_ref(domain_2y).evals;
 
             let evals_f1_alpha: Vec<P::ScalarField> = evals_pa_alpha.par_iter().zip(evals_w_alpha.par_iter()).
                 zip(evals_r.par_iter()).zip(evals_a_r.par_iter()).
@@ -234,12 +210,6 @@ impl<P: Pairing> NoPreProver<P> {
 
             let poly_f4_alpha = &(&(&polynomials_y[4] * &polynomials_y[6]) - &polynomials_y[9]) * &polynomials_y[10];
 
-            // let poly_f1_alpha = &(&poly_pa_alpha * &poly_w_alpha) - &(&poly_r * &poly_a_r);
-            // let poly_f2_alpha = &(&poly_pb_alpha * &poly_w_alpha) - &(&poly_r * &poly_b_r_virtual);
-            // let poly_f3_alpha = &(&poly_pc_alpha * &poly_w_alpha) - &(&poly_r * &poly_c_r);
-            // let poly_f4_alpha = &(&(&poly_a_r_alpha * &poly_b_alpha) - &poly_c_r) * &poly_r;
-
-            // get the target polynomial over Y via rlc
             let mut alpha_minus_u1 = *alpha - *u1;
             let mut polynomial_target_y = &poly_f1_alpha * alpha_minus_u1;
             alpha_minus_u1 *= v;

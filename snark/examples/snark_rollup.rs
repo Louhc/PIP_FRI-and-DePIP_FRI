@@ -70,11 +70,11 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     println!("number of constraints: {:?}", cs.num_constraints());
     println!("number of variables: {:?}", cs.num_witness_variables() + cs.num_instance_variables());
 
-    let mut rng = StdRng::seed_from_u64(0u64);
     let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, m_prime): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<ConstraintP>::build_de_r1cs_index(l, m, &cs_matrix).unwrap();
     println!("log m_prime: {:?}", log2(m_prime));
 
     let time = Instant::now();
+    let mut rng = StdRng::seed_from_u64(0u64);
     let challenge_r = ConstraintF::rand(&mut rng);
     let domain_x = <GeneralEvaluationDomain<ConstraintF> as EvaluationDomain<ConstraintF>>::new(m).unwrap();
     let domain_y = <GeneralEvaluationDomain<ConstraintF> as EvaluationDomain<ConstraintF>>::new(l).unwrap();
@@ -125,13 +125,6 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let mut transcript : Transcript = Transcript::new(b"Random R1CS");
     let timer2 = start_timer!(|| "Build r1cs vecs and polys");
     let r1cs_de_vecs: R1CSVectors<ConstraintP> = R1CSVectors::<ConstraintP>::build(sub_prover_id, m, l, challenge_r, &cs, &cs_matrix).unwrap();
-
-    //self tets
-    // let vec_r = generate_powers(&challenge_r, m * l);
-    // assert_eq!(inner_product::<ConstraintP>(&r1cs_de_vecs.vec_x, &r1cs_de_vecs.vec_w), inner_product::<ConstraintP>(&r1cs_de_vecs.vec_a, &vec_r));
-    // assert_eq!(inner_product::<ConstraintP>(&r1cs_de_vecs.vec_y, &r1cs_de_vecs.vec_w), inner_product::<ConstraintP>(&r1cs_de_vecs.vec_b, &vec_r));
-    // assert_eq!(inner_product::<ConstraintP>(&r1cs_de_vecs.vec_z, &r1cs_de_vecs.vec_w), inner_product::<ConstraintP>(&r1cs_de_vecs.vec_c, &vec_r));
-    //self test over
 
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<ConstraintP>(m, l, r1cs_de_vecs);
     end_timer!(timer2);

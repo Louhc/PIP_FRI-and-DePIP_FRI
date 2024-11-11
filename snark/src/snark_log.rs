@@ -600,17 +600,13 @@ impl<P: Pairing> DeSNARKLog<P> {
         // evaluation checks for fw, fa, fb, fc
         let time = Instant::now();
         let z_h_eval_x = x_domain.evaluate_vanishing_polynomial(alpha);
-        // let eval_beta = y_domain.evaluate_all_lagrange_coefficients(beta);
         let mut eval_r = vec![r_pow_m; l];
         eval_r.par_iter_mut().enumerate().for_each(|(i, val)| {
             *val = r_pow_m.pow([i as u64]);
         });
         let (eval_pa_alpha_beta, eval_pb_alpha_beta, eval_pc_alpha_beta, eval_r_beta) = 
             (evals_p_alpha_beta[0], evals_p_alpha_beta[1], evals_p_alpha_beta[2], evals_wit_upper_r_polys[7]);
- 
-        //     w_alpha_beta, eval_ar_alpha_beta, eval_a_r_beta, 
-        //     eval_b_alpha_beta, eval_b_r_inverse_beta, eval_b_0_beta, eval_c_r_beta, 
-        //     eval_r_beta];
+
         let (f1, f2, f3, f4): (P::ScalarField, P::ScalarField, P::ScalarField, P::ScalarField) = par_join_4!(
             || eval_pa_alpha_beta * evals_wit_upper_r_polys[0] - eval_r_beta * evals_wit_upper_r_polys[2],
             || eval_pb_alpha_beta * evals_wit_upper_r_polys[0] - eval_r_beta * (evals_wit_upper_r_polys[4] * r_pow_m + evals_wit_upper_r_polys[5] * (P::ScalarField::one() - r_pow_m)),
@@ -636,25 +632,29 @@ impl<P: Pairing> DeSNARKLog<P> {
 
         // check the validity of g1 h1, g2, h2
         let time = Instant::now();
-        let (check2, check3) = rayon::join(
+        let (check2, check3, check4, check5) = par_join_4!(
             || BatchKZG::<P>::verify(&uni_v_srs_for_x, &coms_g1_h1, &alpha, &evals_g1_h1, &proof_g1_h1, &gamma).unwrap(),
-            || BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g2_h2, &beta, &evals_g2_h2, &proof_g2_h2, &gamma).unwrap()
+            || BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g2_h2, &beta, &evals_g2_h2, &proof_g2_h2, &gamma).unwrap(), 
+            || BatchKZG::<P>::verify(&uni_m_v_srs_for_x, &coms_g3_h3, &delta, &evals_g3_h3, &proof_g3_h3, &gamma).unwrap(),
+            || BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g4_h4_g5_h5, &zeta, &evals_g4_h4_g5_h5, &proof_g4_h4_g5_h5, &gamma).unwrap()
         );
         assert!(check2);
         assert!(check3);
-        println!("Verifier g1, h1, g2, h2 check time: {:?}", time.elapsed());
-
-        // check the validity of g3, h3, g4, h4
-        let time = Instant::now();
-        let (check4, check5) = rayon::join(
-            || BatchKZG::<P>::verify(&uni_m_v_srs_for_x, &coms_g3_h3, &delta, &evals_g3_h3, &proof_g3_h3, &gamma).unwrap(),
-            || {
-                BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g4_h4_g5_h5, &zeta, &evals_g4_h4_g5_h5, &proof_g4_h4_g5_h5, &gamma).unwrap()
-            }
-        );
         assert!(check4);
         assert!(check5);
-        println!("Verifier g3, h3, g4, h4 check time: {:?}", time.elapsed());
+        println!("Verifier g1, h1, g2, h2, g3, h3, g4, h4 check time: {:?}", time.elapsed());
+
+        // check the validity of g3, h3, g4, h4
+        // let time = Instant::now();
+        // let (check4, check5) = rayon::join(
+        //     || BatchKZG::<P>::verify(&uni_m_v_srs_for_x, &coms_g3_h3, &delta, &evals_g3_h3, &proof_g3_h3, &gamma).unwrap(),
+        //     || {
+        //         BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g4_h4_g5_h5, &zeta, &evals_g4_h4_g5_h5, &proof_g4_h4_g5_h5, &gamma).unwrap()
+        //     }
+        // );
+        // assert!(check4);
+        // assert!(check5);
+        // println!("Verifier g3, h3, g4, h4 check time: {:?}", time.elapsed());
 
         // check the validity of bivariate polynomials
         let time = Instant::now();
@@ -674,17 +674,6 @@ impl<P: Pairing> DeSNARKLog<P> {
         let check6 = BivBatchKZG::<P>::verify_at_same_y(&v_srs, &coms_wit_and_upper_r_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_upper_r_polys, transcript, &gamma).unwrap();
         assert!(check6);
         println!("Verifier fa, fb, fc, fw open check: {:?}", time.elapsed());
-
-        // check the validity of upper_a_polys, upper_b_polys, lower_a_polys, lower_b_polys, val_polys
-        let time = Instant::now();
-        let mut coms_val_upper_lower_f1 = coms_val.clone();
-        coms_val_upper_lower_f1.extend(&coms_upper_a.clone());
-        coms_val_upper_lower_f1.extend(&coms_upper_b.clone());
-        coms_val_upper_lower_f1.extend(&coms_lower_a_b.clone());
-        coms_val_upper_lower_f1.extend(&coms_f1.clone());
-        let check7 = BivBatchKZG::<P>::verify(&m_v_srs, &coms_val_upper_lower_f1, &(delta, zeta), &evals_val_upper_lower_a_b_f1, &proof_val_upper_lower_a_b_f1, &gamma).unwrap();
-        assert!(check7);
-        println!("Verifier val, upper, lower, pa, pb, pc open check: {:?}", time.elapsed());
 
         // check the validity of t, f2, and n
         let time = Instant::now();
@@ -707,13 +696,43 @@ impl<P: Pairing> DeSNARKLog<P> {
         assert!(check8);
         println!("Verifier t_f2 open check: {:?}", time.elapsed());
 
-        // check the validity of f1 and L
         let time = Instant::now();
-        let check9 = BivBatchKZG::<P>::verify(&m_v_srs, &coms_f1, &(P::ScalarField::zero(), P::ScalarField::zero()), &evals_f1, &proof_f1, &gamma).unwrap();
+        let (check7, check9, check10) = par_join_3!(
+            || {
+                let mut coms_val_upper_lower_f1 = coms_val.clone();
+                coms_val_upper_lower_f1.extend(&coms_upper_a.clone());
+                coms_val_upper_lower_f1.extend(&coms_upper_b.clone());
+                coms_val_upper_lower_f1.extend(&coms_lower_a_b.clone());
+                coms_val_upper_lower_f1.extend(&coms_f1.clone());
+                BivBatchKZG::<P>::verify(&m_v_srs, &coms_val_upper_lower_f1, &(delta, zeta), &evals_val_upper_lower_a_b_f1, &proof_val_upper_lower_a_b_f1, &gamma).unwrap()
+            }, 
+            || {
+                BivBatchKZG::<P>::verify(&m_v_srs, &coms_f1, &(P::ScalarField::zero(), P::ScalarField::zero()), &evals_f1, &proof_f1, &gamma).unwrap()
+            }, 
+            || {
+                BivBatchKZG::<P>::verify(&v_srs, &vec![com_l.clone()], &(beta, zeta), &eval_l, &proof_l, &gamma).unwrap()
+            }
+        );
+
+        // check the validity of upper_a_polys, upper_b_polys, lower_a_polys, lower_b_polys, val_polys
+        // let time = Instant::now();
+        // let mut coms_val_upper_lower_f1 = coms_val.clone();
+        // coms_val_upper_lower_f1.extend(&coms_upper_a.clone());
+        // coms_val_upper_lower_f1.extend(&coms_upper_b.clone());
+        // coms_val_upper_lower_f1.extend(&coms_lower_a_b.clone());
+        // coms_val_upper_lower_f1.extend(&coms_f1.clone());
+        // let check7 = BivBatchKZG::<P>::verify(&m_v_srs, &coms_val_upper_lower_f1, &(delta, zeta), &evals_val_upper_lower_a_b_f1, &proof_val_upper_lower_a_b_f1, &gamma).unwrap();
+        assert!(check7);
+        // println!("Verifier val, upper, lower, pa, pb, pc open check: {:?}", time.elapsed());
+
+        // check the validity of f1 and L
+        // let time = Instant::now();
+        // let check9 = BivBatchKZG::<P>::verify(&m_v_srs, &coms_f1, &(P::ScalarField::zero(), P::ScalarField::zero()), &evals_f1, &proof_f1, &gamma).unwrap();
         assert!(check9);
-        let check10 = BivBatchKZG::<P>::verify(&v_srs, &vec![com_l.clone()], &(beta, zeta), &eval_l, &proof_l, &gamma).unwrap();
+        // let check10 = BivBatchKZG::<P>::verify(&v_srs, &vec![com_l.clone()], &(beta, zeta), &eval_l, &proof_l, &gamma).unwrap();
         assert!(check10);
-        println!("Verifier f1, L open check: {:?}", time.elapsed());
+        // println!("Verifier f1, L open check: {:?}", time.elapsed());
+        println!("Verifier check 7 9 10: {:?}", time.elapsed());
 
         // evaluation check of f_pa(alpha, beta), f_pb(alpha, beta), f_pc(alpha, beta)
         let time = Instant::now();
