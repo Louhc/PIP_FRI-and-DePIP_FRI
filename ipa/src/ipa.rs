@@ -55,7 +55,9 @@ impl<P: Pairing> IPA<P> {
         let u = *challenge;
         let (h, mut g_u) = polynomial.divide_by_vanishing_poly(*domain).unwrap();
 
-        g_u.coeffs[0] = P::ScalarField::zero();
+        if g_u.coeffs.len() > 0 {
+            g_u.coeffs[0] = P::ScalarField::zero();
+        }
         // We need g_u (x - u) / x
 
         let mut coeffs_g = g_u.coeffs.clone();

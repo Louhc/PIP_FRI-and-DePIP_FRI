@@ -183,6 +183,10 @@ pub fn divide_by_x_minus_k<F: Field>(
     poly: &mut UnivariatePolynomial<F>,
     k: &F
 ) {
+    if poly.coeffs.len() == 0 {
+        return;
+    }
+
     let mut cur = poly.coeffs[poly.coeffs.len() - 1];
     for i in (0..poly.coeffs.len() - 1).rev() {
         (poly.coeffs[i], cur) = (cur, poly.coeffs[i] + cur * k);
