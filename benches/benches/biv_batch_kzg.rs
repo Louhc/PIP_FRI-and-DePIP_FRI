@@ -15,6 +15,7 @@ use std::time::Duration;
 use merlin::Transcript;
 use my_kzg::transcript::ProofTranscript;
 use criterion::{criterion_group, criterion_main, Criterion};
+use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 
 fn configure_criterion() -> Criterion {
     Criterion::default()
@@ -35,9 +36,9 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
 
     for &log_size in &log_sizes {
         let x_degree = (1 << log_size) - 1;
-        
+        let x_domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(x_degree).unwrap();
         // Setup
-        let srs = BivBatchKZG::<Bls12_381>::setup(&mut rng, x_degree, y_degree).unwrap();
+        let (srs, y_srs, v_srs) = BivBatchKZG::<Bls12_381>::setup(&mut rng, x_degree, y_degree).unwrap();
 
         // generate bivariate polynomials
         let mut x_polynomials = Vec::new();
@@ -83,28 +84,34 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
         }
 
         // commits 
-        let coms = BivBatchKZG::<Bls12_381>::commit(&srs.0, &bivariate_polynomials).unwrap();
+        let coms = BivBatchKZG::<Bls12_381>::commit(&srs, &bivariate_polynomials).unwrap();
 
         // trivial open
         c.bench_function(&format!("Trivial Bivariate KZG open, log_vector_length: {}", log_size), |b| {
             b.iter(|| {
                 for i in 0..POLYNOMIAL_NUMBER {
                     let _ = BivariateKZG::<Bls12_381>::open(
-                        &srs.0, 
+                        &srs, 
+                        &y_srs,
                         bivariate_polynomials[i], 
-                        &(x_points[i][0], y_point));
+                        &(x_points[i][0], y_point),
+                        &x_domain);
 
                     let _ = BivariateKZG::<Bls12_381>::open(
-                        &srs.0, 
+                        &srs, 
+                        &y_srs, 
                         bivariate_polynomials[i], 
-                        &(x_points[i][1], y_point));
+                        &(x_points[i][1], y_point), 
+                        &x_domain);
                 }
             });
         });
         let proof = BivariateKZG::<Bls12_381>::open(
-            &srs.0, 
+            &srs,
+            &y_srs, 
             bivariate_polynomials[0], 
-            &(x_points[0][0], y_point)).unwrap();
+            &(x_points[0][0], y_point),
+            &x_domain).unwrap();
         let proof_size = size_of_val(&proof);
         println!("Trival Bivariate KZG proof size: {:?} bytes", proof_size * total_point_number);
 
@@ -115,10 +122,12 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
                 let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
                         &mut prover_transcript, b"combined_polynomial_x_beta");
                 let _ = BivBatchKZG::<Bls12_381>::open_at_same_y(
-                    &srs.0,
+                    &srs,
+                    &y_srs,
                     &bivariate_polynomials,
                     &x_points,
                     &y_point,
+                    &x_domain,
                     &mut prover_transcript,
                     &gamma
                 ).unwrap();
@@ -128,10 +137,12 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
         let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
                 &mut prover_transcript, b"combined_polynomial_x_beta");
         let proof_batch = BivBatchKZG::<Bls12_381>::open_at_same_y(
-            &srs.0,
+            &srs,
+            &y_srs,
             &bivariate_polynomials,
             &x_points,
             &y_point,
+            &x_domain,
             &mut prover_transcript,
             &gamma
         ).unwrap();
@@ -142,14 +153,18 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
         let mut proofs = Vec::new();
         for i in 0..POLYNOMIAL_NUMBER {
             let proof_1 = BivariateKZG::<Bls12_381>::open(
-                &srs.0, 
+                &srs,
+                &y_srs, 
                 bivariate_polynomials[i], 
-                &(x_points[i][0], y_point)).unwrap();
+                &(x_points[i][0], y_point),
+                &x_domain).unwrap();
 
             let proof_2 = BivariateKZG::<Bls12_381>::open(
-                &srs.0, 
+                &srs,
+                &y_srs, 
                 bivariate_polynomials[i], 
-                &(x_points[i][1], y_point)).unwrap();
+                &(x_points[i][1], y_point),
+                &x_domain).unwrap();
             
             proofs.push(vec![proof_1, proof_2]);
         }
@@ -158,11 +173,11 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
             b.iter(|| {
                 for i in 0..POLYNOMIAL_NUMBER {
                     let is_valid =
-                        BivariateKZG::<Bls12_381>::verify(&srs.1, &coms[i], &(x_points[i][0], y_point), &evals[i][0], &proofs[i][0]).unwrap();
+                        BivariateKZG::<Bls12_381>::verify(&v_srs, &coms[i], &(x_points[i][0], y_point), &evals[i][0], &proofs[i][0]).unwrap();
                     assert!(is_valid);
         
                     let is_valid =
-                        BivariateKZG::<Bls12_381>::verify(&srs.1, &coms[i], &(x_points[i][1], y_point), &evals[i][1], &proofs[i][1]).unwrap();
+                        BivariateKZG::<Bls12_381>::verify(&v_srs, &coms[i], &(x_points[i][1], y_point), &evals[i][1], &proofs[i][1]).unwrap();
                     assert!(is_valid);
                 }
             });
@@ -175,7 +190,7 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
                 let gamma = <Transcript as ProofTranscript<Bls12_381>>::challenge_scalar(
                     &mut verifier_transcript, b"combined_polynomial_x_beta");
                 let is_valid =
-                    BivBatchKZG::<Bls12_381>::verify_at_same_y(&srs.1, &coms, &x_points, &y_point, &evals, &proof_batch, &mut verifier_transcript, &gamma).unwrap();
+                    BivBatchKZG::<Bls12_381>::verify_at_same_y(&v_srs, &coms, &x_points, &y_point, &evals, &proof_batch, &mut verifier_transcript, &gamma).unwrap();
                 assert!(is_valid);
             });
         });

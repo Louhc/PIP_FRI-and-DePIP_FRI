@@ -5,6 +5,7 @@ use my_kzg::biv_trivial_kzg::{BivariateKZG, BivariatePolynomial};
 use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial
 };
+use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 
@@ -14,15 +15,15 @@ fn main() {
 
     const BIVARIATE_X_LOG_DEGREE: usize = 10;
     const BIVARIATE_Y_LOG_DEGREE: usize = 10;
-    let log_x_degree = 1 << BIVARIATE_X_LOG_DEGREE - 1;
-    let log_y_degree = 1 << BIVARIATE_Y_LOG_DEGREE - 1;
+    let log_x_degree = (1 << BIVARIATE_X_LOG_DEGREE) - 1;
+    let log_y_degree = (1 << BIVARIATE_Y_LOG_DEGREE) - 1;
     
     println!("Bivariate KZG, log_x_degree: {}, log_y_degree: {}", log_x_degree, log_y_degree);
 
     let mut rng = StdRng::seed_from_u64(0u64);
 
     let setup_start = Instant::now();
-    let (g_alpha_powers, v_srs) =
+    let (g_alpha_powers, y_srs, v_srs) =
         BivariateKZG::<Bls12_381>::setup(&mut rng, log_x_degree, log_y_degree).unwrap();
     let time = setup_start.elapsed().as_millis();
     println!("Bivariate KZG setup time: {:} ms", time);
@@ -38,6 +39,7 @@ fn main() {
         ));
     }
 
+    let x_domain = <GeneralEvaluationDomain<<Bls12_381 as Pairing>::ScalarField> as EvaluationDomain<<Bls12_381 as Pairing>::ScalarField>>::new(log_x_degree).unwrap();
     let x_poly_refs = x_polynomials.iter().collect::<Vec<_>>();
     let bivariate_polynomial = BivariatePolynomial { x_polynomials: &x_poly_refs };
 
@@ -46,13 +48,13 @@ fn main() {
 
     // Commit
     let com_start = Instant::now();
-    let com = BivariateKZG::<Bls12_381>::commit(&g_alpha_powers, bivariate_polynomial).unwrap();
+    let com = BivariateKZG::<Bls12_381>::commit(&g_alpha_powers, bivariate_polynomial, &x_domain).unwrap();
     let time = com_start.elapsed().as_millis();
     println!("Bivariate KZG commi time, {:?} ms", time);
 
     // Open
     let open_start = Instant::now();
-    let proof = BivariateKZG::<Bls12_381>::open(&g_alpha_powers, bivariate_polynomial, &point).unwrap();
+    let proof = BivariateKZG::<Bls12_381>::open(&g_alpha_powers, &y_srs, bivariate_polynomial, &point, &x_domain).unwrap();
     let time = open_start.elapsed().as_millis();
     println!("Bivariate KZG open  time: {:?} ms", time);
 

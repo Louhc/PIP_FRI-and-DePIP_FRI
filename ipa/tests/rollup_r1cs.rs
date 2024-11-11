@@ -4,7 +4,8 @@ use ark_ff::{One, Zero, UniformRand};
 use ark_bls12_381::{Bls12_381, Fr};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
 use my_ipa::r1cs::R1CSVectors;
-use ark_rollup::{de_rollup::build_multi_tx_circuit, ConstraintF};
+use ark_rollup::de_rollup::build_multi_tx_circuit;
+type ConstraintF = ark_bls12_381::Fr;
 
 const NUM_TX: usize = 1 << 2;
 const L: usize = 1 << 2;
@@ -37,9 +38,10 @@ fn de_rollup_r1cs_satisfication_test() {
         r_pow *= challenge_r;
     }
 
-    let mut cs = cs.borrow_mut().unwrap();
-    cs.finalize();
-    let cs_matrix = cs.to_matrices().unwrap();
+    let mut cs_ref = cs.borrow_mut().unwrap();
+    cs_ref.finalize();
+    let cs_matrix = cs_ref.to_matrices().unwrap();
+    drop(cs_ref);
 
     let r1cs_vecs_all: Vec<R1CSVectors<Bls12_381>> = (0..l).map(|sub_prover_id| {
         R1CSVectors::<Bls12_381>::build(sub_prover_id, m, l, challenge_r, &cs, &cs_matrix).unwrap()

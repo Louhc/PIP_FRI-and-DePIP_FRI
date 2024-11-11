@@ -5,7 +5,7 @@
 
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_ec::pairing::Pairing;
-use my_kzg::{biv_batch_kzg::BivBatchKZG, helper::get_x_srs};
+use my_kzg::biv_batch_kzg::BivBatchKZG;
 use merlin::Transcript;
 use my_ipa::{helper::{generate_r1cs_de_polynomials, 
     generate_r1cs_pub_polynomials, 
@@ -58,13 +58,7 @@ fn main() {
     let x_degree = m - 1;
     let y_degree = l - 1;
     let time = Instant::now();
-    let (powers, v_srs) = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, x_degree, y_degree, &domain_y).unwrap();
-    let x_srs = get_x_srs::<Bls12_381>(&powers.0);
-    // Note that y_srs is lagrange-based
-    let y_srs: Vec<<Bls12_381 as Pairing>::G1Affine> = powers.0.iter()
-        .filter_map(|row| row.get(0))
-        .cloned()
-        .collect();
+    let ((powers, x_srs, y_srs), v_srs) = BivBatchKZG::<Bls12_381>::setup_lagrange(&mut rng, x_degree, y_degree, &domain_y).unwrap();
     println!("Setup time: {:?}", time.elapsed());
 
     let time = Instant::now();
@@ -96,7 +90,7 @@ fn main() {
     let mut transcript : Transcript = Transcript::new(b"R1CS inner product");
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<Bls12_381>(m, l, r1cs_de_vecs);
     println!("Prover {:?} starts prove", sub_prover_id);
-    let proof = DeSNARKLinear::<Bls12_381>::de_r1cs_prove(sub_prover_id, &powers.0, &x_srs, &y_srs, &sub_wit_polys, &sub_pub_polys, &challenge_r, &domain_x, &domain_y, &mut transcript);
+    let proof = DeSNARKLinear::<Bls12_381>::de_r1cs_prove(sub_prover_id, &powers, &x_srs, &y_srs, &sub_wit_polys, &sub_pub_polys, &challenge_r, &domain_x, &domain_y, &mut transcript);
     println!("Prover {:?} prove total time: {:?}", sub_prover_id, time.elapsed());
 
     if Net::am_master() {
