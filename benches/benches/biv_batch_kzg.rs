@@ -23,12 +23,12 @@ fn configure_criterion() -> Criterion {
         .sample_size(10) 
 }
 
-const POLYNOMIAL_NUMBER: usize = 10;
-const X_POINT_NUMBER: usize = 2;
+const POLYNOMIAL_NUMBER: usize = 5;
+const X_POINT_NUMBER: usize = 4;
 const BIVARIATE_Y_LOG_DEGREE: usize = 3;
 
 fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
-    let log_sizes = vec![12, 14, 16, 18, 20, 22, 24];
+    let log_sizes = vec![12, 14, 16, 18, 20, 22];
     let mut rng = StdRng::seed_from_u64(0u64);
 
     let y_degree = (1 << BIVARIATE_Y_LOG_DEGREE) - 1;
@@ -63,14 +63,12 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
         // pick random x_points and compute the evals
         let y_point = UniformRand::rand(&mut rng);
         let mut x_points = Vec::new();
-        for i in 0..bivariate_polynomials.len() {
-            if i%2 == 1 {
-                // x_points.push(vec![UniformRand::rand(&mut rng)]);
-                x_points.push(vec![UniformRand::rand(&mut rng), UniformRand::rand(&mut rng)]);
+        for _ in 0..bivariate_polynomials.len() {
+            let mut cur_points = Vec::new();
+            for _ in 0..X_POINT_NUMBER {
+                cur_points.push(UniformRand::rand(&mut rng));
             }
-            else {
-                x_points.push(vec![UniformRand::rand(&mut rng), UniformRand::rand(&mut rng), UniformRand::rand(&mut rng)]);
-            }
+            x_points.push(cur_points);
         }
         let mut evals: Vec<Vec<<Bls12_381 as Pairing>::ScalarField>> = Vec::new();
         for i in 0..POLYNOMIAL_NUMBER {
@@ -90,19 +88,14 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
         c.bench_function(&format!("Trivial Bivariate KZG open, log_vector_length: {}", log_size), |b| {
             b.iter(|| {
                 for i in 0..POLYNOMIAL_NUMBER {
-                    let _ = BivariateKZG::<Bls12_381>::open(
-                        &srs, 
-                        &y_srs,
-                        bivariate_polynomials[i], 
-                        &(x_points[i][0], y_point),
-                        &x_domain);
-
-                    let _ = BivariateKZG::<Bls12_381>::open(
-                        &srs, 
-                        &y_srs, 
-                        bivariate_polynomials[i], 
-                        &(x_points[i][1], y_point), 
-                        &x_domain);
+                    for j in 0..X_POINT_NUMBER {
+                        let _ = BivariateKZG::<Bls12_381>::open(
+                            &srs, 
+                            &y_srs,
+                            bivariate_polynomials[i], 
+                            &(x_points[i][j], y_point),
+                            &x_domain);
+                    }
                 }
             });
         });
@@ -150,35 +143,29 @@ fn biv_batch_kzg_prove_and_verify_benchmark(c: &mut Criterion) {
         println!("Batch Bivariate KZG proof size: {:?} bytes", proof_size_batch);
 
         // trivial bivariate kzg verify
-        let mut proofs = Vec::new();
+        let mut proofs_matrix = Vec::new();
         for i in 0..POLYNOMIAL_NUMBER {
-            let proof_1 = BivariateKZG::<Bls12_381>::open(
-                &srs,
-                &y_srs, 
-                bivariate_polynomials[i], 
-                &(x_points[i][0], y_point),
-                &x_domain).unwrap();
-
-            let proof_2 = BivariateKZG::<Bls12_381>::open(
-                &srs,
-                &y_srs, 
-                bivariate_polynomials[i], 
-                &(x_points[i][1], y_point),
-                &x_domain).unwrap();
-            
-            proofs.push(vec![proof_1, proof_2]);
+            let mut proofs = Vec::new();
+            for j in 0..X_POINT_NUMBER {
+                let proof = BivariateKZG::<Bls12_381>::open(
+                    &srs,
+                    &y_srs, 
+                    bivariate_polynomials[i], 
+                    &(x_points[i][j], y_point),
+                    &x_domain).unwrap();
+                proofs.push(proof);   
+            } 
+            proofs_matrix.push(proofs);
         }
 
         c.bench_function(&format!("Trivial Bivariate KZG verify, log_vector_length: {}", log_size), |b| {
             b.iter(|| {
                 for i in 0..POLYNOMIAL_NUMBER {
-                    let is_valid =
-                        BivariateKZG::<Bls12_381>::verify(&v_srs, &coms[i], &(x_points[i][0], y_point), &evals[i][0], &proofs[i][0]).unwrap();
-                    assert!(is_valid);
-        
-                    let is_valid =
-                        BivariateKZG::<Bls12_381>::verify(&v_srs, &coms[i], &(x_points[i][1], y_point), &evals[i][1], &proofs[i][1]).unwrap();
-                    assert!(is_valid);
+                    for j in 0..X_POINT_NUMBER {
+                        let is_valid =
+                            BivariateKZG::<Bls12_381>::verify(&v_srs, &coms[i], &(x_points[i][j], y_point), &evals[i][j], &proofs_matrix[i][j]).unwrap();
+                        assert!(is_valid);
+                    }
                 }
             });
         });
