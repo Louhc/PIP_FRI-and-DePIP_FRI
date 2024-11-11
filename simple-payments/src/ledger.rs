@@ -6,7 +6,7 @@ use ark_crypto_primitives::crh::{
     pedersen, CRHScheme, TwoToOneCRHScheme,
 };
 use ark_crypto_primitives::merkle_tree::{ByteDigestConverter, MerkleTree, Path};
-use crate::{EdwardsProjective, ConstraintFq, EdwardsVar};
+use crate::{EdwardsProjective, ConstraintF, EdwardsVar};
 use ark_std::rand::Rng;
 use std::collections::HashMap;
 use ark_crypto_primitives::merkle_tree::{
@@ -102,12 +102,12 @@ pub type TwoToOneHashGadget = pedersen::constraints::TwoToOneCRHGadget<
 
 pub struct MerkleConfigVar;
 
-impl ConfigGadget<MerkleConfig, ConstraintFq> for MerkleConfigVar {
-    type Leaf = [UInt8<ConstraintFq>];
-    type LeafDigest = <LeafHashGadget as CRHSchemeGadget<LeafHash, ConstraintFq>>::OutputVar;
-    type LeafInnerConverter = BytesVarDigestConverter<Self::LeafDigest, ConstraintFq>;
+impl ConfigGadget<MerkleConfig, ConstraintF> for MerkleConfigVar {
+    type Leaf = [UInt8<ConstraintF>];
+    type LeafDigest = <LeafHashGadget as CRHSchemeGadget<LeafHash, ConstraintF>>::OutputVar;
+    type LeafInnerConverter = BytesVarDigestConverter<Self::LeafDigest, ConstraintF>;
     type InnerDigest =
-        <TwoToOneHashGadget as TwoToOneCRHSchemeGadget<TwoToOneHash, ConstraintFq>>::OutputVar;
+        <TwoToOneHashGadget as TwoToOneCRHSchemeGadget<TwoToOneHash, ConstraintF>>::OutputVar;
     type LeafHash = LeafHashGadget;
     type TwoToOneHash = TwoToOneHashGadget;
 }
