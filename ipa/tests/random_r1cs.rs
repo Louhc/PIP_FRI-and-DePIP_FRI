@@ -35,9 +35,10 @@ fn random_r1cs_satisfication_test() {
         r_pow *= challenge_r;
     }
 
-    let mut cs = cs.borrow_mut().unwrap();
-    cs.finalize();
-    let cs_matrix = cs.to_matrices().unwrap();
+    let mut cs_ref = cs.borrow_mut().unwrap();
+    cs_ref.finalize();
+    let cs_matrix = cs_ref.to_matrices().unwrap();
+    drop(cs_ref);
 
     let r1cs_vecs_all: Vec<R1CSVectors<Bls12_381>> = (0..l).map(|sub_prover_id| {
         R1CSVectors::<Bls12_381>::build(sub_prover_id, m, l, challenge_r, &cs, &cs_matrix).unwrap()
