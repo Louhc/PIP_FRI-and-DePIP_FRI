@@ -569,19 +569,20 @@ impl<P: Pairing> PreProver<P> {
         m_domain: &GeneralEvaluationDomain<P::ScalarField>
     ) -> (Vec<UnivariatePolynomial<P::ScalarField>>, Vec<P::G1>) {
         // send lower evals to master
-        let lower_total_evals = Net::send_to_master(lower_evals);
         // compute f1 evals at delta
         let f1_evals: Vec<P::ScalarField> = sub_polys_f1.par_iter().map(|poly| poly.evaluate(delta)).collect();
-        let f1_total_evals = Net::send_to_master(&f1_evals);
+        // let f1_total_evals = Net::send_to_master(&f1_evals);
+        // let lower_total_evals = Net::send_to_master(lower_evals);
+        let lower_f1_evals = Net::send_to_master(&(lower_evals.clone(), f1_evals));
 
         let poly_one = UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::one()]);
 
         if Net::am_master() {
-            let lower_total_evals = lower_total_evals.unwrap();
-            let f1_total_evals = f1_total_evals.unwrap();
-            //let domain_2y = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(2 * y_domain.size()).unwrap();
-            // derive upper_total_evals
-            // uppe_evals: val_pa, val_pb, val_pc, row_pa_low, row_pa_high, row_pb_low, row_pb_high, row_pc_low, row_pc_high, col_pa, col_pb, col_pc, L
+            let lower_f1_evals = lower_f1_evals.unwrap();
+            let lower_total_evals: Vec<Vec<P::ScalarField>> = lower_f1_evals.clone().into_par_iter().map(|eval| eval.0).collect();
+            let f1_total_evals: Vec<Vec<P::ScalarField>> = lower_f1_evals.into_par_iter().map(|eval| eval.1).collect();
+            // let lower_total_evals = lower_total_evals.unwrap();
+            // let f1_total_evals = f1_total_evals.unwrap();
             let (upper_row_pa_low_delta, upper_row_pa_high_delta, upper_row_pb_low_delta): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = par_join_3!(
                 || upper_total_evals.par_iter().map(|evals| evals[3]).collect(),
                 || upper_total_evals.par_iter().map(|evals| evals[4]).collect(),
@@ -1473,9 +1474,7 @@ impl<P: Pairing> PreProver<P> {
         // invoke the de-open
         let proof = BivBatchKZG::<P>::de_open_lagrange_with_eval(sub_prover_id, &powers, &y_srs, &vec![de_poly_l], &vec![*eval_beta], &(*beta, *zeta), x_domain, &y_domain, &gamma);
         if Net::am_master() {
-            let proof = proof.unwrap();
-            assert_eq!(proof.0.len(), 1);
-            proof
+            proof.unwrap()
         } else {
             (Vec::new(), (P::G1::zero(), P::G1::zero()))
         }

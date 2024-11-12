@@ -138,7 +138,6 @@ impl<P: Pairing> DeSNARKLog<P> {
             let mut coms_g1_h1_t = coms_g1_h1;
             coms_g1_h1_t.push(de_coms_g1_h1_t[2]);
             coms_g1_h1_t.push(de_coms_g1_h1_t[3]);
-            assert_eq!(coms_g1_h1_t.len(), 4);
             coms_g1_h1_t
         } else {
             Vec::new()
@@ -369,8 +368,6 @@ impl<P: Pairing> DeSNARKLog<P> {
         let step = start_timer!(|| "compute & commit g5 h5");
         let (polys_g5_h5, coms_g5_h5) = PreProver::<P>::compute_and_commit_g5_h5(&y_srs, &de_polys_f1, &val_upper_and_l_total_evals, &lower_evals, &y_domain, &delta, &beta, &gamma, &v, &u4,
             &eval_q1, &m_domain);
-        assert_eq!(polys_g5_h5.len(), 2);
-        assert_eq!(coms_g5_h5.len(), 2);
         let mut coms_g4_h4_g5_h5 = coms_g4_h4.clone();
         coms_g4_h4_g5_h5.extend(&coms_g5_h5);
         end_timer!(step);
