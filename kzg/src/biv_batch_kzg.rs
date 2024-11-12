@@ -524,8 +524,9 @@ impl<P: Pairing> BivBatchKZG<P> {
         y_point: &P::ScalarField,
         evals: &Vec<Vec<P::ScalarField>>,
         proof: &(P::G1, Vec<P::ScalarField>, P::ScalarField, (P::G1, P::G1), P::G1),
-        transcript: &mut Transcript,
-        challenge: &P::ScalarField
+        challenge: &P::ScalarField,
+        eta: P::ScalarField,
+        theta: P::ScalarField
     ) -> Result<bool, Error> {
         // let x_points = vec![vec![alpha], 
         // vec![*r * alpha, *r],
@@ -533,9 +534,9 @@ impl<P: Pairing> BivBatchKZG<P> {
         // vec![*r],
         // vec![r_pow_m]];
         
-        <Transcript as ProofTranscript<P>>::append_point(transcript, b"combined_polynomial_x_beta", &proof.0);
-        let eta = <Transcript as ProofTranscript<P>>::challenge_scalar(
-            transcript, b"random_evaluate_point");
+        // <Transcript as ProofTranscript<P>>::append_point(transcript, b"combined_polynomial_x_beta", &proof.0);
+        // let eta = <Transcript as ProofTranscript<P>>::challenge_scalar(
+        //     transcript, b"random_evaluate_point");
         let linear_factors = generate_powers(challenge, coms.len());
 
         // check2: validity of \sum_i \gamma^{i-1} (f_i(X, beta) - r_i(X)) * Z_{T_1\R_i}(X) = q(X)Z_{T_1}(X)
@@ -572,12 +573,6 @@ impl<P: Pairing> BivBatchKZG<P> {
                 KZG::<P>::verify(&kzg_v_srs, &proof.0, &eta, &proof.2, &proof.4).unwrap()
             },
             || {
-                let mut slice_vector: Vec<P::ScalarField> = proof.1.clone();
-                slice_vector.push(proof.2.clone());
-                let slice: &[P::ScalarField] = &slice_vector;
-                <Transcript as ProofTranscript<P>>::append_scalars(transcript, b"combined_polynomial_x_beta", slice);
-                let theta = <Transcript as ProofTranscript<P>>::challenge_scalar(
-                    transcript, b"batch_kzg_rlc_challenge");
                 let eta_beta = (eta, y_point.clone());
                 BivBatchKZG::verify(&v_srs, &coms, &eta_beta, &proof.1, &proof.3, &theta).unwrap()
             }

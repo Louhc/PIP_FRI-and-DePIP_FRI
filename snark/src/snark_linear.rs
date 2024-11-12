@@ -355,7 +355,17 @@ impl<P: Pairing> DeSNARKLinear<P> {
                                                 vec![evals_wit_polys[3], evals_wit_polys[4], evals_wit_polys[5]],
                                                 vec![evals_wit_polys[6]]];
         let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r]];
-        let check4 = BivBatchKZG::<P>::verify_at_same_y_optimized(&v_srs, &coms_wit_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_polys, transcript, &gamma).unwrap();
+        <Transcript as ProofTranscript<P>>::append_point(transcript, b"combined_polynomial_x_beta", &proofs_wit_polys.0);
+        let eta = <Transcript as ProofTranscript<P>>::challenge_scalar(
+            transcript, b"random_evaluate_point");
+        let mut slice_vector: Vec<P::ScalarField> = proofs_wit_polys.1.clone();
+        slice_vector.push(proofs_wit_polys.2.clone());
+        let slice: &[P::ScalarField] = &slice_vector;
+        <Transcript as ProofTranscript<P>>::append_scalars(transcript, b"combined_polynomial_x_beta", slice);
+        let theta = <Transcript as ProofTranscript<P>>::challenge_scalar(
+            transcript, b"batch_kzg_rlc_challenge");
+
+        let check4 = BivBatchKZG::<P>::verify_at_same_y_optimized(&v_srs, &coms_wit_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_polys, &gamma, eta, theta).unwrap();
         assert!(check4);
         println!("Verifier pairing time: {:?}", time.elapsed());
 

@@ -646,42 +646,52 @@ impl<P: Pairing> DeSNARKLog<P> {
 
         // check the validity of bivariate polynomials
         let time = Instant::now();
-        let evals_bivariate = vec![vec![evals_wit_upper_r_polys[0]],
-                                                vec![evals_wit_upper_r_polys[1], evals_wit_upper_r_polys[2]],
-                                                vec![evals_wit_upper_r_polys[3], evals_wit_upper_r_polys[4], evals_wit_upper_r_polys[5]],
-                                                vec![evals_wit_upper_r_polys[6]],
-                                                vec![evals_wit_upper_r_polys[7]]];
-        let x_points = vec![vec![alpha], 
-            vec![*r * alpha, *r],
-            vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()],
-            vec![*r],
-            vec![r_pow_m]];
-        let mut coms_wit_and_upper_r_polys = coms_wit_polys.clone();
-        coms_wit_and_upper_r_polys.push(com_upper_r.clone());
-        
-        let check6 = BivBatchKZG::<P>::verify_at_same_y_optimized(&v_srs, &coms_wit_and_upper_r_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_upper_r_polys, transcript, &gamma).unwrap();
-        assert!(check6);
-        println!("Verifier fa, fb, fc, fw open check: {:?}", time.elapsed());
+        <Transcript as ProofTranscript<P>>::append_point(transcript, b"combined_polynomial_x_beta", &proofs_wit_upper_r_polys.0);
+        let eta = <Transcript as ProofTranscript<P>>::challenge_scalar(
+        transcript, b"random_evaluate_point");
+        let mut slice_vector: Vec<P::ScalarField> = proofs_wit_upper_r_polys.1.clone();
+        slice_vector.push(proofs_wit_upper_r_polys.2.clone());
+        let slice: &[P::ScalarField] = &slice_vector;
+        <Transcript as ProofTranscript<P>>::append_scalars(transcript, b"combined_polynomial_x_beta", slice);
+        let theta = <Transcript as ProofTranscript<P>>::challenge_scalar(
+        transcript, b"batch_kzg_rlc_challenge");
+        let (check6, check8) = rayon::join(
+            || {
+                let evals_bivariate = vec![vec![evals_wit_upper_r_polys[0]],
+                    vec![evals_wit_upper_r_polys[1], evals_wit_upper_r_polys[2]],
+                    vec![evals_wit_upper_r_polys[3], evals_wit_upper_r_polys[4], evals_wit_upper_r_polys[5]],
+                    vec![evals_wit_upper_r_polys[6]],
+                    vec![evals_wit_upper_r_polys[7]]];
+                let x_points = vec![vec![alpha], 
+                    vec![*r * alpha, *r],
+                    vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()],
+                    vec![*r],
+                    vec![r_pow_m]];
+                let mut coms_wit_and_upper_r_polys = coms_wit_polys.clone();
+                coms_wit_and_upper_r_polys.push(com_upper_r.clone());
 
-        // check the validity of t, f2, and n
-        let time = Instant::now();
-        let t_points = vec![P::ScalarField::one(), delta, x_domain.group_gen() * delta];
-        let f2_points = vec![P::ScalarField::zero(), delta];
-        let n_points = vec![delta];
-        let q2_points = vec![delta];
-        let points = vec![t_points.clone(), t_points.clone(), t_points,
-            f2_points.clone(), f2_points.clone(), f2_points.clone(),
-            f2_points.clone(), f2_points.clone(), f2_points.clone(),
-            f2_points.clone(), f2_points.clone(), f2_points,
-            q2_points ,
-            n_points.clone(), n_points.clone(), n_points.clone(), n_points.clone(), 
-            n_points.clone(), n_points.clone(), n_points.clone(), n_points.clone(), n_points];
-        let mut coms_t_f2_q2_n = coms_t_f2_q2.clone();
-        coms_t_f2_q2_n.extend(coms_n);
-        // try to
-        let check8 = BatchKZG::<P>::verify_multiple_polys_and_points_no_repeat(&uni_v_srs_for_x, &coms_t_f2_q2_n, &points, &delta, &x_domain.group_gen(), &(evals_t_f2_q2_n.clone(), proof_t_f2_q2_n.clone()), &gamma, transcript).unwrap();
+                BivBatchKZG::<P>::verify_at_same_y_optimized(&v_srs, &coms_wit_and_upper_r_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_upper_r_polys, &gamma, eta, theta).unwrap()
+            }, 
+            || {
+                let t_points = vec![P::ScalarField::one(), delta, x_domain.group_gen() * delta];
+                let f2_points = vec![P::ScalarField::zero(), delta];
+                let n_points = vec![delta];
+                let q2_points = vec![delta];
+                let points = vec![t_points.clone(), t_points.clone(), t_points,
+                    f2_points.clone(), f2_points.clone(), f2_points.clone(),
+                    f2_points.clone(), f2_points.clone(), f2_points.clone(),
+                    f2_points.clone(), f2_points.clone(), f2_points,
+                    q2_points ,
+                    n_points.clone(), n_points.clone(), n_points.clone(), n_points.clone(), 
+                    n_points.clone(), n_points.clone(), n_points.clone(), n_points.clone(), n_points];
+                let mut coms_t_f2_q2_n = coms_t_f2_q2.clone();
+                coms_t_f2_q2_n.extend(coms_n);
+                BatchKZG::<P>::verify_multiple_polys_and_points_no_repeat(&uni_v_srs_for_x, &coms_t_f2_q2_n, &points, &delta, &x_domain.group_gen(), &(evals_t_f2_q2_n.clone(), proof_t_f2_q2_n.clone()), &gamma, transcript).unwrap()
+            }
+        );
+        assert!(check6);
         assert!(check8);
-        println!("Verifier t_f2 open check: {:?}", time.elapsed());
+        println!("Verifier fa, fb, fc, fw, t, f2, q2 open check: {:?}", time.elapsed());
 
         let time = Instant::now();
         let (check7, check9, check10, check12) = par_join_4!(
@@ -697,25 +707,9 @@ impl<P: Pairing> DeSNARKLog<P> {
             || BivBatchKZG::<P>::verify(&v_srs, &vec![com_l.clone()], &(beta, zeta), &eval_l, &proof_l, &gamma).unwrap(), 
             || KZG::<P>::verify(&uni_m_v_srs_for_x, &com_q1, &delta, &eval_q1, &proof_q1).unwrap()
         );
-
-        // check the validity of upper_a_polys, upper_b_polys, lower_a_polys, lower_b_polys, val_polys
-        // let time = Instant::now();
-        // let mut coms_val_upper_lower_f1 = coms_val.clone();
-        // coms_val_upper_lower_f1.extend(&coms_upper_a.clone());
-        // coms_val_upper_lower_f1.extend(&coms_upper_b.clone());
-        // coms_val_upper_lower_f1.extend(&coms_lower_a_b.clone());
-        // coms_val_upper_lower_f1.extend(&coms_f1.clone());
-        // let check7 = BivBatchKZG::<P>::verify(&m_v_srs, &coms_val_upper_lower_f1, &(delta, zeta), &evals_val_upper_lower_a_b_f1, &proof_val_upper_lower_a_b_f1, &gamma).unwrap();
         assert!(check7);
-        // println!("Verifier val, upper, lower, pa, pb, pc open check: {:?}", time.elapsed());
-
-        // check the validity of f1 and L
-        // let time = Instant::now();
-        // let check9 = BivBatchKZG::<P>::verify(&m_v_srs, &coms_f1, &(P::ScalarField::zero(), P::ScalarField::zero()), &evals_f1, &proof_f1, &gamma).unwrap();
         assert!(check9);
-        // let check10 = BivBatchKZG::<P>::verify(&v_srs, &vec![com_l.clone()], &(beta, zeta), &eval_l, &proof_l, &gamma).unwrap();
         assert!(check10);
-        // println!("Verifier f1, L open check: {:?}", time.elapsed());
         assert!(check12);
         println!("Verifier check 7 9 10 12: {:?}", time.elapsed());
 
