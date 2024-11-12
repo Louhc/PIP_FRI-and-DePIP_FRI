@@ -117,13 +117,16 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     }
 
     let time = Instant::now();
+    let repetitions = 50;
     if Net::am_master() {
-        let mut transcript : Transcript = Transcript::new(b"Random R1CS");
-        let is_valid = DeSNARKLog::<E>::r1cs_verify_preprocess(&v_srs, &m_v_srs, 
-            &pre_mes_verifier, &proof.unwrap(), &domain_x, &domain_y, &domain_m, &challenge_r, &mut transcript);
-        assert!(is_valid);
+        for _ in 0..repetitions {
+            let mut transcript : Transcript = Transcript::new(b"Random R1CS");
+            let is_valid = DeSNARKLog::<E>::r1cs_verify_preprocess(&v_srs, &m_v_srs, 
+                &pre_mes_verifier, proof.as_ref().unwrap(), &domain_x, &domain_y, &domain_m, &challenge_r, &mut transcript);
+            assert!(is_valid);
+        }
     }
-    println!("Verify time: {:?}", time.elapsed());
+    println!("Verify time: {:?}", time.elapsed() / repetitions);
 }
 
 fn main() {
