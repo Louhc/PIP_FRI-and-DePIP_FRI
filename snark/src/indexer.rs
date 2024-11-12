@@ -8,7 +8,7 @@ use my_kzg::{
 use ark_ff::{Zero, Field, One};
 use rayon::prelude::*;
 use crate::prover_pre::{DeValPolys, NPolys, DeLowerAandBEvals, DeLowerAandBPolys};
-use my_ipa::de_ipa::DeIPA;
+use my_ipa::helper::interpolate_from_eval_domain;
 use ark_std::error::Error;
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError, ConstraintMatrices};
 use itertools::MultiUnzip;
@@ -598,9 +598,9 @@ impl<P: Pairing> Indexer<P> {
     ) -> DeValPolys<P> {
 
         let (val_pa, val_pb, val_pc) = par_join_3!(
-            || DeIPA::<P>::interpolate_from_eval_domain(val_evals.evals_val_pa.clone(), m_domain),
-            || DeIPA::<P>::interpolate_from_eval_domain(val_evals.evals_val_pb.clone(), m_domain), 
-            || DeIPA::<P>::interpolate_from_eval_domain(val_evals.evals_val_pc.clone(), m_domain)
+            || interpolate_from_eval_domain::<P>(val_evals.evals_val_pa.clone(), m_domain),
+            || interpolate_from_eval_domain::<P>(val_evals.evals_val_pb.clone(), m_domain), 
+            || interpolate_from_eval_domain::<P>(val_evals.evals_val_pc.clone(), m_domain)
         );
         DeValPolys { val_pa, val_pb, val_pc}
     }
@@ -630,21 +630,21 @@ impl<P: Pairing> Indexer<P> {
 
         let ((row_pa_low, row_pa_high, row_pb_low), (row_pb_high, row_pc_low, row_pc_high), (col_pa, col_pb, col_pc)) = par_join_3!(
             || {
-                let row_pa_low = DeIPA::<P>::interpolate_from_eval_domain(n_evals.row_pa_low.clone(), &x_domain);
-                let row_pa_high = DeIPA::<P>::interpolate_from_eval_domain(n_evals.row_pa_high.clone(), &x_domain);
-                let row_pb_low = DeIPA::<P>::interpolate_from_eval_domain(n_evals.row_pb_low.clone(), &x_domain);
+                let row_pa_low = interpolate_from_eval_domain::<P>(n_evals.row_pa_low.clone(), &x_domain);
+                let row_pa_high = interpolate_from_eval_domain::<P>(n_evals.row_pa_high.clone(), &x_domain);
+                let row_pb_low = interpolate_from_eval_domain::<P>(n_evals.row_pb_low.clone(), &x_domain);
                 (row_pa_low, row_pa_high, row_pb_low)
             },
             || {
-                let row_pb_high = DeIPA::<P>::interpolate_from_eval_domain(n_evals.row_pb_high.clone(), &x_domain);
-                let row_pc_low = DeIPA::<P>::interpolate_from_eval_domain(n_evals.row_pc_low.clone(), &x_domain);
-                let row_pc_high = DeIPA::<P>::interpolate_from_eval_domain(n_evals.row_pc_high.clone(), &x_domain);
+                let row_pb_high = interpolate_from_eval_domain::<P>(n_evals.row_pb_high.clone(), &x_domain);
+                let row_pc_low = interpolate_from_eval_domain::<P>(n_evals.row_pc_low.clone(), &x_domain);
+                let row_pc_high = interpolate_from_eval_domain::<P>(n_evals.row_pc_high.clone(), &x_domain);
                 (row_pb_high, row_pc_low, row_pc_high)
             }, 
             || {
-                let col_pa = DeIPA::<P>::interpolate_from_eval_domain(n_evals.col_pa.clone(), &x_domain);
-                let col_pb = DeIPA::<P>::interpolate_from_eval_domain(n_evals.col_pb.clone(), &x_domain);
-                let col_pc = DeIPA::<P>::interpolate_from_eval_domain(n_evals.col_pc.clone(), &x_domain);
+                let col_pa = interpolate_from_eval_domain::<P>(n_evals.col_pa.clone(), &x_domain);
+                let col_pb = interpolate_from_eval_domain::<P>(n_evals.col_pb.clone(), &x_domain);
+                let col_pc = interpolate_from_eval_domain::<P>(n_evals.col_pc.clone(), &x_domain);
                 (col_pa, col_pb, col_pc)
             }
         );
@@ -837,7 +837,7 @@ impl<P: Pairing> Indexer<P> {
         // use interpolatation to get lagrange polynomials
         let mut vec = vec![P::ScalarField::zero(); l];
         vec[sub_prover_id] = P::ScalarField::one();
-        let x_polynomial = DeIPA::<P>::interpolate_from_eval_domain(vec, &y_domain);
+        let x_polynomial = interpolate_from_eval_domain::<P>(vec, &y_domain);
 
         let com = BivBatchKZG::<P>::de_commit(sub_prover_id, &powers, &[&x_polynomial], x_domain);
         let com = if Net::am_master() {

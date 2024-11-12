@@ -15,7 +15,6 @@ pub struct IPA<P: Pairing> {
 }
 
 // Simple implementation of univariate sum-check via KZG
-// The idea is postpone opening commitments until the last
 impl<P: Pairing> IPA<P> {
 
     pub fn get_sum_on_domain (

@@ -2,7 +2,6 @@
 
 pub mod ipa;
 pub mod ipa_from_laurent;
-pub mod de_ipa;
 pub mod helper;
 pub mod r1cs;
 

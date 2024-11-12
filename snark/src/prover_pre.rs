@@ -8,7 +8,7 @@ use std::time::Instant;
 use ark_ec::pairing::Pairing;
 use ark_ec::VariableBaseMSM;
 use merlin::Transcript;
-use my_ipa::ipa::IPA;
+use my_ipa::{helper::interpolate_from_eval_domain, ipa::IPA};
 use my_kzg::{biv_batch_kzg::BivBatchKZG, par_join_3, uni_batch_kzg::BatchKZG};
 use ark_ff::{Zero, One, Field};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
@@ -16,7 +16,6 @@ use rayon::{prelude::*, result};
 use crate::indexer::{DeRowIndex, DeColIndex, NEvals, DeValEvals};
 use crate::prover_nopre::NoPreProver;
 use crate::par_join_4;
-use my_ipa::de_ipa::DeIPA;
 use my_kzg::uni_trivial_kzg::KZG;
 use my_kzg::helper::{divide_by_x_minus_k, evaluate_one_lagrange, generate_powers, linear_combination_poly, linear_combination_poly_by_ref};
 use my_kzg::uni_trivial_kzg::DeKZG;
@@ -165,18 +164,18 @@ impl<P: Pairing> PreProver<P> {
                     *r
                 };
                 let evals : Vec<_> = row.par_iter().map(|eval| base.pow([*eval as u64])).collect();
-                let poly = DeIPA::<P>::interpolate_from_eval_domain(evals.clone(), m_domain);
+                let poly = interpolate_from_eval_domain::<P>(evals.clone(), m_domain);
                 (poly, evals)
             }).unzip(),
             // REPEAT COMPUTE: all sub-provers have t_low and t_high, and t_row_low and t_row_high are computed repeatedly
             || {
                 let t_low_evals : Vec<_> = generate_powers(r, m);
-                let t_row_low = DeIPA::<P>::interpolate_from_eval_domain(t_low_evals.clone(), x_domain);
+                let t_row_low = interpolate_from_eval_domain::<P>(t_low_evals.clone(), x_domain);
                 (t_row_low, t_low_evals)
             },
             || {
                 let t_high_evals : Vec<_> = generate_powers(&r_pow, m);
-                let t_row_high = DeIPA::<P>::interpolate_from_eval_domain(t_high_evals.clone(), x_domain);
+                let t_row_high = interpolate_from_eval_domain::<P>(t_high_evals.clone(), x_domain);
                 (t_row_high, t_high_evals)
             });
         
@@ -278,23 +277,23 @@ impl<P: Pairing> PreProver<P> {
         let ((b_pa, eval_b_pa), (b_pb, eval_b_pb), (b_pc, eval_b_pc), (t_col, eval_t_col)) = par_join_4!(
             || {
                 let evals_b_pa : Vec<_> = sub_col.col_pa.par_iter().map(|eval| alpha.pow([*eval as u64])).collect();
-                let b_pa = DeIPA::<P>::interpolate_from_eval_domain(evals_b_pa.clone(), m_domain);
+                let b_pa = interpolate_from_eval_domain::<P>(evals_b_pa.clone(), m_domain);
                 (b_pa, evals_b_pa)
             }, 
             || {
                 let evals_b_pb: Vec<_> = sub_col.col_pb.par_iter().map(|eval| alpha.pow([*eval as u64])).collect();
-                let b_pb = DeIPA::<P>::interpolate_from_eval_domain(evals_b_pb.clone(), m_domain);
+                let b_pb = interpolate_from_eval_domain::<P>(evals_b_pb.clone(), m_domain);
                 (b_pb, evals_b_pb)
             }, 
             || {
                 let evals_b_pc: Vec<_> = sub_col.col_pc.par_iter().map(|eval| alpha.pow([*eval as u64])).collect();
-                let b_pc = DeIPA::<P>::interpolate_from_eval_domain(evals_b_pc.clone(), m_domain);
+                let b_pc = interpolate_from_eval_domain::<P>(evals_b_pc.clone(), m_domain);
                 (b_pc, evals_b_pc)
             },
             // REPEAT COMPUTE: all sub-provers compute t_col, only one suffices and this is repeated
             || {
                 let t_col_evals : Vec<_> = generate_powers(alpha, m);
-                let t_col = DeIPA::<P>::interpolate_from_eval_domain(t_col_evals.clone(), x_domain);
+                let t_col = interpolate_from_eval_domain::<P>(t_col_evals.clone(), x_domain);
                 (t_col, t_col_evals)
             }
         );
@@ -444,7 +443,7 @@ impl<P: Pairing> PreProver<P> {
                         .zip(denominator.par_iter())
                         .map(|(n, d)| *n * d)
                         .collect::<Vec<_>>();
-                    DeIPA::<P>::interpolate_from_eval_domain(evals, &x_domain)
+                    interpolate_from_eval_domain::<P>(evals, &x_domain)
                 })
                 .collect::<Vec<_>>()
         }, || {
@@ -461,7 +460,7 @@ impl<P: Pairing> PreProver<P> {
                         .map(|(lower, upper)| *gamma + *beta * lower + *upper)
                         .collect();
                     batch_inversion(&mut evals);
-                    DeIPA::<P>::interpolate_from_eval_domain(evals, &m_domain)
+                    interpolate_from_eval_domain::<P>(evals, &m_domain)
                 })
                 .collect::<Vec<_>>()
         });
@@ -521,7 +520,7 @@ impl<P: Pairing> PreProver<P> {
             })
             .collect();
         // We are interpolating a polynomial q', and q_1(x) = q'(x / omega) where omega is the gen of the 2x domain
-        let mut sub_poly_q1 = DeIPA::<P>::interpolate_from_eval_domain(evals_target, &m_domain);
+        let mut sub_poly_q1 = interpolate_from_eval_domain::<P>(evals_target, &m_domain);
         let mut elem = domain.group_gen_inv();
         sub_poly_q1.coeffs.iter_mut()
             .skip(1)
@@ -618,43 +617,43 @@ impl<P: Pairing> PreProver<P> {
             let (f1_row_pa_low, f1_row_pa_high, f1_row_pb_low) = par_join_3!(
                 || {
                     let evals = f1_total_evals.par_iter().map(|evals| evals[0]).collect();
-                    DeIPA::<P>::interpolate_from_eval_domain(evals, y_domain)
+                    interpolate_from_eval_domain::<P>(evals, y_domain)
                 }, 
                 || {
                     let evals = f1_total_evals.par_iter().map(|evals| evals[1]).collect();
-                    DeIPA::<P>::interpolate_from_eval_domain(evals, y_domain)
+                    interpolate_from_eval_domain::<P>(evals, y_domain)
                 }, 
                 || {
                     let evals = f1_total_evals.par_iter().map(|evals| evals[2]).collect();
-                    DeIPA::<P>::interpolate_from_eval_domain(evals, y_domain)
+                    interpolate_from_eval_domain::<P>(evals, y_domain)
                 }
             );
             let (f1_row_pb_high, f1_row_pc_low, f1_row_pc_high) = par_join_3!(
                 || {
                     let evals = f1_total_evals.par_iter().map(|evals| evals[3]).collect();
-                    DeIPA::<P>::interpolate_from_eval_domain(evals, y_domain)
+                    interpolate_from_eval_domain::<P>(evals, y_domain)
                 }, 
                 || {
                     let evals = f1_total_evals.par_iter().map(|evals| evals[4]).collect();
-                    DeIPA::<P>::interpolate_from_eval_domain(evals, y_domain)
+                    interpolate_from_eval_domain::<P>(evals, y_domain)
                 }, 
                 || {
                     let evals = f1_total_evals.par_iter().map(|evals| evals[5]).collect();
-                    DeIPA::<P>::interpolate_from_eval_domain(evals, y_domain)
+                    interpolate_from_eval_domain::<P>(evals, y_domain)
                 }
             );
             let (f1_col_pa, f1_col_pb, f1_col_pc) = par_join_3!(
                 || {
                     let evals = f1_total_evals.par_iter().map(|evals| evals[6]).collect();
-                    DeIPA::<P>::interpolate_from_eval_domain(evals, y_domain)
+                    interpolate_from_eval_domain::<P>(evals, y_domain)
                 }, 
                 || {
                     let evals = f1_total_evals.par_iter().map(|evals| evals[7]).collect();
-                    DeIPA::<P>::interpolate_from_eval_domain(evals, y_domain)
+                    interpolate_from_eval_domain::<P>(evals, y_domain)
                 }, 
                 || {
                     let evals = f1_total_evals.par_iter().map(|evals| evals[8]).collect();
-                    DeIPA::<P>::interpolate_from_eval_domain(evals, y_domain)
+                    interpolate_from_eval_domain::<P>(evals, y_domain)
                 }
             );
             // target polynomials
@@ -662,19 +661,19 @@ impl<P: Pairing> PreProver<P> {
                 || {
                     let right_evals = upper_row_pa_low_delta.par_iter().zip(lower_row_pa_low_delta.par_iter())
                         .map(|(a, b)| *a + *b * *beta + gamma).collect();
-                    let right_poly = DeIPA::<P>::interpolate_from_eval_domain(right_evals, y_domain);
+                    let right_poly = interpolate_from_eval_domain::<P>(right_evals, y_domain);
                     &(&f1_row_pa_low * &right_poly) - &poly_one
                 }, 
                 || {
                     let right_evals = upper_row_pa_high_delta.par_iter().zip(lower_row_pa_high_delta.par_iter())
                         .map(|(a, b)| *a + *b * *beta + gamma).collect();
-                    let right_poly = DeIPA::<P>::interpolate_from_eval_domain(right_evals, y_domain);
+                    let right_poly = interpolate_from_eval_domain::<P>(right_evals, y_domain);
                     &(&f1_row_pa_high * &right_poly) - &poly_one
                 }, 
                 || {
                     let right_evals = upper_row_pb_low_delta.par_iter().zip(lower_row_pb_low_delta.par_iter())
                         .map(|(a, b)| *a + *b * *beta + gamma).collect();
-                    let right_poly = DeIPA::<P>::interpolate_from_eval_domain(right_evals, y_domain);
+                    let right_poly = interpolate_from_eval_domain::<P>(right_evals, y_domain);
                     &(&f1_row_pb_low * &right_poly) - &poly_one
                 }
             );
@@ -682,19 +681,19 @@ impl<P: Pairing> PreProver<P> {
                 || {
                     let right_evals = upper_row_pb_high_delta.par_iter().zip(lower_row_pb_high_delta.par_iter())
                         .map(|(a, b)| *a + *b * *beta + gamma).collect();
-                    let right_poly = DeIPA::<P>::interpolate_from_eval_domain(right_evals, y_domain);
+                    let right_poly = interpolate_from_eval_domain::<P>(right_evals, y_domain);
                     &(&f1_row_pb_high * &right_poly) - &poly_one
                 }, 
                 || {
                     let right_evals = upper_row_pc_low_delta.par_iter().zip(lower_row_pc_low_delta.par_iter())
                         .map(|(a, b)| *a + *b * *beta + gamma).collect();
-                    let right_poly = DeIPA::<P>::interpolate_from_eval_domain(right_evals, y_domain);
+                    let right_poly = interpolate_from_eval_domain::<P>(right_evals, y_domain);
                     &(&f1_row_pc_low * &right_poly) - &poly_one
                 }, 
                 || {
                     let right_evals = upper_row_pc_high_delta.par_iter().zip(lower_row_pc_high_delta.par_iter())
                         .map(|(a, b)| *a + *b * *beta + gamma).collect();
-                    let right_poly = DeIPA::<P>::interpolate_from_eval_domain(right_evals, y_domain);
+                    let right_poly = interpolate_from_eval_domain::<P>(right_evals, y_domain);
                     &(&f1_row_pc_high * &right_poly) - &poly_one
                 }
             );
@@ -702,19 +701,19 @@ impl<P: Pairing> PreProver<P> {
                 || {
                     let right_evals = upper_col_pa_delta.par_iter().zip(lower_col_pa_delta.par_iter())
                         .map(|(a, b)| *a + *b * *beta + gamma).collect();
-                    let right_poly = DeIPA::<P>::interpolate_from_eval_domain(right_evals, y_domain);
+                    let right_poly = interpolate_from_eval_domain::<P>(right_evals, y_domain);
                     &(&f1_col_pa * &right_poly) - &poly_one
                 }, 
                 || {
                     let right_evals = upper_col_pb_delta.par_iter().zip(lower_col_pb_delta.par_iter())
                         .map(|(a, b)| *a + *b * *beta + gamma).collect();
-                    let right_poly = DeIPA::<P>::interpolate_from_eval_domain(right_evals, y_domain);
+                    let right_poly = interpolate_from_eval_domain::<P>(right_evals, y_domain);
                     &(&f1_col_pb * &right_poly) - &poly_one
                 }, 
                 || {
                     let right_evals = upper_col_pc_delta.par_iter().zip(lower_col_pc_delta.par_iter())
                         .map(|(a, b)| *a + *b * *beta + gamma).collect();
-                    let right_poly = DeIPA::<P>::interpolate_from_eval_domain(right_evals, y_domain);
+                    let right_poly = interpolate_from_eval_domain::<P>(right_evals, y_domain);
                     &(&f1_col_pc * &right_poly) - &poly_one
                 }
             );
@@ -1175,7 +1174,7 @@ impl<P: Pairing> PreProver<P> {
             })
             .collect::<Vec<_>>();
 
-        let mut poly_q2 = DeIPA::<P>::interpolate_from_eval_domain(evals_left, &x_domain);
+        let mut poly_q2 = interpolate_from_eval_domain::<P>(evals_left, &x_domain);
         let mut elem = domain_2x.group_gen_inv();
         poly_q2.coeffs.iter_mut()
             .skip(1)
@@ -1188,7 +1187,7 @@ impl<P: Pairing> PreProver<P> {
         // let elements: Vec<P::ScalarField> = domain_2x.elements().collect();
         // println!("size is: {:?}", elements.len());
         // let evals_q2: Vec<P::ScalarField> = elements.par_iter().zip(evals_left.par_iter()).map(|(a, b)| *b / domain_2x.evaluate_vanishing_polynomial(*a)).collect();
-        // let poly_q2_test = DeIPA::<P>::interpolate_from_eval_domain(evals_q2, &domain_2x);
+        // let poly_q2_test = interpolate_from_eval_domain::<P>(evals_q2, &domain_2x);
         // assert_eq!(poly_q2, poly_q2_test);
 
         // generate com_q2 distributedly

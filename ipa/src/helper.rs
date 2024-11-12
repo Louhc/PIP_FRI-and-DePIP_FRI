@@ -6,6 +6,7 @@ use ark_poly::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolyn
 use super::r1cs::{R1CSVectors, R1CSPubVectors};
 use rayon::prelude::*;
 use std::mem::take;
+use ark_poly::{Evaluations, GeneralEvaluationDomain};
 
 // This is a simple tests for generatiing random r1cs inner product products
 #[derive(Clone)]
@@ -256,4 +257,12 @@ pub fn generate_half_vector_from_inner_product<P: Pairing> (
     result[size - 1] = last_entry;
 
     result
+}
+
+pub fn interpolate_from_eval_domain <P: Pairing> (
+    evals: Vec<P::ScalarField>,
+    domain: &GeneralEvaluationDomain<P::ScalarField>,
+) -> UnivariatePolynomial<P::ScalarField> {
+    let eval_domain = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(evals, *domain);
+    eval_domain.interpolate()
 }

@@ -15,7 +15,7 @@ pub struct IPA<P: Pairing> {
 }
 
 // Simple implementation of ipa from laurent polynomials
-// The idea is postpone opening commitments until the last
+// We postpone opening commitments until the last
 impl<P: Pairing> IPA<P> {
 
     pub fn ipa_from_laurent_commit_and_prove (
