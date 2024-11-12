@@ -26,7 +26,7 @@ macro_rules! par_join_3 {
 
 #[derive(Clone, Debug)]
 pub struct VerifierSRS<P: Pairing> {
-    pub g: P::G1,
+    pub g: P::G1Affine,
     pub h: P::G2,
     pub h_alpha: P::G2,
     pub h_beta: P::G2
@@ -186,7 +186,7 @@ impl<P: Pairing> BivariateKZG<P> {
         Ok((final_srs,
             y_srs,
             VerifierSRS {
-                g,
+                g: g.into(),
                 h,
                 h_alpha: h * alpha,
                 h_beta: h * beta
@@ -237,7 +237,7 @@ impl<P: Pairing> BivariateKZG<P> {
 
         Ok(((xy_srs, x_srs, y_srs),
             VerifierSRS {
-                g,
+                g: g.into(),
                 h,
                 h_alpha: h * alpha,
                 h_beta: h * beta
@@ -263,7 +263,7 @@ impl<P: Pairing> BivariateKZG<P> {
 
         Ok(((xy_srs, x_srs, y_srs),
             VerifierSRS {
-                g,
+                g: g.into(),
                 h,
                 h_alpha: h * alpha,
                 h_beta: h * beta

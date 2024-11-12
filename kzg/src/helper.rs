@@ -2,7 +2,7 @@ use ark_ec::{
     pairing::Pairing,
     CurveGroup, AffineRepr
 };
-use ark_ff::{Field, One, Zero};
+use ark_ff::{batch_inversion, Field, One, PrimeField, Zero};
 use ark_poly::{polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial
 }   , 
@@ -73,16 +73,39 @@ pub fn interpolate_on_trivial_domain<P: Pairing> (
             }
             constant_term = constant_term.inverse().unwrap();
             constant_term *= evals[i];
-            
-            let divider_polynomial = &UnivariatePolynomial::from_coefficients_vec(vec![
-                -point_i.clone(),
-                P::ScalarField::one()
-                ]);
-            let quotient_polynomial = &numerator_polynomial / &divider_polynomial;
+
+            let mut quotient_polynomial = numerator_polynomial.clone();
+            divide_by_x_minus_k(&mut quotient_polynomial, &point_i);
             &quotient_polynomial * constant_term
         }).reduce_with(|acc, poly| acc + poly)
             .unwrap_or(UnivariatePolynomial::zero())
     }
+}
+
+pub fn interpolate_evaluate_one_no_repeat<F: PrimeField> (
+    points: &Vec<F>,
+    evals: &Vec<F>,
+    target_point: &F,
+) -> F {
+    let mut constant_terms = points.par_iter().enumerate().map(|(i, &point_i)| {
+        let mut constant_term = F::one();
+        for (j, &point_j) in points.iter().enumerate() {
+            if i != j {
+                constant_term *= point_i - point_j;
+            }
+        }
+        constant_term * (*target_point - point_i)
+    })
+    .collect::<Vec<_>>();
+    batch_inversion(&mut constant_terms);
+
+    let numerator : F = points.par_iter().map(|point| *target_point - point)
+        .product();
+    constant_terms.par_iter().zip(evals.par_iter()).map(|(constant_term, eval)| {
+        *constant_term * eval
+    })
+    .sum::<F>()
+        * numerator
 }
 
 // evaluate one evaluation of the id-th lagrange polynomial at the given point
@@ -198,7 +221,7 @@ pub fn divide_by_x_minus_k<F: Field>(
 mod tests {
     use ark_ec::pairing::Pairing;
     use ark_bls12_381::Bls12_381;
-    use crate::helper::{divide_by_x_minus_k, interpolate_on_trivial_domain};
+    use crate::helper::{divide_by_x_minus_k, interpolate_evaluate_one_no_repeat, interpolate_on_trivial_domain};
     use ark_std::rand::{rngs::StdRng, SeedableRng};
     use ark_poly::polynomial::{
         univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
@@ -233,5 +256,17 @@ mod tests {
 
         let poly_b = &polynomial / &UnivariatePolynomial::from_coefficients_vec(vec![-k, <Bls12_381 as Pairing>::ScalarField::one()]);
         assert_eq!(poly_a, poly_b);
+    }
+
+    #[test]
+    fn interpolate_evaluate_one_no_repeat_test() {
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let points = std::iter::repeat_with(|| <Bls12_381 as Pairing>::ScalarField::rand(&mut rng))
+            .take(5).collect::<Vec<_>>();
+        let evals = std::iter::repeat_with(|| <Bls12_381 as Pairing>::ScalarField::rand(&mut rng))
+            .take(5).collect::<Vec<_>>();
+        let target_point =  <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
+        assert_eq!(interpolate_evaluate_one_no_repeat(&points, &evals, &target_point),
+        interpolate_on_trivial_domain::<Bls12_381>(&points, &evals).evaluate(&target_point))
     }
 }

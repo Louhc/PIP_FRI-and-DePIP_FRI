@@ -15,6 +15,7 @@ use crate::prover_pre::PreProver;
 use crate::par_join_4;
 use std::mem::take;
 use ark_std::{start_timer, end_timer};
+use my_kzg::helper::generate_powers;
 
 pub struct DeSNARKLog<P: Pairing> {
     _pairing: PhantomData<P>,
@@ -594,55 +595,6 @@ impl<P: Pairing> DeSNARKLog<P> {
         <Transcript as ProofTranscript<P>>::append_points(transcript, b"zeta", slice);
         let zeta = <Transcript as ProofTranscript<P>>::challenge_scalar(transcript, b"random_evaluation_for_y");
 
-        // evaluation checks for fw, fa, fb, fc
-        let time = Instant::now();
-        let z_h_eval_x = x_domain.evaluate_vanishing_polynomial(alpha);
-        let mut eval_r = vec![r_pow_m; l];
-        eval_r.par_iter_mut().enumerate().for_each(|(i, val)| {
-            *val = r_pow_m.pow([i as u64]);
-        });
-        let (eval_pa_alpha_beta, eval_pb_alpha_beta, eval_pc_alpha_beta, eval_r_beta) = 
-            (evals_p_alpha_beta[0], evals_p_alpha_beta[1], evals_p_alpha_beta[2], evals_wit_upper_r_polys[7]);
-
-        let (f1, f2, f3, f4): (P::ScalarField, P::ScalarField, P::ScalarField, P::ScalarField) = par_join_4!(
-            || eval_pa_alpha_beta * evals_wit_upper_r_polys[0] - eval_r_beta * evals_wit_upper_r_polys[2],
-            || eval_pb_alpha_beta * evals_wit_upper_r_polys[0] - eval_r_beta * (evals_wit_upper_r_polys[4] * r_pow_m + evals_wit_upper_r_polys[5] * (P::ScalarField::one() - r_pow_m)),
-            || eval_pc_alpha_beta * evals_wit_upper_r_polys[0] - eval_r_beta * evals_wit_upper_r_polys[6],
-            || (evals_wit_upper_r_polys[1] * evals_wit_upper_r_polys[3] - evals_wit_upper_r_polys[6]) * eval_r_beta
-        );
-
-        let (left_hand, right_hand) = rayon::join(
-            || {
-                let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3, f4], &v);
-                let left_hand = (beta - u2) * (alpha - u1) * eval_rlc;
-                left_hand
-            },
-            || {
-                let t2 = (alpha * evals_g1_h1[0] + (alpha - u1) * z_h_eval_x * evals_g1_h1[1]) / y_domain.size_as_field_element();
-                let right_hand = beta * evals_g2_h2[0] + (beta - u2) * t2 + (beta - u2) * y_domain.evaluate_vanishing_polynomial(beta) * (evals_g2_h2[1] + beta.pow([l as u64]) * evals_g2_h2[2]);
-                right_hand
-        });
-
-        let check1 = left_hand == right_hand;
-        assert!(check1);
-        println!("Verifier evaluation check time: {:?}", time.elapsed());
-
-        // check the validity of g1 h1, g2, h2
-        let time = Instant::now();
-        let (check2, check3, check4, check5) = par_join_4!(
-            || BatchKZG::<P>::verify(&uni_v_srs_for_x, &coms_g1_h1, &alpha, &evals_g1_h1, &proof_g1_h1, &gamma).unwrap(),
-            || BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g2_h2, &beta, &evals_g2_h2, &proof_g2_h2, &gamma).unwrap(), 
-            || BatchKZG::<P>::verify(&uni_m_v_srs_for_x, &coms_g3_h3, &delta, &evals_g3_h3, &proof_g3_h3, &gamma).unwrap(),
-            || BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g4_h4_g5_h5, &zeta, &evals_g4_h4_g5_h5, &proof_g4_h4_g5_h5, &gamma).unwrap()
-        );
-        assert!(check2);
-        assert!(check3);
-        assert!(check4);
-        assert!(check5);
-        println!("Verifier g1, h1, g2, h2, g3, h3, g4, h4 check time: {:?}", time.elapsed());
-
-        // check the validity of bivariate polynomials
-        let time = Instant::now();
         <Transcript as ProofTranscript<P>>::append_point(transcript, b"combined_polynomial_x_beta", &proofs_wit_upper_r_polys.0);
         let eta = <Transcript as ProofTranscript<P>>::challenge_scalar(
         transcript, b"random_evaluate_point");
@@ -652,157 +604,199 @@ impl<P: Pairing> DeSNARKLog<P> {
         <Transcript as ProofTranscript<P>>::append_scalars(transcript, b"combined_polynomial_x_beta", slice);
         let theta = <Transcript as ProofTranscript<P>>::challenge_scalar(
         transcript, b"batch_kzg_rlc_challenge");
-        let (check6, check8) = rayon::join(
-            || {
-                let evals_bivariate = vec![vec![evals_wit_upper_r_polys[0]],
-                    vec![evals_wit_upper_r_polys[1], evals_wit_upper_r_polys[2]],
-                    vec![evals_wit_upper_r_polys[3], evals_wit_upper_r_polys[4], evals_wit_upper_r_polys[5]],
-                    vec![evals_wit_upper_r_polys[6]],
-                    vec![evals_wit_upper_r_polys[7]]];
-                let x_points = vec![vec![alpha], 
-                    vec![*r * alpha, *r],
-                    vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()],
-                    vec![*r],
-                    vec![r_pow_m]];
-                let mut coms_wit_and_upper_r_polys = coms_wit_polys.clone();
-                coms_wit_and_upper_r_polys.push(com_upper_r.clone());
-                BivBatchKZG::<P>::verify_at_same_y_optimized(&v_srs, &coms_wit_and_upper_r_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_upper_r_polys, &gamma, eta, theta).unwrap()
-            }, 
-            || {
-                let t_points = vec![P::ScalarField::one(), delta, x_domain.group_gen() * delta];
-                let f2_points = vec![P::ScalarField::zero(), delta];
-                let n_points = vec![delta];
-                let q2_points = vec![delta];
-                let points = vec![t_points.clone(), t_points.clone(), t_points,
-                    f2_points.clone(), f2_points.clone(), f2_points.clone(),
-                    f2_points.clone(), f2_points.clone(), f2_points.clone(),
-                    f2_points.clone(), f2_points.clone(), f2_points,
-                    q2_points ,
-                    n_points.clone(), n_points.clone(), n_points.clone(), n_points.clone(), 
-                    n_points.clone(), n_points.clone(), n_points.clone(), n_points.clone(), n_points];
-                let mut coms_t_f2_q2_n = coms_t_f2_q2.clone();
-                coms_t_f2_q2_n.extend(coms_n);
-                BatchKZG::<P>::verify_multiple_polys_and_points_no_repeat(&uni_v_srs_for_x, &coms_t_f2_q2_n, &points, &delta, &x_domain.group_gen(), &(evals_t_f2_q2_n.clone(), proof_t_f2_q2_n.clone()), &gamma, transcript).unwrap()
-            }
-        );
-        assert!(check6);
-        assert!(check8);
-        println!("Verifier fa, fb, fc, fw, t, f2, q2 open check: {:?}", time.elapsed());
 
-        let time = Instant::now();
-        let (check7, check9) = rayon::join(
+        // Verify all commitments
+        let (check_commitments, check_openings) = rayon::join(
             || {
-                let mut coms_val_upper_lower_f1 = coms_val.clone();
-                coms_val_upper_lower_f1.extend(&coms_upper_a.clone());
-                coms_val_upper_lower_f1.extend(&coms_upper_b.clone());
-                coms_val_upper_lower_f1.extend(&coms_lower_a_b.clone());
-                coms_val_upper_lower_f1.extend(&coms_f1.clone());
-                BivBatchKZG::<P>::verify(&m_v_srs, &coms_val_upper_lower_f1, &(delta, zeta), &evals_val_upper_lower_a_b_f1, &proof_val_upper_lower_a_b_f1, &gamma).unwrap()
-            }, 
-            || BivBatchKZG::<P>::verify(&m_v_srs, &coms_f1, &(P::ScalarField::zero(), P::ScalarField::zero()), &evals_f1, &proof_f1, &gamma).unwrap()
-        );
-        let (check10, check12) = rayon::join(
-            || BivBatchKZG::<P>::verify(&v_srs, &vec![com_l.clone()], &(beta, zeta), &eval_l, &proof_l, &gamma).unwrap(), 
-            || KZG::<P>::verify(&uni_m_v_srs_for_x, &com_q1, &delta, &eval_q1, &proof_q1).unwrap()
-        );
-        assert!(check7);
-        assert!(check9);
-        assert!(check10);
-        assert!(check12);
-        println!("Verifier check 7 9 10 12: {:?}", time.elapsed());
-
-        // evaluation check of f_pa(alpha, beta), f_pb(alpha, beta), f_pc(alpha, beta)
-        let time = Instant::now();
-        let z_m_prime_eval_delta = m_domain.evaluate_vanishing_polynomial(delta);
-        let delta_minus_u3 = delta - u3;
-        let eval_rlc = linear_combination_field::<P>(evals_p_alpha_beta, &w);
-        let eval_h = evals_g3_h3[1] + delta.pow([m_prime as u64]) * evals_g3_h3[2] + delta.pow([2 * m_prime as u64]) * evals_g3_h3[3];
-        let t4 = delta * evals_g3_h3[0] + delta_minus_u3 * eval_rlc / m_domain.size_as_field_element() + 
-                delta_minus_u3 * z_m_prime_eval_delta * eval_h;
+            let time = Instant::now();
+            let ((check2, check3, check4, check5), (check6, check8),
+                (check7, check9, check10, check12)) = par_join_3!(
+                || par_join_4!(
+                    || BatchKZG::<P>::verify(&uni_v_srs_for_x, &coms_g1_h1, &alpha, &evals_g1_h1, &proof_g1_h1, &gamma).unwrap(),
+                    || BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g2_h2, &beta, &evals_g2_h2, &proof_g2_h2, &gamma).unwrap(), 
+                    || BatchKZG::<P>::verify(&uni_m_v_srs_for_x, &coms_g3_h3, &delta, &evals_g3_h3, &proof_g3_h3, &gamma).unwrap(),
+                    || BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g4_h4_g5_h5, &zeta, &evals_g4_h4_g5_h5, &proof_g4_h4_g5_h5, &gamma).unwrap()
+                ),
+                || rayon::join(
+                    || {
+                        let evals_bivariate = vec![vec![evals_wit_upper_r_polys[0]],
+                            vec![evals_wit_upper_r_polys[1], evals_wit_upper_r_polys[2]],
+                            vec![evals_wit_upper_r_polys[3], evals_wit_upper_r_polys[4], evals_wit_upper_r_polys[5]],
+                            vec![evals_wit_upper_r_polys[6]],
+                            vec![evals_wit_upper_r_polys[7]]];
+                        let x_points = vec![vec![alpha], 
+                            vec![*r * alpha, *r],
+                            vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()],
+                            vec![*r],
+                            vec![r_pow_m]];
+                        let mut coms_wit_and_upper_r_polys = coms_wit_polys.clone();
+                        coms_wit_and_upper_r_polys.push(com_upper_r.clone());
         
-        let zeta_minus_u4 = zeta - u4;
-        let right_hand = zeta * evals_g4_h4_g5_h5[0] + zeta_minus_u4 * t4 / y_domain.size_as_field_element() +
-            zeta_minus_u4 * y_domain.evaluate_vanishing_polynomial(zeta) * 
-            (evals_g4_h4_g5_h5[1] + zeta.pow([l as u64]) * evals_g4_h4_g5_h5[2] + 
-            zeta.pow([2 * l as u64]) * evals_g4_h4_g5_h5[3] + zeta.pow([3 * l as u64]) * evals_g4_h4_g5_h5[4]);
-        // compute left_hand
-        let (f1, f2, f3) = par_join_3!(
-            || evals_val_upper_lower_a_b_f1[0] * evals_val_upper_lower_a_b_f1[3] * evals_val_upper_lower_a_b_f1[4] * evals_val_upper_lower_a_b_f1[9],
-            || evals_val_upper_lower_a_b_f1[1] * evals_val_upper_lower_a_b_f1[5] * evals_val_upper_lower_a_b_f1[6] * evals_val_upper_lower_a_b_f1[10],
-            || evals_val_upper_lower_a_b_f1[2] * evals_val_upper_lower_a_b_f1[7] * evals_val_upper_lower_a_b_f1[8] * evals_val_upper_lower_a_b_f1[11]
-        );
-        let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3], &w);
-        let left_hand = eval_rlc * eval_l[0] * zeta_minus_u4 * delta_minus_u3;
-        let check11 = left_hand == right_hand;
-        assert!(check11);
-        println!("Verifier f_pa, f_pb, f_pc evaluation check: {:?}", time.elapsed());
+                        BivBatchKZG::<P>::verify_at_same_y_optimized(&v_srs, &coms_wit_and_upper_r_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_upper_r_polys, &gamma, eta, theta).unwrap()
+                    }, 
+                    || {
+                        let t_points = vec![P::ScalarField::one(), delta, x_domain.group_gen() * delta];
+                        let f2_points = vec![P::ScalarField::zero(), delta];
+                        let n_points = vec![delta];
+                        let q2_points = vec![delta];
+                        let points = vec![t_points.clone(), t_points.clone(), t_points,
+                            f2_points.clone(), f2_points.clone(), f2_points.clone(),
+                            f2_points.clone(), f2_points.clone(), f2_points.clone(),
+                            f2_points.clone(), f2_points.clone(), f2_points,
+                            q2_points ,
+                            n_points.clone(), n_points.clone(), n_points.clone(), n_points.clone(), 
+                            n_points.clone(), n_points.clone(), n_points.clone(), n_points.clone(), n_points];
+                        let mut coms_t_f2_q2_n = coms_t_f2_q2.clone();
+                        coms_t_f2_q2_n.extend(coms_n);
+                        BatchKZG::<P>::verify_multiple_polys_and_points_no_repeat(&uni_v_srs_for_x, &coms_t_f2_q2_n, &points, &delta, &x_domain.group_gen(), &(evals_t_f2_q2_n.clone(), proof_t_f2_q2_n.clone()), &gamma, transcript).unwrap()
+                    }
+                ),
+                || par_join_4!(
+                    || {
+                        let mut coms_val_upper_lower_f1 = coms_val.clone();
+                        coms_val_upper_lower_f1.extend(&coms_upper_a.clone());
+                        coms_val_upper_lower_f1.extend(&coms_upper_b.clone());
+                        coms_val_upper_lower_f1.extend(&coms_lower_a_b.clone());
+                        coms_val_upper_lower_f1.extend(&coms_f1.clone());
+                        BivBatchKZG::<P>::verify(&m_v_srs, &coms_val_upper_lower_f1, &(delta, zeta), &evals_val_upper_lower_a_b_f1, &proof_val_upper_lower_a_b_f1, &gamma).unwrap()
+                    }, 
+                    || BivBatchKZG::<P>::verify(&m_v_srs, &coms_f1, &(P::ScalarField::zero(), P::ScalarField::zero()), &evals_f1, &proof_f1, &gamma).unwrap(), 
+                    || BivBatchKZG::<P>::verify(&v_srs, &vec![com_l.clone()], &(beta, zeta), &eval_l, &proof_l, &gamma).unwrap(), 
+                    || KZG::<P>::verify(&uni_m_v_srs_for_x, &com_q1, &delta, &eval_q1, &proof_q1).unwrap()
+                )
+            );
 
-        // verify lookup evaluation validity
-        // check T's evaluation validity
-        // T_col
-        // Note: id starts from zero
-        let time = Instant::now();
-        let evals_t_col = evals_t_f2_q2_n[2].clone();
-        let l_h_m_minums_1 = evaluate_one_lagrange::<P>(m-1, &x_domain, &delta);
-        assert!(evals_t_col[0] == P::ScalarField::one());
-        assert!(evals_t_col[2] == alpha * evals_t_col[1] + l_h_m_minums_1 * (P::ScalarField::one() - alpha.pow([m as u64])));
-        // T_row_low
-        let evals_t_row_low = evals_t_f2_q2_n[0].clone();
-        assert!(evals_t_row_low[0] == P::ScalarField::one());
-        assert!(evals_t_row_low[2] == *r * evals_t_row_low[1] + l_h_m_minums_1 * (P::ScalarField::one() - r.pow([m as u64])));
-        // T_row_high
-        let evals_t_row_high = evals_t_f2_q2_n[1].clone();
-        assert_eq!(evals_t_row_high[0], P::ScalarField::one());
-        let power = ((m * l) as f64).sqrt().floor() as usize;
-        let r_sqrt = r.pow([power as u64]);
-        assert!(evals_t_row_high[2] == r_sqrt * evals_t_row_high[1] + l_h_m_minums_1 * (P::ScalarField::one() - r_sqrt.pow([m as u64])));
-        println!("Verfier T evaluation check: {:?}", time.elapsed());
+            // check the validity of g1 h1, g2, h2
+            assert!(check2);
+            assert!(check3);
+            assert!(check4);
+            assert!(check5);
+            assert!(check6);
+            assert!(check7);
+            assert!(check8);
+            assert!(check9);
+            assert!(check10);
+            assert!(check12);
+            println!("Verifier commitment verification: {:?}", time.elapsed());
+            true
+        }, || {
+            let time = Instant::now();
+            let z_h_eval_x = x_domain.evaluate_vanishing_polynomial(alpha);
+            let (eval_pa_alpha_beta, eval_pb_alpha_beta, eval_pc_alpha_beta, eval_r_beta) = 
+                (evals_p_alpha_beta[0], evals_p_alpha_beta[1], evals_p_alpha_beta[2], evals_wit_upper_r_polys[7]);
 
-        let left_eval_1 = evals_val_upper_lower_a_b_f1[21] * (gamma + beta * evals_val_upper_lower_a_b_f1[12] + evals_val_upper_lower_a_b_f1[3]) - P::ScalarField::one();
-        let left_eval_2 = evals_val_upper_lower_a_b_f1[22] * (gamma + beta * evals_val_upper_lower_a_b_f1[13] + evals_val_upper_lower_a_b_f1[4]) - P::ScalarField::one();
-        let left_eval_3 = evals_val_upper_lower_a_b_f1[23] * (gamma + beta * evals_val_upper_lower_a_b_f1[14] + evals_val_upper_lower_a_b_f1[5]) - P::ScalarField::one();
-        let left_eval_4 = evals_val_upper_lower_a_b_f1[24] * (gamma + beta * evals_val_upper_lower_a_b_f1[15] + evals_val_upper_lower_a_b_f1[6]) - P::ScalarField::one();
-        let left_eval_5 = evals_val_upper_lower_a_b_f1[25] * (gamma + beta * evals_val_upper_lower_a_b_f1[16] + evals_val_upper_lower_a_b_f1[7]) - P::ScalarField::one();
-        let left_eval_6 = evals_val_upper_lower_a_b_f1[26] * (gamma + beta * evals_val_upper_lower_a_b_f1[17] + evals_val_upper_lower_a_b_f1[8]) - P::ScalarField::one();
-        let left_eval_7 = evals_val_upper_lower_a_b_f1[27] * (gamma + beta * evals_val_upper_lower_a_b_f1[18] + evals_val_upper_lower_a_b_f1[9]) - P::ScalarField::one();
-        let left_eval_8 = evals_val_upper_lower_a_b_f1[28] * (gamma + beta * evals_val_upper_lower_a_b_f1[19] + evals_val_upper_lower_a_b_f1[10]) - P::ScalarField::one();
-        let left_eval_9 = evals_val_upper_lower_a_b_f1[29] * (gamma + beta * evals_val_upper_lower_a_b_f1[20] + evals_val_upper_lower_a_b_f1[11]) - P::ScalarField::one();
+            let (f1, f2, f3, f4): (P::ScalarField, P::ScalarField, P::ScalarField, P::ScalarField) = (
+                eval_pa_alpha_beta * evals_wit_upper_r_polys[0] - eval_r_beta * evals_wit_upper_r_polys[2],
+                eval_pb_alpha_beta * evals_wit_upper_r_polys[0] - eval_r_beta * (evals_wit_upper_r_polys[4] * r_pow_m + evals_wit_upper_r_polys[5] * (P::ScalarField::one() - r_pow_m)),
+                eval_pc_alpha_beta * evals_wit_upper_r_polys[0] - eval_r_beta * evals_wit_upper_r_polys[6],
+                (evals_wit_upper_r_polys[1] * evals_wit_upper_r_polys[3] - evals_wit_upper_r_polys[6]) * eval_r_beta
+            );
 
-        let left_evals = vec![left_eval_1, left_eval_2, left_eval_3, left_eval_4, left_eval_5,
-                                             left_eval_6, left_eval_7, left_eval_8, left_eval_9];
-        let factor = zeta - u4;
-        let left_hand = linear_combination_field::<P>(&left_evals, &v) * factor;
-        let sum = *eval_q1 * m_domain.evaluate_vanishing_polynomial(delta) * factor / y_domain.size_as_field_element();
-        let right_hand = zeta * evals_g4_h4_g5_h5[5] + sum + y_domain.evaluate_vanishing_polynomial(zeta) * factor * evals_g4_h4_g5_h5[6];
-        assert_eq!(left_hand, right_hand);
+            let (left_hand, right_hand) = rayon::join(
+                || {
+                    let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3, f4], &v);
+                    let left_hand = (beta - u2) * (alpha - u1) * eval_rlc;
+                    left_hand
+                },
+                || {
+                    let t2 = (alpha * evals_g1_h1[0] + (alpha - u1) * z_h_eval_x * evals_g1_h1[1]) / y_domain.size_as_field_element();
+                    let right_hand = beta * evals_g2_h2[0] + (beta - u2) * t2 + (beta - u2) * y_domain.evaluate_vanishing_polynomial(beta) * (evals_g2_h2[1] + beta.pow([l as u64]) * evals_g2_h2[2]);
+                    right_hand
+            });
 
-        // check f2 evaluation validity
-        let right_eval_1 = evals_t_f2_q2_n[3][1] * (gamma + beta * delta + evals_t_f2_q2_n[0][1]) - evals_t_f2_q2_n[13][0];
-        let right_eval_2 = evals_t_f2_q2_n[4][1] * (gamma + beta * delta + evals_t_f2_q2_n[1][1]) - evals_t_f2_q2_n[14][0];
-        let right_eval_3 = evals_t_f2_q2_n[5][1] * (gamma + beta * delta + evals_t_f2_q2_n[0][1]) - evals_t_f2_q2_n[15][0];
-        let right_eval_4 = evals_t_f2_q2_n[6][1] * (gamma + beta * delta + evals_t_f2_q2_n[1][1]) - evals_t_f2_q2_n[16][0];
-        let right_eval_5 = evals_t_f2_q2_n[7][1] * (gamma + beta * delta + evals_t_f2_q2_n[0][1]) - evals_t_f2_q2_n[17][0];
-        let right_eval_6 = evals_t_f2_q2_n[8][1] * (gamma + beta * delta + evals_t_f2_q2_n[1][1]) - evals_t_f2_q2_n[18][0];
-        let right_eval_7 = evals_t_f2_q2_n[9][1] * (gamma + beta * delta + evals_t_f2_q2_n[2][1]) - evals_t_f2_q2_n[19][0];
-        let right_eval_8 = evals_t_f2_q2_n[10][1] * (gamma + beta * delta + evals_t_f2_q2_n[2][1]) - evals_t_f2_q2_n[20][0];
-        let right_eval_9 = evals_t_f2_q2_n[11][1] * (gamma + beta * delta + evals_t_f2_q2_n[2][1])- evals_t_f2_q2_n[21][0];
-        let right_evals = vec![right_eval_1, right_eval_2, right_eval_3, right_eval_4, 
-            right_eval_5, right_eval_6, right_eval_7, right_eval_8, right_eval_9];
-        let right_eval_rlc = linear_combination_field::<P>(&right_evals, &v);
-        let left = evals_t_f2_q2_n[12][0];
-        assert!(right_eval_rlc == left * x_domain.evaluate_vanishing_polynomial(delta));
+            let check1 = left_hand == right_hand;
+            assert!(check1);
+            println!("Verifier evaluation check time: {:?}", time.elapsed());
 
-        //check f1 f2 relation
-        let factor = m_domain.size_as_field_element() * y_domain.size_as_field_element() / x_domain.size_as_field_element();
-        assert!(evals_f1[0] * factor == evals_t_f2_q2_n[3][0]);
-        assert_eq!(evals_f1[1] * factor, evals_t_f2_q2_n[4][0]);
-        assert_eq!(evals_f1[3] * factor, evals_t_f2_q2_n[6][0]);
-        assert_eq!(evals_f1[4] * factor, evals_t_f2_q2_n[7][0]);
-        assert_eq!(evals_f1[5] * factor, evals_t_f2_q2_n[8][0]);
-        assert_eq!(evals_f1[6] * factor, evals_t_f2_q2_n[9][0]);
-        assert_eq!(evals_f1[7] * factor, evals_t_f2_q2_n[10][0]);
-        assert_eq!(evals_f1[8] * factor, evals_t_f2_q2_n[11][0]);
+            // evaluation check of f_pa(alpha, beta), f_pb(alpha, beta), f_pc(alpha, beta)
+            let time = Instant::now();
+            let z_m_prime_eval_delta = m_domain.evaluate_vanishing_polynomial(delta);
+            let delta_minus_u3 = delta - u3;
+            let eval_rlc = linear_combination_field::<P>(evals_p_alpha_beta, &w);
+            let eval_h = evals_g3_h3[1] + delta.pow([m_prime as u64]) * evals_g3_h3[2] + delta.pow([2 * m_prime as u64]) * evals_g3_h3[3];
+            let t4 = delta * evals_g3_h3[0] + delta_minus_u3 * eval_rlc / m_domain.size_as_field_element() + 
+                    delta_minus_u3 * z_m_prime_eval_delta * eval_h;
+            
+            let zeta_minus_u4 = zeta - u4;
+            let right_hand = zeta * evals_g4_h4_g5_h5[0] + zeta_minus_u4 * t4 / y_domain.size_as_field_element() +
+                zeta_minus_u4 * y_domain.evaluate_vanishing_polynomial(zeta) * 
+                (evals_g4_h4_g5_h5[1] + zeta.pow([l as u64]) * evals_g4_h4_g5_h5[2] + 
+                zeta.pow([2 * l as u64]) * evals_g4_h4_g5_h5[3] + zeta.pow([3 * l as u64]) * evals_g4_h4_g5_h5[4]);
+            // compute left_hand
+            let (f1, f2, f3) = (
+                evals_val_upper_lower_a_b_f1[0] * evals_val_upper_lower_a_b_f1[3] * evals_val_upper_lower_a_b_f1[4] * evals_val_upper_lower_a_b_f1[9],
+                evals_val_upper_lower_a_b_f1[1] * evals_val_upper_lower_a_b_f1[5] * evals_val_upper_lower_a_b_f1[6] * evals_val_upper_lower_a_b_f1[10],
+                evals_val_upper_lower_a_b_f1[2] * evals_val_upper_lower_a_b_f1[7] * evals_val_upper_lower_a_b_f1[8] * evals_val_upper_lower_a_b_f1[11]
+            );
+            let eval_rlc = linear_combination_field::<P>(&vec![f1, f2, f3], &w);
+            let left_hand = eval_rlc * eval_l[0] * zeta_minus_u4 * delta_minus_u3;
+            let check11 = left_hand == right_hand;
+            assert!(check11);
+            println!("Verifier f_pa, f_pb, f_pc evaluation check: {:?}", time.elapsed());
 
+            // verify lookup evaluation validity
+            // check T's evaluation validity
+            // T_col
+            // Note: id starts from zero
+            let time = Instant::now();
+            let evals_t_col = evals_t_f2_q2_n[2].clone();
+            let l_h_m_minums_1 = evaluate_one_lagrange::<P>(m-1, &x_domain, &delta);
+            assert!(evals_t_col[0] == P::ScalarField::one());
+            assert!(evals_t_col[2] == alpha * evals_t_col[1] + l_h_m_minums_1 * (P::ScalarField::one() - alpha.pow([m as u64])));
+            // T_row_low
+            let evals_t_row_low = evals_t_f2_q2_n[0].clone();
+            assert!(evals_t_row_low[0] == P::ScalarField::one());
+            assert!(evals_t_row_low[2] == *r * evals_t_row_low[1] + l_h_m_minums_1 * (P::ScalarField::one() - r.pow([m as u64])));
+            // T_row_high
+            let evals_t_row_high = evals_t_f2_q2_n[1].clone();
+            assert_eq!(evals_t_row_high[0], P::ScalarField::one());
+            let power = ((m * l) as f64).sqrt().floor() as usize;
+            let r_sqrt = r.pow([power as u64]);
+            assert!(evals_t_row_high[2] == r_sqrt * evals_t_row_high[1] + l_h_m_minums_1 * (P::ScalarField::one() - r_sqrt.pow([m as u64])));
+            println!("Verfier T evaluation check: {:?}", time.elapsed());
+
+            let left_evals = (0..9)
+                .map(|i| evals_val_upper_lower_a_b_f1[21 + i] * (gamma + beta * evals_val_upper_lower_a_b_f1[12 + i] + evals_val_upper_lower_a_b_f1[3 + i]) - P::ScalarField::one())
+                .collect::<Vec<_>>();
+            let factor = zeta - u4;
+            let left_hand = linear_combination_field::<P>(&left_evals, &v) * factor;
+            let sum = *eval_q1 * m_domain.evaluate_vanishing_polynomial(delta) * factor / y_domain.size_as_field_element();
+            let right_hand = zeta * evals_g4_h4_g5_h5[5] + sum + y_domain.evaluate_vanishing_polynomial(zeta) * factor * evals_g4_h4_g5_h5[6];
+            assert_eq!(left_hand, right_hand);
+
+            // check f2 evaluation validity
+            let time = Instant::now();
+            let constant = gamma + beta * delta;
+            let right_eval_1 = evals_t_f2_q2_n[3][1] * (constant + evals_t_f2_q2_n[0][1]) - evals_t_f2_q2_n[13][0];
+            let right_eval_2 = evals_t_f2_q2_n[4][1] * (constant + evals_t_f2_q2_n[1][1]) - evals_t_f2_q2_n[14][0];
+            let right_eval_3 = evals_t_f2_q2_n[5][1] * (constant + evals_t_f2_q2_n[0][1]) - evals_t_f2_q2_n[15][0];
+            let right_eval_4 = evals_t_f2_q2_n[6][1] * (constant + evals_t_f2_q2_n[1][1]) - evals_t_f2_q2_n[16][0];
+            let right_eval_5 = evals_t_f2_q2_n[7][1] * (constant + evals_t_f2_q2_n[0][1]) - evals_t_f2_q2_n[17][0];
+            let right_eval_6 = evals_t_f2_q2_n[8][1] * (constant + evals_t_f2_q2_n[1][1]) - evals_t_f2_q2_n[18][0];
+            let right_eval_7 = evals_t_f2_q2_n[9][1] * (constant + evals_t_f2_q2_n[2][1]) - evals_t_f2_q2_n[19][0];
+            let right_eval_8 = evals_t_f2_q2_n[10][1] * (constant + evals_t_f2_q2_n[2][1]) - evals_t_f2_q2_n[20][0];
+            let right_eval_9 = evals_t_f2_q2_n[11][1] * (constant + evals_t_f2_q2_n[2][1])- evals_t_f2_q2_n[21][0];
+            let right_evals = vec![right_eval_1, right_eval_2, right_eval_3, right_eval_4, 
+                right_eval_5, right_eval_6, right_eval_7, right_eval_8, right_eval_9];
+            let right_eval_rlc = linear_combination_field::<P>(&right_evals, &v);
+            let left = evals_t_f2_q2_n[12][0];
+            assert!(right_eval_rlc == left * x_domain.evaluate_vanishing_polynomial(delta));
+
+            //check f1 f2 relation
+            let factor = m_domain.size_as_field_element() * y_domain.size_as_field_element() / x_domain.size_as_field_element();
+            assert!(evals_f1[0] * factor == evals_t_f2_q2_n[3][0]);
+            assert_eq!(evals_f1[1] * factor, evals_t_f2_q2_n[4][0]);
+            assert_eq!(evals_f1[3] * factor, evals_t_f2_q2_n[6][0]);
+            assert_eq!(evals_f1[4] * factor, evals_t_f2_q2_n[7][0]);
+            assert_eq!(evals_f1[5] * factor, evals_t_f2_q2_n[8][0]);
+            assert_eq!(evals_f1[6] * factor, evals_t_f2_q2_n[9][0]);
+            assert_eq!(evals_f1[7] * factor, evals_t_f2_q2_n[10][0]);
+            assert_eq!(evals_f1[8] * factor, evals_t_f2_q2_n[11][0]);
+            println!("f1 f2 check: {:?}", time.elapsed());
+            true
+        });
+
+        assert!(check_commitments && check_openings);
         true
     }
 

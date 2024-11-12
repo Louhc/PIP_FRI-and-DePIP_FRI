@@ -26,7 +26,7 @@ pub struct SRS<P: Pairing> {
 
 #[derive(Clone)]
 pub struct UniVerifierSRS<P: Pairing> {
-    pub g: P::G1,
+    pub g: P::G1Affine,
     pub h: P::G2,
     pub h_alpha: P::G2,
 }
@@ -85,7 +85,7 @@ impl<P: Pairing> KZG<P> {
         Ok((
             <P as Pairing>::G1::normalize_batch(&g_alpha_powers),
             UniVerifierSRS {
-                g,
+                g: g.into(),
                 h,
                 h_alpha: h * alpha,
             },
@@ -106,7 +106,7 @@ impl<P: Pairing> KZG<P> {
         Ok((
             <P as Pairing>::G1::normalize_batch(&g_alpha_powers),
             UniVerifierSRS {
-                g,
+                g: g.into(),
                 h,
                 h_alpha: h * alpha,
             },

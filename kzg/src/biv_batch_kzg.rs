@@ -2,15 +2,16 @@ use ark_ec::{
     pairing::Pairing,
     scalar_mul::variable_base::VariableBaseMSM,
 };
-use ark_ff::{One, Zero, Field, 
+use ark_ff::{One, Zero, 
     batch_inversion
 };
+use ark_ec::CurveGroup;
 use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
 use ark_poly::{GeneralEvaluationDomain, EvaluationDomain};
 use merlin::Transcript;
-use crate::helper::{divide_by_x_minus_k, evaluate_one_lagrange, linear_combination_poly};
+use crate::helper::{divide_by_x_minus_k, evaluate_one_lagrange, interpolate_evaluate_one_no_repeat, linear_combination_poly};
 use crate::uni_trivial_kzg::{self, KZG, DeKZG};
 use crate::biv_trivial_kzg::BivariateKZG;
 use crate::{helper::{interpolate_on_trivial_domain, generator_numerator_polynomial, generate_powers}, transcript::ProofTranscript};
@@ -537,33 +538,7 @@ impl<P: Pairing> BivBatchKZG<P> {
         // <Transcript as ProofTranscript<P>>::append_point(transcript, b"combined_polynomial_x_beta", &proof.0);
         // let eta = <Transcript as ProofTranscript<P>>::challenge_scalar(
         //     transcript, b"random_evaluate_point");
-        let linear_factors = generate_powers(challenge, coms.len());
-
-        // check2: validity of \sum_i \gamma^{i-1} (f_i(X, beta) - r_i(X)) * Z_{T_1\R_i}(X) = q(X)Z_{T_1}(X)
-        let alpha = x_points[0][0];
-        let r_alpha = x_points[1][0];
-        let r = x_points[1][1];
-        let r_inv = x_points[2][1];
-        // let zero = x_points[2][2];
-        let r_pow_m = x_points[4][0];
-
-        let num_eval = (eta - alpha) * (eta - r_alpha) * (eta - r) * (eta - r_inv) * eta * (eta - r_pow_m);
-        let right_check2 = num_eval * proof.2;
-
-        let mut aux_num_evals = vec![eta - alpha, (eta - r_alpha) * (eta - r), (eta - alpha) * (eta - r_inv) * eta, eta - r, eta - r_pow_m];
-        batch_inversion::<P::ScalarField>(aux_num_evals.as_mut_slice());
-        let left_check2: P::ScalarField = x_points.par_iter().zip(evals.par_iter()).zip(linear_factors.par_iter()).zip(proof.1.par_iter()).zip(aux_num_evals.par_iter())
-            .map(|((((points, cur_evals), factor), proof), aux_num_eval)| {
-                let polynomial_r = interpolate_on_trivial_domain::<P>(&points, &cur_evals);
-                let eval_r = polynomial_r.evaluate(&eta);
-                let eval_helper = num_eval * aux_num_eval;
-
-                *factor * eval_helper * (*proof - eval_r)
-            }).sum();
-        let check2 = left_check2 == right_check2;
-        assert!(check2);
-
-        let (check1, check3) = rayon::join(
+        let (check1, check2, check3) = par_join_3!(
             || {        
                 let kzg_v_srs = uni_trivial_kzg::UniVerifierSRS::<P> {
                     g: v_srs.g, 
@@ -571,6 +546,32 @@ impl<P: Pairing> BivBatchKZG<P> {
                     h_alpha: v_srs.h_alpha
                 };
                 KZG::<P>::verify(&kzg_v_srs, &proof.0, &eta, &proof.2, &proof.4).unwrap()
+            },
+            || { 
+                let linear_factors = generate_powers(challenge, coms.len());
+
+                // check2: validity of \sum_i \gamma^{i-1} (f_i(X, beta) - r_i(X)) * Z_{T_1\R_i}(X) = q(X)Z_{T_1}(X)
+                let alpha = x_points[0][0];
+                let r_alpha = x_points[1][0];
+                let r = x_points[1][1];
+                let r_inv = x_points[2][1];
+                // let zero = x_points[2][2];
+                let r_pow_m = x_points[4][0];
+
+                let num_eval = (eta - alpha) * (eta - r_alpha) * (eta - r) * (eta - r_inv) * eta * (eta - r_pow_m);
+                let right_check2 = num_eval * proof.2;
+
+                let mut aux_num_evals = vec![eta - alpha, (eta - r_alpha) * (eta - r), (eta - alpha) * (eta - r_inv) * eta, eta - r, eta - r_pow_m];
+                batch_inversion::<P::ScalarField>(aux_num_evals.as_mut_slice());
+                let left_check2: P::ScalarField = x_points.par_iter().zip(evals.par_iter()).zip(linear_factors.par_iter()).zip(proof.1.par_iter()).zip(aux_num_evals.par_iter())
+                    .map(|((((points, cur_evals), factor), proof), aux_num_eval)| {
+                        let eval_r = interpolate_evaluate_one_no_repeat(&points, &cur_evals, &eta);
+                        let eval_helper = num_eval * aux_num_eval;
+
+                        *factor * eval_helper * (*proof - eval_r)
+                    }).sum();
+                
+                    left_check2 == right_check2
             },
             || {
                 let eta_beta = (eta, y_point.clone());
@@ -593,16 +594,19 @@ impl<P: Pairing> BivBatchKZG<P> {
         assert_eq!(evals.len(), coms.len());
 
         let (x, y) = point;
-        let mut linear_factors = vec![P::ScalarField::one(); coms.len()];
-        linear_factors.par_iter_mut().enumerate().for_each(|(i, val)| {
-            *val = challenge.pow([i as u64]);
-        });
-        let linear_combination: P::G1 = coms.par_iter().zip(evals.par_iter()).zip(linear_factors.par_iter())
-            .map(|((com, eval), factor)| (*com - v_srs.g * eval) * factor)
-            .sum();
 
         let (left, right1, right2) = par_join_3!(
-            || P::pairing(linear_combination, v_srs.h), 
+            || {
+                    let mut challenge_vector = generate_powers(challenge, coms.len());
+                    let extra_scalar = -evals.iter().zip(challenge_vector.iter())
+                        .map(|(eval, factor)| *eval * factor)
+                        .sum::<P::ScalarField>();
+                    challenge_vector.push(extra_scalar);
+                    let mut bases = P::G1::normalize_batch(&coms);
+                    bases.push(v_srs.g);
+                    let linear_combination = P::G1MSM::msm_unchecked_par_auto(&bases, &challenge_vector);
+                    P::pairing(linear_combination, v_srs.h)
+                }, 
             || P::pairing(proof.0, v_srs.h_alpha - v_srs.h * x),
             || P::pairing(proof.1, v_srs.h_beta - v_srs.h * y)
         );
