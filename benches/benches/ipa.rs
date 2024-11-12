@@ -7,7 +7,6 @@ use merlin::Transcript;
 use my_ipa::{ipa::IPA, ipa_from_laurent};
 use my_kzg::uni_batch_kzg::BatchKZG;
 use std::time::Duration;
-
 use criterion::{criterion_group, criterion_main, Criterion};
 
 fn configure_criterion() -> Criterion {
@@ -16,6 +15,7 @@ fn configure_criterion() -> Criterion {
         .sample_size(10) 
 }
 
+// This is the benchmark of inner product arguments, following the inner product PIOP + univariate KZG
 
 fn ipa_commit_and_prove_benchmark(c: &mut Criterion) {
     let log_sizes = vec![12, 14, 16, 18, 20, 22, 24];
@@ -94,7 +94,6 @@ fn ipa_commit_and_prove_benchmark(c: &mut Criterion) {
                     &domain,
                     &mut transcript,
                 );
-                // println!("Improved IPA proof size is {} bytes", IPA::<Bls12_381>::get_proof_size(&proof));
             });
         });
 

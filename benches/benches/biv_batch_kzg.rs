@@ -6,9 +6,7 @@ use ark_bls12_381::Bls12_381;
 use ark_ff::{UniformRand, One};
 use my_kzg::biv_trivial_kzg::{BivariateKZG, BivariatePolynomial};
 use my_kzg::biv_batch_kzg::BivBatchKZG;
-use ark_poly::polynomial::{
-    univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial,
-};
+use ark_poly::polynomial::{univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial};
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use std::time::Duration;
 use merlin::Transcript;
@@ -21,6 +19,9 @@ fn configure_criterion() -> Criterion {
         .measurement_time(Duration::new(10, 0)) 
         .sample_size(10) 
 }
+
+// This is the benchmark of bivariate batch KZG to support opening multiple points on multiple polynomials
+// Further, the points on Y-dimension are all the same.
 
 const POLYNOMIAL_NUMBER: usize = 5;
 const X_POINT_NUMBER: usize = 4;

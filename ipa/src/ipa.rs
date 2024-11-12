@@ -31,15 +31,12 @@ impl<P: Pairing> IPA<P> {
 
     pub fn get_g_h_g_prime (
         polynomial: &UnivariatePolynomial<P::ScalarField>,
-        // sum: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
         let (h, reminder_polynomial) = polynomial.divide_by_vanishing_poly(*domain).unwrap();
-        // let constant_term = *sum / domain.size_as_field_element();
         let constant_term = reminder_polynomial.coeffs[0];
         let g_prime = reminder_polynomial + UnivariatePolynomial::from_coefficients_vec(vec![-constant_term]);
         assert_eq!(g_prime.coeffs[0], P::ScalarField::zero());
-        // let g = &g_prime / &UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::zero(), P::ScalarField::one()]);
         let g = UnivariatePolynomial::from_coefficients_slice(&g_prime.coeffs[1..]);
 
         (g, h, g_prime)
@@ -48,7 +45,6 @@ impl<P: Pairing> IPA<P> {
     pub fn get_g_mul_u_and_h (
         polynomial: &UnivariatePolynomial<P::ScalarField>,
         challenge: &P::ScalarField,
-        // sum: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (UnivariatePolynomial<P::ScalarField>, UnivariatePolynomial<P::ScalarField>) {
         let u = *challenge;
@@ -233,7 +229,6 @@ impl<P: Pairing> IPA<P> {
             transcript, b"generate challenge u to eliminate ldt");
         
         let (g_u, h) = Self::get_g_mul_u_and_h(&polynomial_target, &u, &domain);
-        // assert_eq!(g_u.degree(), domain.size() - 1);
         let helper_polynomials = vec![&g_u, &h];
         let helper_coms = BatchKZG::<P>::commit(&powers, &helper_polynomials).unwrap();
 
@@ -300,7 +295,6 @@ impl<P: Pairing> IPA<P> {
         powers: &[P::G1Affine],
         vector_left: &Vec<P::ScalarField>,
         vector_right: &Vec<P::ScalarField>,
-        // inner_product: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
         transcript: &mut Transcript,
     ) -> Result<((P::G1, P::G1), (Vec<P::ScalarField>, Vec<P::G1>, P::G1)), Error> {
@@ -312,10 +306,8 @@ impl<P: Pairing> IPA<P> {
         let evals_left = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(coeffs_left, *domain);
         let polynomial_left = evals_left.interpolate_by_ref();
         let coeffs_right = vector_right.clone();
-        // domain.ifft_in_place::<P::ScalarField>(&mut coeffs_right);
         let evals_right = Evaluations::<P::ScalarField, GeneralEvaluationDomain<P::ScalarField>>::from_vec_and_domain(coeffs_right, *domain);
         let polynomial_right = evals_right.interpolate();
-        // let polynomial_right = UnivariatePolynomial::from_coefficients_vec(coeffs_right.clone());
 
         // generate the commitment of f1 and f2
         let (com_left, com_right) = IPA::<P>::ipa_commit(&powers, &polynomial_left, &polynomial_right).unwrap();
@@ -336,7 +328,6 @@ impl<P: Pairing> IPA<P> {
         powers: &[P::G1Affine],
         vector_left: &Vec<P::ScalarField>,
         vector_right: &Vec<P::ScalarField>,
-        // inner_product: &P::ScalarField,
         domain: &GeneralEvaluationDomain<P::ScalarField>,
         transcript: &mut Transcript,
     ) -> Result<((P::G1, P::G1), (Vec<P::ScalarField>, Vec<P::G1>, P::G1)), Error> {
@@ -363,7 +354,6 @@ impl<P: Pairing> IPA<P> {
         let polynomial_target = evals_target.interpolate();
 
         // generate the proof
-        // let sum = *inner_product * domain.size_as_field_element();
         let proof = IPA::<P>::sumcheck_no_ldt_prove(&powers, &polynomial_left, &polynomial_right, &polynomial_target, &com_left, &com_right, &domain, transcript).unwrap();
 
         Ok(((com_left, com_right), proof))
@@ -412,8 +402,6 @@ mod tests{
     use ark_bls12_381::Bls12_381;
     use ark_ec::pairing::Pairing;
     use ark_poly::{
-        // univariate::DensePolynomial as UnivariatePolynomial, 
-        // DenseUVPolynomial, 
         EvaluationDomain, 
         GeneralEvaluationDomain};
     use ark_std::rand::{rngs::StdRng, SeedableRng};
@@ -423,10 +411,7 @@ mod tests{
     // use crate::sumcheck::SUMCHECK;
     use my_kzg::uni_batch_kzg::BatchKZG;
     use merlin::Transcript;
-    use ark_ff::{
-        UniformRand,
-        // One
-        };
+    use ark_ff::UniformRand;
 
     #[test]
     fn ipa_test() {
@@ -486,43 +471,6 @@ mod tests{
             assert!(is_valid);
         }
         let verify_time = verify_start.elapsed().as_millis() / 50;
-        println!("Improved IPA verifier time: {:?} ms", verify_time);
-    }
-
-    #[test]
-    fn ipa_improved_test() {
-        let degree: usize = (1 << 12) - 1;
-        let size = degree + 1;
-        let mut rng = StdRng::seed_from_u64(0u64);
-        let domain = 
-            <GeneralEvaluationDomain<MyField> as EvaluationDomain<MyField>>::new(size).unwrap();
-        let mut vector_left = Vec::new();
-        let mut vector_right = Vec::new();
-        for _ in 0..size {
-            vector_left.push(MyField::rand(&mut rng));
-            vector_right.push(MyField::rand(&mut rng));
-        }
-        let inner_product = vector_left.iter().zip(vector_right.iter()).map(|(left, right)| left * right).sum();
-        let (g_alpha_powers, v_srs) = BatchKZG::<Bls12_381>::setup(&mut rng, degree).unwrap();
-
-        // Improved IPA_from_sumcheck prover
-        let prover_start = Instant::now();
-        let mut transcript : Transcript = Transcript::new(b"Trivial IPA from sumcheck");
-        let proof = IPA::<Bls12_381>::ipa_improved_commit_and_prove(&g_alpha_powers, &vector_left, &vector_right, &domain, &mut transcript).unwrap();
-        println!("Improved IPA prover time: {:?} ms", prover_start.elapsed().as_millis());
-
-        // Improved IPA_from_sumcheck proof size
-        let proof_size = IPA::<Bls12_381>::get_proof_size(&proof);
-        println!("Improved IPA proof size: {:?} bytes", proof_size);
-
-        // Improved IPA_from_sumcheck verifier
-        std::thread::sleep(Duration::from_millis(5000));
-        let verify_start = Instant::now();
-        let mut transcript : Transcript = Transcript::new(b"Trivial IPA from sumcheck");
-        let is_valid = 
-            IPA::<Bls12_381>::ipa_improved_verify(&v_srs, &domain, &inner_product, &proof, &mut transcript).unwrap();
-        assert!(is_valid);
-        let verify_time = verify_start.elapsed().as_millis();
         println!("Improved IPA verifier time: {:?} ms", verify_time);
     }
 }

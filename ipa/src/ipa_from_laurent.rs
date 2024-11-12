@@ -167,7 +167,7 @@ impl<P: Pairing> IPA<P> {
         // verify evaluation relation
         let constant_term = alpha.pow(&vec![(domain.size() - 1) as u64]);
         let check3 = eval_vec[0] * eval_f_2 * constant_term == eval_vec[1] + constant_term * inner_product + constant_term * alpha * eval_vec[2];
-        // assert!(check3);
+        assert!(check3);
 
         // verify ldt
         let check4 = (eval_vec[1] * alpha == eval_vec[3]) && (eval_vec[2] * alpha == eval_vec[4]);
@@ -184,21 +184,15 @@ mod tests{
     use ark_bls12_381::Bls12_381;
     use ark_ec::pairing::Pairing;
     use ark_poly::{
-        // univariate::DensePolynomial as UnivariatePolynomial, 
-        // DenseUVPolynomial, 
         EvaluationDomain, 
         GeneralEvaluationDomain};
     use ark_std::rand::{rngs::StdRng, SeedableRng};
     use std::time::{Instant, Duration};
     type MyField = <Bls12_381 as Pairing>::ScalarField;
     use crate::ipa_from_laurent::IPA;
-    // use crate::sumcheck::SUMCHECK;
     use my_kzg::uni_batch_kzg::BatchKZG;
     use merlin::Transcript;
-    use ark_ff::{
-        UniformRand,
-        // One
-        };
+    use ark_ff::UniformRand;
 
     #[test]
     fn ipa_from_laurent_test() {
