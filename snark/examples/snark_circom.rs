@@ -51,8 +51,9 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let time = Instant::now();
     // In Pianist repo, 3 rollup transaction R1CS constraint number is 1<<18, which is 1 tx of ours
     let cs = ConstraintSystem::<ConstraintF>::new_ref();
-    let reader = BufReader::new(File::open("data/r1cs").unwrap());
-    let r1cs = R1CSFile::<ConstraintF>::new(reader).unwrap();
+    let reader = BufReader::new(File::open("data/circuit.r1cs").unwrap());
+    let witness_reader = BufReader::new(File::open("data/witness.json").unwrap());
+    let r1cs = R1CSFile::<ConstraintF>::new(reader, witness_reader).unwrap();
     
     // Insert our public inputs as key value pairs
     r1cs.generate_constraints(cs.clone()).unwrap();

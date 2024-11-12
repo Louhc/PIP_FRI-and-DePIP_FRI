@@ -3,7 +3,7 @@
 //! Spec: <https://github.com/iden3/r1csfile/blob/master/doc/r1cs_bin_format.md>
 use ark_ff::PrimeField;
 use byteorder::{LittleEndian, ReadBytesExt};
-use std::io::{Error, ErrorKind};
+use std::io::{BufRead, BufReader, Error, ErrorKind};
 
 use ark_serialize::{SerializationError, SerializationError::IoError};
 use ark_std::io::{Read, Seek, SeekFrom};
@@ -24,6 +24,7 @@ pub struct R1CSFile<F: PrimeField> {
     pub header: Header,
     pub constraints: Vec<Constraints<F>>,
     pub wire_mapping: Vec<u64>,
+    pub witness: Vec<F>,
 }
 
 impl<F: PrimeField> R1CSFile<F> {
@@ -32,7 +33,7 @@ impl<F: PrimeField> R1CSFile<F> {
     /// ```rust,ignore
     /// let reader = BufReader::new(Cursor::new(&data[..]));
     /// ```
-    pub fn new<R: Read + Seek>(mut reader: R) -> IoResult<R1CSFile<F>> {
+    pub fn new<R1: Read + Seek, R2: BufRead + Seek>(mut reader: R1, witness_reader: R2) -> IoResult<R1CSFile<F>> {
         let mut magic = [0u8; 4];
         reader.read_exact(&mut magic)?;
         if magic != [0x72, 0x31, 0x63, 0x73] {
@@ -98,7 +99,7 @@ impl<F: PrimeField> R1CSFile<F> {
 
         reader.seek(SeekFrom::Start(*constraint_offset?))?;
 
-        let constraints = read_constraints::<&mut R, F>(&mut reader, &header)?;
+        let constraints = read_constraints::<&mut R1, F>(&mut reader, &header)?;
 
         let wire2label_offset = sec_offsets.get(&wire2label_type).ok_or_else(|| {
             Error::new(
@@ -117,12 +118,14 @@ impl<F: PrimeField> R1CSFile<F> {
         });
 
         let wire_mapping = read_map(&mut reader, *wire2label_size?, &header)?;
+        let witness = read_witness(witness_reader);
 
         Ok(R1CSFile {
             version,
             header,
             constraints,
             wire_mapping,
+            witness
         })
     }
 }
@@ -229,6 +232,19 @@ fn read_map<R: Read>(mut reader: R, size: u64, header: &Header) -> IoResult<Vec<
     Ok(vec)
 }
 
+fn read_witness<F: PrimeField>(reader: impl BufRead) -> Vec<F> {
+    reader.lines()
+        .skip(1)
+        .filter_map(|line| {
+            let line = line.unwrap();
+            if line.len() <= 1 {
+                return None
+            }
+            Some(F::from_str(&line[2..line.len() - 1])
+                .unwrap_or_else(|_| panic!("Cannot parse witness line")))
+        })
+        .collect()
+}
 
 impl<F: PrimeField> ConstraintSynthesizer<F> for R1CSFile<F> {
     fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> Result<(), SynthesisError> {
@@ -241,13 +257,13 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for R1CSFile<F> {
         // Start from 1 because Arkworks implicitly allocates One for the first input
         for i in 1..num_inputs {
             cs.new_input_variable(|| {
-                Ok(F::from(0u32))
+                Ok(self.witness[wire_mapping[i] as usize])
             })?;
         }
 
         for i in 0..num_aux {
             cs.new_witness_variable(|| {
-                Ok(F::from(0u32))
+                Ok(self.witness[wire_mapping[i + num_inputs] as usize])
             })?;
         }
 
@@ -282,6 +298,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for R1CSFile<F> {
 mod tests {
     use super::*;
     use ark_bn254::Fr;
+    use ark_ff::Field;
     use ark_std::io::{BufReader, Cursor};
 
     #[test]
@@ -338,8 +355,18 @@ mod tests {
     "
         );
 
+        let witness_file = r#"[
+ "1"
+,"5530040510226620654944553327264296993736976221390380964712735221581405099250"
+,"257"
+,"13140975706661203784805217240537482476556143928013013185721039885503232354236"
+,"0"
+]
+"#;
+
         let reader = BufReader::new(Cursor::new(&data[..]));
-        let file = R1CSFile::<Fr>::new(reader).unwrap();
+        let witness_reader = BufReader::new(Cursor::new(&witness_file[..]));
+        let file = R1CSFile::<Fr>::new(reader, witness_reader).unwrap();
         assert_eq!(file.version, 1);
 
         assert_eq!(file.header.field_size, 32);
@@ -365,5 +392,9 @@ mod tests {
 
         assert_eq!(file.wire_mapping.len(), 7);
         assert_eq!(file.wire_mapping[1], 3);
+
+        assert_eq!(file.witness.len(), 5);
+        assert_eq!(file.witness[0], Fr::ONE);
+        assert_eq!(file.witness[4], Fr::ZERO);
     }
 }
