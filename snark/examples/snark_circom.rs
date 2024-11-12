@@ -131,6 +131,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
 
     // prover
     println!("Prover {:?} starts to prove", sub_prover_id);
+    let time = Instant::now();
     let timer1 = start_timer!(|| "Prover starts to prove");
     let mut transcript : Transcript = Transcript::new(b"Random R1CS");
     let timer2 = start_timer!(|| "Build r1cs vecs and polys");
@@ -149,6 +150,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
         &m_powers, &x_srs, &y_srs, &m_srs, &m_y_srs,  &sub_wit_polys, &sub_pub_polys, &pre_mes_prover,
         &challenge_r, &domain_x, &domain_y, &domain_m, &mut transcript);
     end_timer!(timer1);
+    println!("Prove time: {:?}", time.elapsed());
 
     if Net::am_master() {
         let proof_size = DeSNARKLog::<Bn254>::get_proof_size(proof.as_ref().unwrap());
