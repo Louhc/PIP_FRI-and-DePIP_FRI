@@ -18,7 +18,7 @@ use ark_relations::r1cs::{ConstraintSystem, ConstraintSynthesizer};
 use my_snark::snark_log::DeSNARKLog;
 use my_snark::indexer::Indexer;
 use my_ipa::r1cs::R1CSVectors;
-use ark_bn254::Bn254;
+// use ark_bn254::Bn254;
 use ark_std::{start_timer, end_timer};
 use ark_bls12_381::Bls12_381;
 
@@ -40,7 +40,7 @@ fn init() -> (usize, usize, usize) {
     Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
     let l = Net::n_parties();
     let sub_prover_id = Net::party_id();
-    let m = 1 << 22;
+    let m = 1 << 18;
     (m, l, sub_prover_id)
 }
 
@@ -100,6 +100,7 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     // prover
     println!("Prover {:?} starts to prove", sub_prover_id);
     let timer1 = start_timer!(|| "Prover starts to prove");
+    let time = Instant::now();
     let mut transcript : Transcript = Transcript::new(b"Random R1CS");
     let timer2 = start_timer!(|| "Build r1cs vecs and polys");
 
@@ -110,6 +111,7 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
         &m_powers, &x_srs, &y_srs, &m_srs, &m_y_srs, &sub_wit_polys, &sub_pub_polys, &pre_mes_prover,
         &challenge_r, &domain_x, &domain_y, &domain_m, &mut transcript);
     end_timer!(timer1);
+    println!("Prover {:?} proving time: {:?}", sub_prover_id, time.elapsed());
 
     if Net::am_master() {
         let proof_size = DeSNARKLog::<E>::get_proof_size(proof.as_ref().unwrap());
@@ -131,7 +133,7 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
 
 fn main() {
     let (m, l, sub_prover_id) = init();
-    test_helper::<Bn254>(m, l, sub_prover_id);
+    // test_helper::<Bn254>(m, l, sub_prover_id);
     test_helper::<Bls12_381>(m, l, sub_prover_id);
     Net::deinit();
 }

@@ -743,13 +743,13 @@ impl<P: Pairing> PreProver<P> {
         polys_f2: &Vec<UnivariatePolynomial<P::ScalarField>>,
         m_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (Vec<P::G1>, Vec<P::G1>) {
-        let time = Instant::now();
+        // let time = Instant::now();
         let coms_f1 = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &sub_polys_f1.iter().collect::<Vec<_>>(), m_domain);
-        println!("Prover {:?} commits f1 time: {:?}", sub_prover_id, time.elapsed());
+        // println!("Prover {:?} commits f1 time: {:?}", sub_prover_id, time.elapsed());
     
         // REPEAT COMPUTE: only need commitments to f2's but all sub-provers have f2's
         // here we use split msm to commit to avoid the problem
-        let time = Instant::now();
+        // let time = Instant::now();
         let size = x_srs.len() / Net::n_parties();
         let start = sub_prover_id * size;
         let end = start + size;
@@ -773,7 +773,7 @@ impl<P: Pairing> PreProver<P> {
         } else {
             vec![P::G1::zero(); 9]
         };
-        println!("Prover {:?} commits f2 time: {:?}", sub_prover_id, time.elapsed());
+        // println!("Prover {:?} commits f2 time: {:?}", sub_prover_id, time.elapsed());
 
         let coms_f1 = if Net::am_master() {
             let coms_f1 = coms_f1.unwrap();
