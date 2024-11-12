@@ -11,7 +11,7 @@ use ark_poly::polynomial::{
 };
 use ark_poly::{GeneralEvaluationDomain, EvaluationDomain};
 use merlin::Transcript;
-use crate::helper::{divide_by_x_minus_k, evaluate_one_lagrange, interpolate_evaluate_one_no_repeat, linear_combination_poly};
+use crate::helper::{divide_by_x_minus_k, evaluate_one_lagrange, interpolate_evaluate_one_no_repeat};
 use crate::uni_trivial_kzg::{self, KZG, DeKZG};
 use crate::biv_trivial_kzg::BivariateKZG;
 use crate::{helper::{interpolate_on_trivial_domain, generator_numerator_polynomial, generate_powers}, transcript::ProofTranscript};
@@ -377,12 +377,26 @@ impl<P: Pairing> BivBatchKZG<P> {
             .par_iter()
             .enumerate()
             .map(|(j, x_point)| {
-                let polynomial_f_x_beta = sub_polynomials[j] * eval_lagrange;
-                let combined_polynomial_slice = &polynomial_f_x_beta / &generator_numerator_polynomial::<P>(x_point);
-                combined_polynomial_slice
+                println!("{}", sub_polynomials[j].coeffs.len());
+                if x_point.len() <= 3 {
+                    let mut polynomial = sub_polynomials[j].clone();
+                    for point in x_point {
+                        divide_by_x_minus_k(&mut polynomial, point);
+                    }
+                    polynomial
+                } else {
+                    sub_polynomials[j] / &generator_numerator_polynomial::<P>(x_point)
+                }
             })
             .collect();
-        let combined_polynomial = linear_combination_poly::<P>(&results, &gamma);
+        let mut factors = generate_powers(&gamma, results.len());
+        factors.iter_mut().for_each(|factor| *factor *= eval_lagrange);
+        
+        let combined_polynomial =
+            results.par_iter().zip(factors.par_iter())
+            .map(|(poly, factor)| poly * *factor)
+            .reduce_with(|acc, poly| acc + poly)
+            .unwrap_or(UnivariatePolynomial::zero());
 
         let polynomial_q_slice = &combined_polynomial;
         // println!("Prover {:?} proof1 before_msm time: {:?}", sub_prover_id, time.elapsed());

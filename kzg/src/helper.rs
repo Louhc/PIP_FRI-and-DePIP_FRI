@@ -209,6 +209,10 @@ pub fn divide_by_x_minus_k<F: Field>(
     if poly.coeffs.len() == 0 {
         return;
     }
+    if k.is_zero() {
+        poly.coeffs.remove(0);
+        return;
+    }
 
     let mut cur = poly.coeffs[poly.coeffs.len() - 1];
     for i in (0..poly.coeffs.len() - 1).rev() {
