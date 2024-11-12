@@ -666,7 +666,6 @@ impl<P: Pairing> DeSNARKLog<P> {
                     vec![r_pow_m]];
                 let mut coms_wit_and_upper_r_polys = coms_wit_polys.clone();
                 coms_wit_and_upper_r_polys.push(com_upper_r.clone());
-
                 BivBatchKZG::<P>::verify_at_same_y_optimized(&v_srs, &coms_wit_and_upper_r_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_upper_r_polys, &gamma, eta, theta).unwrap()
             }, 
             || {
@@ -691,7 +690,7 @@ impl<P: Pairing> DeSNARKLog<P> {
         println!("Verifier fa, fb, fc, fw, t, f2, q2 open check: {:?}", time.elapsed());
 
         let time = Instant::now();
-        let (check7, check9, check10, check12) = par_join_4!(
+        let (check7, check9) = rayon::join(
             || {
                 let mut coms_val_upper_lower_f1 = coms_val.clone();
                 coms_val_upper_lower_f1.extend(&coms_upper_a.clone());
@@ -700,7 +699,9 @@ impl<P: Pairing> DeSNARKLog<P> {
                 coms_val_upper_lower_f1.extend(&coms_f1.clone());
                 BivBatchKZG::<P>::verify(&m_v_srs, &coms_val_upper_lower_f1, &(delta, zeta), &evals_val_upper_lower_a_b_f1, &proof_val_upper_lower_a_b_f1, &gamma).unwrap()
             }, 
-            || BivBatchKZG::<P>::verify(&m_v_srs, &coms_f1, &(P::ScalarField::zero(), P::ScalarField::zero()), &evals_f1, &proof_f1, &gamma).unwrap(), 
+            || BivBatchKZG::<P>::verify(&m_v_srs, &coms_f1, &(P::ScalarField::zero(), P::ScalarField::zero()), &evals_f1, &proof_f1, &gamma).unwrap()
+        );
+        let (check10, check12) = rayon::join(
             || BivBatchKZG::<P>::verify(&v_srs, &vec![com_l.clone()], &(beta, zeta), &eval_l, &proof_l, &gamma).unwrap(), 
             || KZG::<P>::verify(&uni_m_v_srs_for_x, &com_q1, &delta, &eval_q1, &proof_q1).unwrap()
         );

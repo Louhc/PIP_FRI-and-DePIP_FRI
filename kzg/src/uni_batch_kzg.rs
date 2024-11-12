@@ -3,6 +3,7 @@ use ark_ec::{
     scalar_mul::variable_base::VariableBaseMSM,
     CurveGroup, Group,
 };
+use ark_ff::Field;
 use ark_ff::{One, UniformRand, Zero, batch_inversion};
 use ark_poly::{polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial}, 
@@ -323,16 +324,21 @@ impl<P: Pairing> BatchKZG<P> {
         let num_eval_3 = z - delta;
         let num_eval_1 = (z - P::ScalarField::one()) * num_eval_3 * (z - *w * *delta);
         let num_eval_2 = z * num_eval_3;
-        let num_evals = vec![num_eval_1, num_eval_1, num_eval_1,
-        num_eval_2, num_eval_2, num_eval_2,
-        num_eval_2, num_eval_2, num_eval_2,
-        num_eval_2, num_eval_2, num_eval_2,
-        num_eval_3, 
-        num_eval_3, num_eval_3, num_eval_3,
-        num_eval_3, num_eval_3, num_eval_3,
-        num_eval_3, num_eval_3, num_eval_3];
-
         let eval_zt = num_eval_1 * z;
+
+        let num_eval_3 = num_eval_3.inverse().unwrap();
+        let num_eval_1 = num_eval_1.inverse().unwrap();
+        let num_eval_2 = num_eval_2.inverse().unwrap();
+
+        let num_evals = vec![num_eval_1, num_eval_1, num_eval_1,
+            num_eval_2, num_eval_2, num_eval_2,
+            num_eval_2, num_eval_2, num_eval_2,
+            num_eval_2, num_eval_2, num_eval_2,
+            num_eval_3, 
+            num_eval_3, num_eval_3, num_eval_3,
+            num_eval_3, num_eval_3, num_eval_3,
+            num_eval_3, num_eval_3, num_eval_3];
+
         let polys_r: Vec<UnivariatePolynomial<P::ScalarField>> = points.par_iter().
             zip(evals.par_iter()).
             map(|(row_points, row_evals)| 
@@ -341,19 +347,16 @@ impl<P: Pairing> BatchKZG<P> {
         let auxiliary_evals: Vec<P::ScalarField> = num_evals.par_iter().
             zip(challenge_vector.par_iter()).
             map(|(eval, linear_factor)|
-            *linear_factor * eval_zt / eval
-            ).collect();
-
-        // generate evals_r
-        let exps: Vec<P::G1> = polys_r.par_iter().
-            zip(coms.par_iter()).
-            map(|(poly_r, com)| 
-            *com - v_srs.g.clone() * poly_r.evaluate(&z)
+            *linear_factor * eval_zt * eval
             ).collect();
 
         // generate F
-        let f: P::G1 = auxiliary_evals.par_iter().zip(exps.par_iter()).
-            map(|(eval, exp)| *exp * *eval).sum();
+        let f: P::G1 =  polys_r.par_iter().
+            zip(coms.par_iter()).
+            zip(auxiliary_evals.par_iter()).
+            map(|((poly_r, com), eval)| 
+            (*com - v_srs.g.clone() * poly_r.evaluate(&z)) * eval
+        ).sum();
         let f = f - *com_h * eval_zt;
         
         // final check
@@ -433,7 +436,6 @@ impl<P: Pairing> BatchKZG<P> {
         challenge: &P::ScalarField,
         // transcript: &mut Transcript
     ) -> Result<bool, Error> {
-        assert!(coms.len() >= 1);
         assert!(coms.len() == evals.len());
 
         let challenge_vector = generate_powers(challenge, coms.len());

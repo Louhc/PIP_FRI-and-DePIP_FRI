@@ -3,8 +3,6 @@ name = "benches"
 version = "0.3.0"
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 merlin = "3.0.0"
 rayon = { version = "1", optional = true }
@@ -26,27 +24,8 @@ digest = "0.10.7"
 blake2 = "0.10.6"
 csv = "1"
 
-de_network = { version = "0.1.0", path = "../de_network"}
-structopt = "0.3"
-
 my_kzg = {path = "../kzg"}
 my_ipa = {path = "../ipa"}
-
-
-[[bench]]
-name = "uni_trivial_kzg"
-path = "benches/uni_trivial_kzg.rs"
-harness = false
-
-[[bench]]
-name = "uni_batch_kzg"
-path = "benches/uni_batch_kzg.rs"
-harness = false
-
-[[bench]]
-name = "biv_trivial_kzg"
-path = "benches/biv_trivial_kzg.rs"
-harness = false
 
 [[bench]]
 name = "biv_batch_kzg"
