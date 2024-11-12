@@ -252,18 +252,16 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for R1CSFile<F> {
         let num_variables = (1 + self.header.n_wires) as usize;
         let num_aux = num_variables - num_inputs;
 
-        let wire_mapping = &self.wire_mapping;
-
         // Start from 1 because Arkworks implicitly allocates One for the first input
         for i in 1..num_inputs {
             cs.new_input_variable(|| {
-                Ok(self.witness[wire_mapping[i] as usize])
+                Ok(self.witness[i - 1])
             })?;
         }
 
         for i in 0..num_aux {
             cs.new_witness_variable(|| {
-                Ok(self.witness[wire_mapping[i + num_inputs] as usize])
+                Ok(self.witness[i + num_inputs - 1])
             })?;
         }
 
