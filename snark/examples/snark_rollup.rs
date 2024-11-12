@@ -144,7 +144,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
         for _ in 0..repetitions {
             let mut transcript : Transcript = Transcript::new(b"Random R1CS");
             let is_valid = DeSNARKLog::<ConstraintP>::r1cs_verify_preprocess(&v_srs, &m_v_srs, 
-                &pre_mes_verifier, &proof.unwrap(), &domain_x, &domain_y, &domain_m, &challenge_r, &mut transcript);
+                &pre_mes_verifier, proof.as_ref().unwrap(), &domain_x, &domain_y, &domain_m, &challenge_r, &mut transcript);
             assert!(is_valid);
         }
     }
