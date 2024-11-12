@@ -377,7 +377,6 @@ impl<P: Pairing> BivBatchKZG<P> {
             .par_iter()
             .enumerate()
             .map(|(j, x_point)| {
-                println!("{}", sub_polynomials[j].coeffs.len());
                 if x_point.len() <= 3 {
                     let mut polynomial = sub_polynomials[j].clone();
                     for point in x_point {

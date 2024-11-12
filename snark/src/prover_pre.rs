@@ -890,54 +890,29 @@ impl<P: Pairing> PreProver<P> {
         delta: &P::ScalarField,
         gamma: &P::ScalarField,
     ) -> (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>, P::G1) {
-        
         // evaluate upper polys Alow, Ahigh, B plus L(beta) evaluations on delta and beta
-        let (evals_first, evals_second, evals_third): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = par_join_3!(
+        par_join_4!(
             || {
-                let polys = vec![&val_polys.val_pa, &val_polys.val_pb, &val_polys.val_pc, &upper_a_t_polys.a_pa_low];
-                polys.par_iter().map(|&poly| poly.evaluate(&delta)).collect()
+                let polys = vec![&val_polys.val_pa, &val_polys.val_pb, &val_polys.val_pc, &upper_a_t_polys.a_pa_low,
+                &upper_a_t_polys.a_pa_high, &upper_a_t_polys.a_pb_low, &upper_a_t_polys.a_pb_high, &upper_a_t_polys.a_pc_low,
+                &upper_a_t_polys.a_pc_high, &upper_b_t_polys.b_pa, &upper_b_t_polys.b_pb, &upper_b_t_polys.b_pc];
+                let mut evals = polys.par_iter().map(|&poly| poly.evaluate(&delta)).collect::<Vec<_>>();
+                evals.push(*eval_beta);
+                evals
             }, 
             || {
-                let polys = vec![&upper_a_t_polys.a_pa_high, &upper_a_t_polys.a_pb_low, &upper_a_t_polys.a_pb_high, &upper_a_t_polys.a_pc_low];
+                let polys = vec![&lower_a_b_polys.la_pa_low, &lower_a_b_polys.la_pa_high, &lower_a_b_polys.la_pb_low,
+                &lower_a_b_polys.la_pb_high, &lower_a_b_polys.la_pc_low, &lower_a_b_polys.la_pc_high,
+                &lower_a_b_polys.lb_pa, &lower_a_b_polys.lb_pb, &lower_a_b_polys.lb_pc];
                 polys.par_iter().map(|&poly| poly.evaluate(&delta)).collect()
-            }, 
+            },
             || {
-                let polys = vec![&upper_a_t_polys.a_pc_high, &upper_b_t_polys.b_pa, &upper_b_t_polys.b_pb, &upper_b_t_polys.b_pc];
-                polys.par_iter().map(|&poly| poly.evaluate(&delta)).collect()
+                polys_g3_h3.par_iter().map(|poly| poly.evaluate(&delta)).collect()
+            },
+            || {
+                 BatchKZG::<P>::open(&m_srs, &polys_g3_h3.iter().collect::<Vec<_>>(), &delta, &gamma).unwrap()
             }
-        );
-        let mut val_upper_evals = evals_first;
-        val_upper_evals.extend(evals_second);
-        val_upper_evals.extend(evals_third);
-        val_upper_evals.extend(vec![eval_beta]);
-
-        // evaluate lower polys alow ahigh b evaluations on delta, used only for lookup
-        let (lower_evals_first, lower_evals_second, lower_evals_third): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = par_join_3!(
-            || {
-                let polys = vec![&lower_a_b_polys.la_pa_low, &lower_a_b_polys.la_pa_high, &lower_a_b_polys.la_pb_low ];
-                polys.par_iter().map(|&poly| poly.evaluate(&delta)).collect()
-            }, 
-            || {
-                let polys = vec![ &lower_a_b_polys.la_pb_high, &lower_a_b_polys.la_pc_low, &lower_a_b_polys.la_pc_high];
-                polys.par_iter().map(|&poly| poly.evaluate(&delta)).collect()
-            }, 
-            || {
-                let polys = vec![&lower_a_b_polys.lb_pa, &lower_a_b_polys.lb_pb, &lower_a_b_polys.lb_pc];
-                polys.par_iter().map(|&poly| poly.evaluate(&delta)).collect()
-            }
-        );
-        let mut lower_evals = lower_evals_first;
-        lower_evals.extend(lower_evals_second);
-        lower_evals.extend(lower_evals_third);
-
-        let (eval_g3, eval_h3_low, eval_h3_mid, eval_h3_high): (P::ScalarField, P::ScalarField, P::ScalarField, P::ScalarField) =
-            (
-                polys_g3_h3[0].evaluate(&delta), polys_g3_h3[1].evaluate(&delta), polys_g3_h3[2].evaluate(&delta), polys_g3_h3[3].evaluate(&delta)
-            );
-        let g3_h3_evals = vec![eval_g3, eval_h3_low, eval_h3_mid, eval_h3_high];
-        let proof_g3_h3 = BatchKZG::<P>::open(&m_srs, &polys_g3_h3.iter().collect::<Vec<_>>(), &delta, &gamma).unwrap();
-
-        (val_upper_evals, lower_evals, g3_h3_evals, proof_g3_h3)
+        )
     }
 
     pub fn send_evals_at_delta_beta_and_g3_h3_proofs (
