@@ -516,6 +516,76 @@ impl<P: Pairing> BivBatchKZG<P> {
         Ok(check1 && check2 && check3)
     }
 
+    // specified for snark_pre and snark_nopre
+    pub fn verify_at_same_y_optimized(
+        v_srs: &VerifierSRS<P>,
+        coms: &Vec<P::G1>,
+        x_points: &Vec<Vec<P::ScalarField>>,
+        y_point: &P::ScalarField,
+        evals: &Vec<Vec<P::ScalarField>>,
+        proof: &(P::G1, Vec<P::ScalarField>, P::ScalarField, (P::G1, P::G1), P::G1),
+        transcript: &mut Transcript,
+        challenge: &P::ScalarField
+    ) -> Result<bool, Error> {
+        // let x_points = vec![vec![alpha], 
+        // vec![*r * alpha, *r],
+        // vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()],
+        // vec![*r],
+        // vec![r_pow_m]];
+        
+        <Transcript as ProofTranscript<P>>::append_point(transcript, b"combined_polynomial_x_beta", &proof.0);
+        let eta = <Transcript as ProofTranscript<P>>::challenge_scalar(
+            transcript, b"random_evaluate_point");
+        let linear_factors = generate_powers(challenge, coms.len());
+
+        // check2: validity of \sum_i \gamma^{i-1} (f_i(X, beta) - r_i(X)) * Z_{T_1\R_i}(X) = q(X)Z_{T_1}(X)
+        let alpha = x_points[0][0];
+        let r_alpha = x_points[1][0];
+        let r = x_points[1][1];
+        let r_inv = x_points[2][1];
+        // let zero = x_points[2][2];
+        let r_pow_m = x_points[4][0];
+
+        let num_eval = (eta - alpha) * (eta - r_alpha) * (eta - r) * (eta - r_inv) * eta * (eta - r_pow_m);
+        let right_check2 = num_eval * proof.2;
+
+        let mut aux_num_evals = vec![eta - alpha, (eta - r_alpha) * (eta - r), (eta - alpha) * (eta - r_inv) * eta, eta - r, eta - r_pow_m];
+        batch_inversion::<P::ScalarField>(aux_num_evals.as_mut_slice());
+        let left_check2: P::ScalarField = x_points.par_iter().zip(evals.par_iter()).zip(linear_factors.par_iter()).zip(proof.1.par_iter()).zip(aux_num_evals.par_iter())
+            .map(|((((points, cur_evals), factor), proof), aux_num_eval)| {
+                let polynomial_r = interpolate_on_trivial_domain::<P>(&points, &cur_evals);
+                let eval_r = polynomial_r.evaluate(&eta);
+                let eval_helper = num_eval * aux_num_eval;
+
+                *factor * eval_helper * (*proof - eval_r)
+            }).sum();
+        let check2 = left_check2 == right_check2;
+        assert!(check2);
+
+        let (check1, check3) = rayon::join(
+            || {        
+                let kzg_v_srs = uni_trivial_kzg::UniVerifierSRS::<P> {
+                    g: v_srs.g, 
+                    h: v_srs.h,
+                    h_alpha: v_srs.h_alpha
+                };
+                KZG::<P>::verify(&kzg_v_srs, &proof.0, &eta, &proof.2, &proof.4).unwrap()
+            },
+            || {
+                let mut slice_vector: Vec<P::ScalarField> = proof.1.clone();
+                slice_vector.push(proof.2.clone());
+                let slice: &[P::ScalarField] = &slice_vector;
+                <Transcript as ProofTranscript<P>>::append_scalars(transcript, b"combined_polynomial_x_beta", slice);
+                let theta = <Transcript as ProofTranscript<P>>::challenge_scalar(
+                    transcript, b"batch_kzg_rlc_challenge");
+                let eta_beta = (eta, y_point.clone());
+                BivBatchKZG::verify(&v_srs, &coms, &eta_beta, &proof.1, &proof.3, &theta).unwrap()
+            }
+        );
+
+        Ok(check1 && check2 && check3)
+    }
+
     pub fn verify(
         v_srs: &VerifierSRS<P>,
         coms: &Vec<P::G1>,

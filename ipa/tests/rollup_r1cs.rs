@@ -21,7 +21,7 @@ fn de_rollup_r1cs_satisfication_test() {
     println!("Number of Machines: {}", l);
 
     // Generate the circuit
-
+    // only work for Bls12381
     let cs = ConstraintSystem::<ConstraintF>::new_ref();
     let _circuit = build_multi_tx_circuit::<NUM_TX, L>().generate_constraints(cs.clone()).unwrap();
     assert!(cs.is_satisfied().unwrap());

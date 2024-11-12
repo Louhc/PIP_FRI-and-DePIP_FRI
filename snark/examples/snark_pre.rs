@@ -1,5 +1,5 @@
 // usage
-// RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' cargo build --release --example snark_pre --no-default-features --features "parallel asm"
+// RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' cargo build --release --example snark_pre --no-default-features --features "parallel asm print-trace"
 // RAYON_NUM_THREADS=32 ./snark_linear_verifier_test 2 ../../../snark/data/4
 
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
@@ -86,17 +86,8 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     println!("Setup time: {:?}", time.elapsed());
 
     // indexer works
-    // common preprocess
     let time = Instant::now();
     let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::preprocess(sub_prover_id, m, l, &cs_matrix, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
-    // new preprocess to file
-    // let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
-    // println!("Prover {:?} Indexer time: {:?}", sub_prover_id, time.elapsed());
-    // preprocess from file
-    // let (pre_mes_prover, pre_mes_verifier) = match Indexer::<E>::preprocess_from_file(m, l) {
-    //     Ok(pre) => pre,
-    //     Err(_) => Indexer::<E>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m)
-    // };
     println!("Indexer time: {:?}", time.elapsed());
 
     // Synchronize everyone

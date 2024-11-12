@@ -355,7 +355,7 @@ impl<P: Pairing> DeSNARKLinear<P> {
                                                 vec![evals_wit_polys[3], evals_wit_polys[4], evals_wit_polys[5]],
                                                 vec![evals_wit_polys[6]]];
         let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r]];
-        let check4 = BivBatchKZG::<P>::verify_at_same_y(&v_srs, &coms_wit_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_polys, transcript, &gamma).unwrap();
+        let check4 = BivBatchKZG::<P>::verify_at_same_y_optimized(&v_srs, &coms_wit_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_polys, transcript, &gamma).unwrap();
         assert!(check4);
         println!("Verifier pairing time: {:?}", time.elapsed());
 
