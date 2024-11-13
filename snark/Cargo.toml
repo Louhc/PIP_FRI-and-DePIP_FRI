@@ -39,7 +39,7 @@ blake2 = "0.10.6"
 csv = "1"
 
 [features]
-default = [ "parallel", "r1cs"]
+default = [ "parallel", "r1cs", "asm"]
 parallel = [ "rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel", "ark-relations/parallel"]
 print-trace = [ "ark-std/print-trace" ]
 r1cs = ["ark-r1cs-std", "ark-crypto-primitives/r1cs" ]

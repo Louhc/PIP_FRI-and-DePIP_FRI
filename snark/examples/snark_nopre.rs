@@ -24,6 +24,8 @@ use ark_relations::r1cs::{ConstraintSystem, ConstraintSynthesizer};
 use rayon::prelude::*;
 use my_snark::snark_linear::DeSNARKLinear;
 
+// This is the snark with linear verifier complexity.
+
 #[derive(Debug, StructOpt)]
 #[structopt(name = "example", about = "An example of StructOpt usage.")]
 struct Opt {

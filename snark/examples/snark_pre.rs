@@ -22,6 +22,9 @@ use my_ipa::r1cs::R1CSVectors;
 use ark_std::{start_timer, end_timer};
 use ark_bls12_381::Bls12_381;
 
+// This is the snark with constant verifier commplexity.
+// Use Bn254 or Bls12_381 to change the underlying curves.
+
 #[derive(Debug, StructOpt)]
 #[structopt(name = "example", about = "An example of StructOpt usage.")]
 struct Opt {
@@ -40,7 +43,7 @@ fn init() -> (usize, usize, usize) {
     Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
     let l = Net::n_parties();
     let sub_prover_id = Net::party_id();
-    let m = 1 << 18;
+    let m = 1 << 17;
     (m, l, sub_prover_id)
 }
 
