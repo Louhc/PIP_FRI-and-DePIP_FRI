@@ -296,27 +296,12 @@ impl<P: Pairing> DeSNARKLinear<P> {
             || eval_r.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| *poly * *eval).sum()
         );
 
-        // let eval_pa_alpha_beta: P::ScalarField = pub_polys.polys_pa.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
-        // let eval_pb_alpha_beta: P::ScalarField = pub_polys.polys_pb.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
-        // let eval_pc_alpha_beta: P::ScalarField = pub_polys.polys_pc.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| poly.evaluate(&alpha) * eval).sum();
-        // let mut eval_r = Vec::new();
-        // for i in 0..l {
-        //     let current  = r_pow_m.pow([i as u64]);
-        //     eval_r.push(current);
-        // }
-        // let eval_r_beta: P::ScalarField = eval_r.par_iter().zip(eval_beta.par_iter()).map(|(poly, eval)| *poly * *eval).sum();
-
         let (f1, f2, f3, f4): (P::ScalarField, P::ScalarField, P::ScalarField, P::ScalarField) = par_join_4!(
             || eval_pa_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[2],
             || eval_pb_alpha_beta * evals_wit_polys[0] - eval_r_beta * (evals_wit_polys[4] * r_pow_m + evals_wit_polys[5] * (P::ScalarField::one() - r_pow_m)),
             || eval_pc_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[6],
             || (evals_wit_polys[1] * evals_wit_polys[3] - evals_wit_polys[6]) * eval_r_beta
         );
-
-        // let f1 = eval_pa_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[2];
-        // let f2 = eval_pb_alpha_beta * evals_wit_polys[0] - eval_r_beta * (evals_wit_polys[4] * r_pow_m + evals_wit_polys[5] * (P::ScalarField::one() - r_pow_m));
-        // let f3 = eval_pc_alpha_beta * evals_wit_polys[0] - eval_r_beta * evals_wit_polys[6];
-        // let f4 = (evals_wit_polys[1] * evals_wit_polys[3] - evals_wit_polys[6]) * eval_r_beta;
 
         let (left_hand, right_hand) = rayon::join(
             || {
@@ -336,17 +321,11 @@ impl<P: Pairing> DeSNARKLinear<P> {
 
         // check the validity of g1 and h1
         let time = Instant::now();
-
-        let (check2, check3) = rayon::join(
-            || BatchKZG::<P>::verify(&uni_v_srs_for_x, &coms_g1_h1, &alpha, &evals_g1_h1, &proof_g1_h1, &gamma).unwrap(),
-            || BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g2_h2, &beta, &evals_g2_h2, &proof_g2_h2, &gamma).unwrap()
-        );
-
-        // let check2 = BatchKZG::<P>::verify(&uni_v_srs_for_x, &coms_g1_h1, &alpha, &evals_g1_h1, &proof_g1_h1, &gamma).unwrap();
+        let check2 = BatchKZG::<P>::verify(&uni_v_srs_for_x, &coms_g1_h1, &alpha, &evals_g1_h1, &proof_g1_h1, &gamma).unwrap();
         assert!(check2);
 
         // check the validity of g2 and h2
-        // let check3 = BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g2_h2, &beta, &evals_g2_h2, &proof_g2_h2, &gamma).unwrap();
+        let check3 = BatchKZG::<P>::verify(&uni_v_srs_for_y, &coms_g2_h2, &beta, &evals_g2_h2, &proof_g2_h2, &gamma).unwrap();
         assert!(check3);
 
         // check the validity of bivariate polynomials
@@ -355,17 +334,8 @@ impl<P: Pairing> DeSNARKLinear<P> {
                                                 vec![evals_wit_polys[3], evals_wit_polys[4], evals_wit_polys[5]],
                                                 vec![evals_wit_polys[6]]];
         let x_points = vec![vec![alpha], vec![*r * alpha, *r], vec![alpha, r.inverse().unwrap(), P::ScalarField::zero()], vec![*r]];
-        <Transcript as ProofTranscript<P>>::append_point(transcript, b"combined_polynomial_x_beta", &proofs_wit_polys.0);
-        let eta = <Transcript as ProofTranscript<P>>::challenge_scalar(
-            transcript, b"random_evaluate_point");
-        let mut slice_vector: Vec<P::ScalarField> = proofs_wit_polys.1.clone();
-        slice_vector.push(proofs_wit_polys.2.clone());
-        let slice: &[P::ScalarField] = &slice_vector;
-        <Transcript as ProofTranscript<P>>::append_scalars(transcript, b"combined_polynomial_x_beta", slice);
-        let theta = <Transcript as ProofTranscript<P>>::challenge_scalar(
-            transcript, b"batch_kzg_rlc_challenge");
 
-        let check4 = BivBatchKZG::<P>::verify_at_same_y_optimized(&v_srs, &coms_wit_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_polys, &gamma, eta, theta).unwrap();
+        let check4 = BivBatchKZG::<P>::verify_at_same_y(&v_srs, &coms_wit_polys, &x_points, &beta, &evals_bivariate, &proofs_wit_polys, transcript, &gamma).unwrap();
         assert!(check4);
         println!("Verifier pairing time: {:?}", time.elapsed());
 

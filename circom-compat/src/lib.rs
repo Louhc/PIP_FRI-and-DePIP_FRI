@@ -9,7 +9,7 @@ use ark_serialize::{SerializationError, SerializationError::IoError};
 use ark_std::io::{Read, Seek, SeekFrom};
 
 use ark_relations::r1cs::{
-    ConstraintSynthesizer, ConstraintSystemRef, LinearCombination, SynthesisError, Variable,
+    ConstraintSystemRef, LinearCombination, SynthesisError, Variable,
 };
 
 use std::collections::HashMap;

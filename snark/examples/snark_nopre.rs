@@ -1,6 +1,6 @@
 // usage
-// RAYON_NUM_THREADS=32 cargo build --release --example snark_linear_verifier_test --no-default-features --features "parallel"
-// RAYON_NUM_THREADS=32 ./snark_linear_verifier_test 2 ../../../snark/data/4
+// RAYON_NUM_THREADS=32 cargo build --release --example snark_nopre --no-default-features --features "parallel"
+// RAYON_NUM_THREADS=32 ./snark_nopre ../../../snark/data/4
 
 
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
@@ -44,7 +44,7 @@ fn init() -> (usize, usize, usize) {
     Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
     let l = Net::n_parties();
     let sub_prover_id = Net::party_id();
-    let m = 1 << 22;
+    let m = 1 << 12;
     (m, l, sub_prover_id)
 }
 
@@ -75,9 +75,7 @@ fn main() {
     c.generate_constraints(cs.clone()).unwrap();
 
     assert!(cs.is_satisfied().unwrap());
-    let mut cs_ref = cs.borrow_mut().unwrap();
-    cs_ref.finalize();
-    let cs_matrix = cs_ref.to_matrices().unwrap();
+    let cs_matrix = cs.to_matrices().unwrap();
 
     let r1cs_vecs_all: Vec<R1CSVectors<Bls12_381>> = (0..l).map(|sub_prover_id| {
         R1CSVectors::<Bls12_381>::build(sub_prover_id, m, l, challenge_r, &cs, &cs_matrix).unwrap()

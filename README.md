@@ -1,61 +1,80 @@
-<h1 align="center">RIPP (Rust Inner Pairing Products)</h1>
+<h1 align="center">District1 (Distributed R1CS-Targeted SNARKs)</h1>
 
-<p align="center">
-    <a href="https://travis-ci.org/scipr-lab/ripp"><img src="https://travis-ci.org/scipr-lab/ripp.svg?branch=master"></a>
-    <a href="https://github.com/scipr-lab/ripp/blob/master/AUTHORS"><img src="https://img.shields.io/badge/authors-SCIPR%20Lab-orange.svg"></a>
-    <a href="https://github.com/scipr-lab/ripp/blob/master/LICENSE-APACHE"><img src="https://img.shields.io/badge/license-APACHE-blue.svg"></a>
-    <a href="https://github.com/scipr-lab/ripp/blob/master/LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-    <a href="https://deps.rs/repo/github/scipr-lab/ripp"><img src="https://deps.rs/repo/github/scipr-lab/ripp/status.svg"></a>
-</p>
-
-
-___RIPP___ is a Rust library for proofs about inner pairing products, and applications built atop these. These protocols and applications are described in our paper *"[Proofs for Inner Pairing Products and Applications][ripp]"*
-
-The library currently contains an implementation of our proof system for verifiably outsourcing pairing products. In the future, we intend to implement the other protocols described in our [paper][ripp], along with the polynomial commitment schemes and our protocol for aggregating Groth16 proofs based upon these protocols.
-
-This library is released under the MIT License and the Apache v2 License (see [License](#license)).
+___District1___ is a Rust library for a distributed SNARK for R1CS with constant proof size, constant verifier complexity, and constant amortized communication complexity.
+It also includes various implementations which may of independent interests, such as an improved inner product argument with constant proof size following the "Polynomial interactive oracle proof (PIOP) + Polynomial commitment scheme (PCS)" approach, and a bivariate batch KZG PCS first supporting multiple polynomials and points.
 
 **WARNING:** This is an academic proof-of-concept prototype, and in particular has not received careful code review. This implementation is NOT ready for production use.
 
+## Metholodgy
+
+The library is implementated based on [arkworks-rs](https://github.com/arkworks-rs), including the finite fields, polynomials over finite fields, bilinear-pairing groups, and operations over them such as pairing, multi-scalar exponentiations, and fast Fourier transforms.
+We choose the Bls12-381 or BN254 curves for fair comparison with other schemes.
+Note that operations on BN254, especially multi-scalar exponentiations, can be faster than those on Bls12-381, but the provided security is worse.
+We use [merlin](https://merlin.cool/) to implement the Fiat-Shamir transformation.
+
 ## Build guide
 
-The library compiles on the `stable` toolchain of the Rust compiler. To install the latest version of Rust, first install `rustup` by following the instructions [here](https://rustup.rs/), or via your platform's package manager. Once `rustup` is installed, install the Rust toolchain by invoking:
+The library compiles on the `nightly` toolchain of the Rust compiler. To install the latest version of Rust, first install `rustup` by following the instructions [here](https://rustup.rs/), or via your platform's package manager. Once `rustup` is installed, install the Rust toolchain by invoking:
 ```bash
-rustup install stable
+rustup install nightly
 ```
 
-After that, use `cargo`, the standard Rust build tool, to build the library:
+After that, clone the library and use `cargo` to build the library:
 ```bash
-git clone https://github.com/scipr-lab/ripp.git
-cd ripp
-cargo build --release
+cargo build
 ```
 
-This library comes with unit tests for each of the provided crates. Run the tests with:
-```bash
-cargo test
-``` 
+## Benchmarks of non-distributed schemes
 
-Lastly, the library comes with benchmarks.
+The libary comes with benchmarks for inner product arguments and batch bivariate KZG with the same evaluation points on the $Y$-dimension.
+To run our IPA and see a performance comparison of IPAs from univariate sum-check and Larent polynomials, invoke:
+```
+cargo bench --bench my_ipa 
+```
+The results show the prover time, verifier time, and proof size of these IPAs.
+
+To run the batch bivariate KZG, invoke: 
+```
+cargo bench --bench biv_batch_kzg
+```
+It shows the prover time, verifier time, and proof size of running the trivial bivariate KZG multiple times and our batch bivariate KZG.
+
+## Benchmarks of distributed schemes
+
+The library provides distributed schemes, including the distributed batch bivariate KZG, on random double-dimension points or on random points with the same point over the $Y$ dimension, the distributed SNARK with linear verifier, and the distributed SNARK with constant verifier complexity via preprocessing.
+
+For these distributed schemes, we provide local tests to simulate the distributed network to guarantee the reproducibility using 4 cores.
+
+For the distributed batch bivariate KZG, invoke:
 ```bash
-cargo bench
-cargo run --release --example groth16_aggregation
-cargo run --release --example scaling-ipp
+cd kzg
+
+RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' cargo build --release --example de_biv_batch_kzg --no-default-features --features "parallel asm"    
+
+./run_local.sh de_biv_batch_kzg 
+```
+or 
+```bash
+./run_local.sh de_biv_batch_kzg_same_point
+```
+where $N=4$, and also for the $N$ 's below.
+
+For the distrbuted SNARK with linear verifier complexity, invoke:
+```bash
+cd snark
+
+RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' cargo build --release --example snark_nopre --no-default-features --features "parallel asm"    
+
+./run_local.sh snark_nopre
 ```
 
-## License
+For the distrbuted SNARK with constant verifier complexity, invoke:
+```bash
+cd snark
 
-RIPP is licensed under either of the following licenses, at your discretion.
+RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' cargo build --release --example snark_pre --no-default-features --features "parallel asm"    
 
- * Apache License Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+./run_local.sh snark_pre
+```
 
-Unless you explicitly state otherwise, any contribution submitted for inclusion in RIPP by you shall be dual licensed as above (as defined in the Apache v2 License), without any additional terms or conditions.
 
-[ripp]: https://eprint.iacr.org/2019/1177
-
-## Reference paper
-
-[_Proofs for Inner Pairing Products and Applications_][ripp]    
-[Benedikt Bünz](https://www.github.com/bbuenz), Mary Maller, [Pratyush Mishra](https://www.github.com/pratyush), [Psi Vesely](https://www.github.com/psivesely)    
-*IACR ePrint Report 2019/1177*

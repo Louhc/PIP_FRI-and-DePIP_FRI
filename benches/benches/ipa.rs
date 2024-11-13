@@ -38,7 +38,7 @@ fn ipa_commit_and_prove_benchmark(c: &mut Criterion) {
             .sum();
         let (g_alpha_powers, _v_srs) = BatchKZG::<Bls12_381>::setup(&mut rng, degree).unwrap();
 
-        c.bench_function(&format!("Trivial_IPA_commit_and_prove, log_vector_length: {}", log_size), |b| {
+        c.bench_function(&format!("Sumcheck_IPA_commit_and_prove, log_vector_length: {}", log_size), |b| {
             b.iter(|| {
                 let mut transcript = Transcript::new(b"IPA_commit_and_prove");
                 let _ = IPA::<Bls12_381>::trivial_ipa_commit_and_prove(
@@ -58,7 +58,7 @@ fn ipa_commit_and_prove_benchmark(c: &mut Criterion) {
             &domain,
             &mut transcript,
         ).unwrap();
-        println!("Trivial IPA proof size is {} bytes", IPA::<Bls12_381>::get_proof_size(&proof));
+        println!("Sumcheck IPA proof size is {} bytes", IPA::<Bls12_381>::get_proof_size(&proof));
 
         c.bench_function(&format!("Laurent_IPA_commit_and_prove, log_vector_length: {}", log_size), |b| {
             b.iter(|| {
@@ -140,7 +140,7 @@ fn ipa_verifier_benchmark(c: &mut Criterion) {
         ).unwrap();
 
         std::thread::sleep(Duration::from_millis(5000));
-        c.bench_function(&format!("Trivial_IPA_verifier, log_vector_length: {}", log_size), |b| {
+        c.bench_function(&format!("Sumcheck_IPA_verifier, log_vector_length: {}", log_size), |b| {
             b.iter(|| {
                 let mut transcript = Transcript::new(b"IPA_commit_and_prove");
                 let _ = IPA::<Bls12_381>::trivial_ipa_verify(

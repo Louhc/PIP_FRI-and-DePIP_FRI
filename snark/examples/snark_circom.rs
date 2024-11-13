@@ -14,7 +14,7 @@ use structopt::StructOpt;
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_ff::UniformRand;
 use std::time::Instant;
-use ark_relations::{lc, r1cs::{ConstraintSynthesizer, ConstraintSystem}};
+use ark_relations::{lc, r1cs::ConstraintSystem};
 use my_snark::snark_log::DeSNARKLog;
 use my_snark::indexer::Indexer;
 use my_ipa::r1cs::R1CSVectors;
@@ -119,14 +119,6 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     // common preprocess
     let time = Instant::now();
     let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bn254>::preprocess_data_parallel(sub_prover_id, m, l, &cs_matrix, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
-    // new preprocess to file
-    // let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bn254>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
-    // println!("Prover {:?} Indexer time: {:?}", sub_prover_id, time.elapsed());
-    // preprocess from file
-    // let (pre_mes_prover, pre_mes_verifier) = match Indexer::<Bn254>::preprocess_from_file(m, l) {
-    //     Ok(pre) => pre,
-    //     Err(_) => Indexer::<Bn254>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m)
-    // };
     println!("Indexer time: {:?}", time.elapsed());
 
     // Synchronize everyone
@@ -143,13 +135,6 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let mut transcript : Transcript = Transcript::new(b"Random R1CS");
     let timer2 = start_timer!(|| "Build r1cs vecs and polys");
     let r1cs_de_vecs: R1CSVectors<Bn254> = R1CSVectors::<Bn254>::build_data_parallel(sub_prover_id, m, challenge_r, &cs, &cs_matrix).unwrap();
-
-    //self tets
-    // let vec_r = generate_powers(&challenge_r, m * l);
-    // assert_eq!(inner_product::<Bn254>(&r1cs_de_vecs.vec_x, &r1cs_de_vecs.vec_w), inner_product::<Bn254>(&r1cs_de_vecs.vec_a, &vec_r));
-    // assert_eq!(inner_product::<Bn254>(&r1cs_de_vecs.vec_y, &r1cs_de_vecs.vec_w), inner_product::<Bn254>(&r1cs_de_vecs.vec_b, &vec_r));
-    // assert_eq!(inner_product::<Bn254>(&r1cs_de_vecs.vec_z, &r1cs_de_vecs.vec_w), inner_product::<Bn254>(&r1cs_de_vecs.vec_c, &vec_r));
-    //self test over
 
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<Bn254>(m, l, r1cs_de_vecs);
     end_timer!(timer2);
@@ -176,7 +161,6 @@ fn test_helper(l: usize, sub_prover_id: usize) {
 
 fn main() {
     let (l, sub_prover_id) = init();
-    // test_helper::<Bn254>(num_tx, l, sub_prover_id);
     test_helper(l, sub_prover_id);
     Net::deinit();
 }
