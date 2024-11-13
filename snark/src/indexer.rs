@@ -31,7 +31,7 @@ use crate::impl_serde_for_ark_serde_unchecked;
 
 // The values should be field_elements, but we requre usize to do the pow operation
 // Luckily, [0, ml-1] is smaller enough on a field, so just transform it to usize directly
-#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize, PartialEq)]
 pub struct DeRowIndex {
     pub row_pa_low: Vec<usize>,
     pub row_pa_high: Vec<usize>,
@@ -75,7 +75,7 @@ impl DeRowIndex {
 // The original data of col non-zero entry index vectors for some **sub-prover**, ie, some **sub-matrix**
 // Note col has the same non-zero entry order with row
 // if some sub-matrix has m'' < m' non-zero entries, define arbitrary values for these (m' - m'') entries, here use 0
-#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize, PartialEq)]
 pub struct DeColIndex {
     pub col_pa: Vec<usize>,
     pub col_pb: Vec<usize>,
@@ -107,7 +107,7 @@ impl DeColIndex {
 // Note val has the same non-zero entry order with row
 // Here we use Field elements
 // if some sub-matrix has m'' < m' non-zero entries, define arbitrary values for these (m' - m'') entries, here use 0
-#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize, PartialEq)]
 pub struct DeValEvals<P: Pairing> {
     pub evals_val_pa: Vec<P::ScalarField>,
     pub evals_val_pb: Vec<P::ScalarField>,
@@ -143,7 +143,7 @@ impl<P: Pairing> DeValEvals<P> {
 // For row, n_row_low(w^i) / n_row_high(w^i) = the times of {row_low(x)} / {row_high(x)} equals to i
 // For row, when m > i > sqrt{ml}, n_row_low(w^i) / n_row_high(w^i) = 0
 // Note that {col(x)}, {row_low(x)} / {row_high(x)} can equal to 0
-#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize, PartialEq)]
 pub struct NEvals<P: Pairing> {
     pub row_pa_low: Vec<P::ScalarField>,
     pub row_pa_high: Vec<P::ScalarField>,
@@ -160,8 +160,8 @@ pub struct NEvals<P: Pairing> {
 #[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct PreMesProver<P: Pairing> {
     pub upper_r_poly: UnivariatePolynomial<P::ScalarField>,
-    pub de_row_index_vecs: Vec<DeRowIndex>,
-    pub de_col_index_vecs: Vec<DeColIndex>,
+    pub de_row_index_vec: DeRowIndex,
+    pub de_col_index_vec: DeColIndex,
     pub val_evals: DeValEvals<P>,
     pub val_polys: DeValPolys<P>,
     pub lower_a_b_evals: DeLowerAandBEvals<P>,
@@ -206,14 +206,42 @@ impl<P: Pairing> Indexer<P> {
         let (upper_r_poly, com_upper_r) = Indexer::<P>::compute_and_commit_poly_upper_r(sub_prover_id, &powers, x_domain);
         let val_polys = Indexer::<P>::de_compute_val_polys(&m_domain, &de_val_evals_vecs[sub_prover_id]);
         let coms_val = Indexer::<P>::de_commit_val_polys(sub_prover_id, &m_powers, &val_polys, m_domain);
-        let (lower_a_b_evals, lower_a_b_polys) = Indexer::<P>::compute_lower_a_b_evals_and_polys(sub_prover_id, &de_row_index_vecs, &de_col_index_vecs, &m_domain, &x_domain);
+        let (lower_a_b_evals, lower_a_b_polys) = Indexer::<P>::compute_lower_a_b_evals_and_polys(&de_row_index_vecs[sub_prover_id], &de_col_index_vecs[sub_prover_id], &m_domain, &x_domain);
         let coms_lower_a_b = Indexer::<P>::de_commit_lower_a_b_polys(sub_prover_id, &m_powers, &lower_a_b_polys, m_domain);
         let n_evals = Indexer::<P>::build_n_evals(&de_row_index_vecs, &de_col_index_vecs, l, m, m_prime);
         let n_polys = Indexer::<P>::compute_n_polys(&x_domain, &n_evals);
         let coms_n = Indexer::<P>::commit_n_polys(&x_srs, &n_polys);
         let (com_l, de_poly_l) = Indexer::<P>::compute_and_commit_poly_upper_l(sub_prover_id, &powers, l, x_domain, &y_domain);
         (
-            PreMesProver{upper_r_poly, de_row_index_vecs, de_col_index_vecs, val_evals: de_val_evals_vecs[sub_prover_id].clone(), val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys, de_poly_l}, 
+            PreMesProver{upper_r_poly, de_row_index_vec: de_row_index_vecs[sub_prover_id].clone(), de_col_index_vec: de_col_index_vecs[sub_prover_id].clone(), val_evals: de_val_evals_vecs[sub_prover_id].clone(), val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys, de_poly_l}, 
+            PreMesVerifier{com_upper_r, coms_val, coms_lower_a_b, com_l, coms_n}
+        )
+    }
+
+    pub fn preprocess_data_parallel (
+        sub_prover_id: usize,
+        m: usize,
+        l: usize,
+        cs_matrix: &ConstraintMatrices<P::ScalarField>,
+        powers: &Vec<P::G1Affine>,
+        m_powers: &Vec<P::G1Affine>,
+        x_srs: &Vec<P::G1Affine>,
+        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
+        m_domain: &GeneralEvaluationDomain<P::ScalarField>,
+    ) -> (PreMesProver<P>, PreMesVerifier<P>) {
+        let (de_row_index_vec, de_col_index_vec, de_val_evals_vec, m_prime, paddings) = Indexer::<P>::de_build_de_r1cs_index_data_parallel(sub_prover_id, l, m, &cs_matrix).unwrap();
+        let (upper_r_poly, com_upper_r) = Indexer::<P>::compute_and_commit_poly_upper_r(sub_prover_id, &powers, x_domain);
+        let val_polys = Indexer::<P>::de_compute_val_polys(&m_domain, &de_val_evals_vec);
+        let coms_val = Indexer::<P>::de_commit_val_polys(sub_prover_id, &m_powers, &val_polys, m_domain);
+        let (lower_a_b_evals, lower_a_b_polys) = Indexer::<P>::compute_lower_a_b_evals_and_polys(&de_row_index_vec, &de_col_index_vec, &m_domain, &x_domain);
+        let coms_lower_a_b = Indexer::<P>::de_commit_lower_a_b_polys(sub_prover_id, &m_powers, &lower_a_b_polys, m_domain);
+        let n_evals = Indexer::<P>::build_n_evals_data_parallel(&de_row_index_vec, &de_col_index_vec, l, m, m_prime, paddings);
+        let n_polys = Indexer::<P>::compute_n_polys(&x_domain, &n_evals);
+        let coms_n = Indexer::<P>::commit_n_polys(&x_srs, &n_polys);
+        let (com_l, de_poly_l) = Indexer::<P>::compute_and_commit_poly_upper_l(sub_prover_id, &powers, l, x_domain, &y_domain);
+        (
+            PreMesProver{upper_r_poly, de_row_index_vec, de_col_index_vec, val_evals: de_val_evals_vec, val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys, de_poly_l}, 
             PreMesVerifier{com_upper_r, coms_val, coms_lower_a_b, com_l, coms_n}
         )
     }
@@ -497,6 +525,94 @@ impl<P: Pairing> Indexer<P> {
         Ok((de_row_index_vecs, de_col_index_vecs, de_val_evals_vecs))
     }
 
+    pub fn de_build_de_r1cs_index_data_parallel(
+        sub_prover_id: usize,
+        l: usize,
+        m: usize,
+        cs_matrix: &ConstraintMatrices<P::ScalarField>,
+    )-> Result<(DeRowIndex, DeColIndex, DeValEvals<P>, usize, (usize, usize, usize)), SynthesisError> {
+        assert_eq!(cs_matrix.a.1.len(), m);
+        let ml = m * l;
+        let sqrt_ml = (ml as f64).sqrt() as usize;
+
+        let (mut de_row_index_vecs, mut de_col_index_vecs, mut de_val_evals_vecs) = (
+            DeRowIndex::new(),
+            DeColIndex::new(),
+            DeValEvals::<P>::new());
+
+        let offset = m * sub_prover_id;
+        let mut m_prime_a = 0usize;
+        let mut m_prime_b = 0usize;
+        let mut m_prime_c = 0usize;
+
+        for row_id in 0..m {
+            let start = if row_id == 0 {
+                0
+            } else {
+                cs_matrix.a.1[row_id - 1]
+            };
+            let end = cs_matrix.a.1[row_id];
+            
+            cs_matrix.a.0[start..end].iter().for_each(|(val, col_id)| {
+                let (low, high) = Self::decompose(row_id + offset, sqrt_ml);
+                de_row_index_vecs.row_pa_low.push(low);
+                de_row_index_vecs.row_pa_high.push(high);
+
+                de_col_index_vecs.col_pa.push(*col_id);
+                
+                de_val_evals_vecs.evals_val_pa.push(P::ScalarField::from(*val));
+
+                m_prime_a += 1;
+            });
+            
+            let start = if row_id == 0 {
+                0
+            } else {
+                cs_matrix.b.1[row_id - 1]
+            };
+            let end = cs_matrix.b.1[row_id];
+            
+            cs_matrix.b.0[start..end].iter().for_each(|(val, col_id)| {
+                let (low, high) = Self::decompose(row_id + offset, sqrt_ml);
+                de_row_index_vecs.row_pb_low.push(low);
+                de_row_index_vecs.row_pb_high.push(high);
+
+                de_col_index_vecs.col_pb.push(*col_id);
+                
+                de_val_evals_vecs.evals_val_pb.push(P::ScalarField::from(*val));
+
+                m_prime_b += 1;
+            });
+                    
+            let start = if row_id == 0 {
+                0
+            } else {
+                cs_matrix.c.1[row_id - 1]
+            };
+            let end = cs_matrix.c.1[row_id];
+            
+            cs_matrix.c.0[start..end].iter().for_each(|(val, col_id)| {
+                let (low, high) = Self::decompose(row_id + offset, sqrt_ml);
+                de_row_index_vecs.row_pc_low.push(low);
+                de_row_index_vecs.row_pc_high.push(high);
+
+                de_col_index_vecs.col_pc.push(*col_id);
+                
+                de_val_evals_vecs.evals_val_pc.push(P::ScalarField::from(*val));
+
+                m_prime_c += 1;
+            });
+        }
+
+        let pow_of_two = std::cmp::max(std::cmp::max(m_prime_a, m_prime_b), m_prime_c).next_power_of_two();
+
+        de_row_index_vecs.padding(pow_of_two);
+        de_col_index_vecs.padding(pow_of_two);
+        de_val_evals_vecs.padding(pow_of_two);
+
+        Ok((de_row_index_vecs, de_col_index_vecs, de_val_evals_vecs, pow_of_two, (pow_of_two - m_prime_a, pow_of_two - m_prime_b, pow_of_two - m_prime_c)))
+    }
+
     pub fn build_n_evals(
         de_row_index_vecs: &Vec<DeRowIndex>, 
         de_col_index_vecs: &Vec<DeColIndex>,
@@ -527,6 +643,81 @@ impl<P: Pairing> Indexer<P> {
                 col_pb[de_col_index_vecs[sub_prover_id].col_pb[i]] += 1;
                 col_pc[de_col_index_vecs[sub_prover_id].col_pc[i]] += 1;
             }
+        }
+
+        let (row_pa_low, row_pa_high, row_pb_low, row_pb_high, 
+            row_pc_low, row_pc_high, col_pa, col_pb, col_pc) = 
+                (0..m).map(|i| {(
+                    P::ScalarField::from(row_pa_low[i]),
+                    P::ScalarField::from(row_pa_high[i]),
+                    P::ScalarField::from(row_pb_low[i]),
+                    P::ScalarField::from(row_pb_high[i]),
+                    P::ScalarField::from(row_pc_low[i]),
+                    P::ScalarField::from(row_pc_high[i]),
+                    P::ScalarField::from(col_pa[i]),
+                    P::ScalarField::from(col_pb[i]),
+                    P::ScalarField::from(col_pc[i]),
+                )}).multiunzip();
+
+        NEvals {
+            row_pa_low,
+            row_pa_high,
+            row_pb_low,
+            row_pb_high,
+            row_pc_low,
+            row_pc_high,
+            col_pa,
+            col_pb,
+            col_pc,
+        }
+    }
+
+    pub fn build_n_evals_data_parallel(
+        de_row_index_vecs: &DeRowIndex, 
+        de_col_index_vecs: &DeColIndex,
+        l: usize,
+        m: usize,
+        len: usize,
+        paddings: (usize, usize, usize),
+    )-> NEvals<P> {
+        let mut row_pa_low = vec![0u64; m];
+        let mut row_pa_high = vec![0u64; m];
+        let mut row_pb_low = vec![0u64; m];
+        let mut row_pb_high = vec![0u64; m];
+        let mut row_pc_low = vec![0u64; m];
+        let mut row_pc_high = vec![0u64; m];
+        let mut col_pa = vec![0u64; m];
+        let mut col_pb = vec![0u64; m];
+        let mut col_pc = vec![0u64; m];
+
+        let ml = m * l;
+        let sqrt_ml = (ml as f64).sqrt() as usize;
+        
+        let l = l as u64;
+
+        let process_row = |i, padding: usize, in1: &Vec<usize>, in2: &Vec<usize>, out1: &mut Vec<u64>, out2: &mut Vec<u64>| {
+            if i >= in1.len() - padding {
+                out1[0] += l;
+                out2[0] += l;
+                return;
+            }
+            let (low, high) = (in1[i], in2[i]);
+            let row_idx = low + high * sqrt_ml;
+            let row_idx = row_idx % m;
+            for j in 0..(l as usize) {
+                let idx = row_idx + m * j;
+                let (low, high) = Self::decompose(idx, sqrt_ml);
+                out1[low] += 1;
+                out2[high] += 1;
+            }
+        };
+        for i in 0..len {
+            process_row(i, paddings.0, &de_row_index_vecs.row_pa_low, &de_row_index_vecs.row_pa_high, &mut row_pa_low, &mut row_pa_high);
+            process_row(i, paddings.1, &de_row_index_vecs.row_pb_low, &de_row_index_vecs.row_pb_high, &mut row_pb_low, &mut row_pb_high);
+            process_row(i, paddings.2, &de_row_index_vecs.row_pc_low, &de_row_index_vecs.row_pc_high, &mut row_pc_low, &mut row_pc_high);
+            col_pa[de_col_index_vecs.col_pa[i]] += l;
+            col_pb[de_col_index_vecs.col_pb[i]] += l;
+            col_pc[de_col_index_vecs.col_pc[i]] += l;
         }
 
         let (row_pa_low, row_pa_high, row_pb_low, row_pb_high, 
@@ -664,17 +855,14 @@ impl<P: Pairing> Indexer<P> {
     }
 
     pub fn compute_lower_a_b_evals_and_polys (
-        sub_prover_id: usize,
-        row_index: &Vec<DeRowIndex>,
-        col_index: &Vec<DeColIndex>,
+        de_row_index: &DeRowIndex,
+        de_col_index: &DeColIndex,
         m_domain: &GeneralEvaluationDomain<P::ScalarField>,
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
 
     ) -> (DeLowerAandBEvals<P>, DeLowerAandBPolys<P>) {
         let m_prime = m_domain.size();
         let w = x_domain.group_gen();
-        let de_row_index = &row_index[sub_prover_id];
-        let de_col_index = &col_index[sub_prover_id];
         assert_eq!(de_row_index.row_pa_low.len(), m_prime);
         assert_eq!(de_col_index.col_pa.len(), m_prime);
 
@@ -849,4 +1037,77 @@ impl<P: Pairing> Indexer<P> {
         (com, x_polynomial)
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use ark_bn254::{Bn254, Fr};
+    use ark_relations::{lc, r1cs::ConstraintSystem};
+    use ark_ec::pairing::Pairing;
+    use ark_std::test_rng;
+    use ark_std::UniformRand;
+    use super::*;
+
+    #[test]
+    fn data_parallel_test() {
+        let m = 1 << 4;
+        let l = 4;
+        
+        let mut rng = test_rng();
+        let (a_vec, b_vec): (Vec<_>, Vec<_>) = (0..(m / 3)).map(|_| {
+            let rand_a = Fr::rand(&mut rng);
+            let rand_b = Fr::rand(&mut rng);
+            (rand_a, rand_b)
+        }).unzip();
+
+        let (rows, cols, vals, true_m_prime) =  {
+            let cs = ConstraintSystem::<<Bn254 as Pairing>::ScalarField>::new_ref();
+            for _ in 0..l {
+                for j in 0..(m / 3) {
+                    let a = cs.new_witness_variable(|| Ok(a_vec[j]) ).unwrap();
+                    let b = cs.new_witness_variable(|| Ok(b_vec[j]) ).unwrap();
+                    let c = cs.new_witness_variable(|| Ok(a_vec[j] * b_vec[j]) ).unwrap();
+                    cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c).unwrap();
+                }
+
+                for _ in (m / 3) * 3..m {
+                    cs.new_witness_variable(|| Ok(Fr::ZERO)).unwrap();
+                }
+
+                for _ in (m /3) .. m {
+                    cs.enforce_constraint(lc!(), lc!(), lc!()).unwrap();
+                }
+            }
+            let cs_matrix = cs.to_matrices().unwrap();
+
+            Indexer::<Bn254>::build_de_r1cs_index(l, m, &cs_matrix).unwrap()
+        };
+
+        let n_evals = Indexer::<Bn254>::build_n_evals(&rows, &cols, l, m, true_m_prime);
+
+        let cs = ConstraintSystem::<<Bn254 as Pairing>::ScalarField>::new_ref();
+        for j in 0..(m / 3) {
+            let a = cs.new_witness_variable(|| Ok(a_vec[j]) ).unwrap();
+            let b = cs.new_witness_variable(|| Ok(b_vec[j]) ).unwrap();
+            let c = cs.new_witness_variable(|| Ok(a_vec[j] * b_vec[j]) ).unwrap();
+            cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c).unwrap();
+        }
+        for _ in (m / 3) * 3..m {
+            cs.new_witness_variable(|| Ok(Fr::ZERO)).unwrap();
+        }
+        for _ in (m /3) .. m {
+            cs.enforce_constraint(lc!(), lc!(), lc!()).unwrap();
+        }
+
+        let cs_matrix = cs.to_matrices().unwrap();
+        for k in 0..l {
+            let (row, col, val, m_prime, paddings) = Indexer::<Bn254>::de_build_de_r1cs_index_data_parallel(k, l, m, &cs_matrix).unwrap();
+            assert_eq!(row, rows[k]);
+            assert_eq!(col, cols[k]);
+            assert_eq!(val, vals[k]);
+            assert_eq!(m_prime, true_m_prime);
+            let n = Indexer::<Bn254>::build_n_evals_data_parallel(&row, &col, l, m, m_prime, paddings);
+            assert_eq!(n, n_evals);
+        }
+    }
 }

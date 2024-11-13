@@ -12,6 +12,7 @@ use ark_relations::{
 };
 use ark_std::{UniformRand, test_rng};
 use std::marker::PhantomData;
+use ark_ff::Field;
 
 #[derive(Clone)]
 pub struct RandomCircuit<P: Pairing> {
@@ -212,6 +213,95 @@ impl<P:Pairing> R1CSVectors<P> {
             &witness_assignment[..(end - num_instance_variables)]].concat()
         };
 
+        end_timer!(timer);
+
+        Ok( Self {
+            vec_x: sub_vec_x,
+            vec_y: sub_vec_y,
+            vec_z: sub_vec_z,
+            vec_w,
+            vec_a: sub_vec_a,
+            vec_b: sub_vec_b,
+            vec_c: sub_vec_c
+        })
+    }
+
+    pub fn build_data_parallel(
+        sub_prover_id: usize,
+        m: usize,
+        challenge_r: P::ScalarField,
+        cs: &ConstraintSystemRef<P::ScalarField>,
+        cs_matrix: &ConstraintMatrices<P::ScalarField>,
+    )-> Result<Self, SynthesisError> {
+        let timer = start_timer!(|| "R1CSVector build");
+        assert_eq!(m, cs.num_constraints());
+        let f_zero = P::ScalarField::zero();
+
+        let step = start_timer!(|| "Evaluate constraints");
+        let cs = cs.borrow().unwrap();
+        let instance_assignment = &cs.instance_assignment;
+        let witness_assignment = &cs.witness_assignment;
+
+        let get_sub_vec = |matrix: &Matrix<P::ScalarField>, i: usize| {
+            let start = if i == 0 {
+                0
+            } else {
+                matrix.1[i - 1]
+            };
+            let end = matrix.1[i];
+            evaluate_constraint(&matrix.0[start..end], instance_assignment, witness_assignment)
+        };
+
+        let (sub_vec_a, sub_vec_b, sub_vec_c): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = 
+        par_join_3!(
+            || (0..m).into_par_iter()
+                .map(|i| get_sub_vec(&cs_matrix.a, i))
+                .collect(),
+            || (0..m).into_par_iter()
+                .map(|i| get_sub_vec(&cs_matrix.b, i))
+                .collect(),
+            || (0..m).into_par_iter()
+                .map(|i| get_sub_vec(&cs_matrix.c, i))
+                .collect()
+        );
+        
+        end_timer!(step);
+    
+        let step = start_timer!(|| "sub vec x y z");
+        let base = challenge_r.pow([(m * sub_prover_id) as u64]);
+        let mut vec_r = vec![base; m];
+        for i in 1..m {
+            vec_r[i] = vec_r[i - 1] * challenge_r;
+        }
+    
+        let mut sub_vec_x = vec![f_zero; m];
+        let mut sub_vec_y = vec![f_zero; m];
+        let mut sub_vec_z = vec![f_zero; m];
+
+        let generate_sub_vec = |out: &mut Vec<P::ScalarField>, matrix: &Matrix<P::ScalarField>| {
+            for row_idx in 0..m {
+                let data_start = if row_idx == 0 {
+                    0
+                } else {
+                    matrix.1[row_idx - 1]
+                };
+                let data_end = matrix.1[row_idx];
+                matrix.0[data_start..data_end]
+                    .iter()
+                    .for_each(|(coeff, id)| {
+                            out[*id] += *coeff * vec_r[row_idx];
+                    });
+            }
+        };
+    
+        par_join_3!(
+            || generate_sub_vec(&mut sub_vec_x, &cs_matrix.a),
+            || generate_sub_vec(&mut sub_vec_y, &cs_matrix.b),
+            || generate_sub_vec(&mut sub_vec_z, &cs_matrix.c)
+        );
+        end_timer!(step);
+
+        let vec_w = [&instance_assignment[..], &witness_assignment[..]].concat();
         end_timer!(timer);
 
         Ok( Self {

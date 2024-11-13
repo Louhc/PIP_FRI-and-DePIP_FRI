@@ -4,7 +4,7 @@
 
 // use ark_Bn254::Bn254;
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
-use ark_std::log2;
+use ark_std::{log2, rand::RngCore};
 use my_kzg::biv_batch_kzg::BivBatchKZG;
 use merlin::Transcript;
 use my_ipa::helper::generate_r1cs_de_polynomials;
@@ -19,7 +19,7 @@ use my_snark::snark_log::DeSNARKLog;
 use my_snark::indexer::Indexer;
 use my_ipa::r1cs::R1CSVectors;
 use ark_std::{start_timer, end_timer};
-use circom_compat::R1CSFile;
+use circom_compat::{read_witness, R1CSFile};
 use ark_bn254::Bn254;
 use std::{fs::File, io::BufReader};
 use ark_std::Zero;
@@ -52,18 +52,25 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     // In Pianist repo, 3 rollup transaction R1CS constraint number is 1<<18, which is 1 tx of ours
     let cs = ConstraintSystem::<ConstraintF>::new_ref();
     let reader = BufReader::new(File::open("data/circuit.r1cs").unwrap());
-    let witness_reader = BufReader::new(File::open("data/witness.json").unwrap());
-    let r1cs = R1CSFile::<ConstraintF>::new(reader, witness_reader).unwrap();
+    let mut r1cs = R1CSFile::<ConstraintF>::new(reader).unwrap();
     
-    // Insert our public inputs as key value pairs
-    r1cs.generate_constraints(cs.clone()).unwrap();
+    const NUM_TXS : usize = 2;
 
+    // Repeat the same R1CS a couple times, using a random witness each time
+    let mut rng = ark_std::test_rng();
+    for _ in 0..NUM_TXS {
+        let witness_idx = rng.next_u32() % 128;
+        let witness_reader = BufReader::new(File::open(format!("data/witness.{}.json", witness_idx)).unwrap());
+        r1cs.witness = read_witness(witness_reader);
+        r1cs.generate_constraints(cs.clone()).unwrap();
+    }
 
-    let next_power_of_two = std::cmp::max(cs.num_constraints(), cs.num_instance_variables() + cs.num_witness_variables()).next_power_of_two();
-    for _ in 0..next_power_of_two - cs.num_constraints() {
+    let num_constraints = cs.num_constraints();
+    let num_variables = cs.num_instance_variables() + cs.num_witness_variables();
+    for _ in 0..num_constraints.next_power_of_two() - num_constraints {
         cs.enforce_constraint(lc!(), lc!(), lc!()).unwrap();
     }
-    for _ in 0..next_power_of_two - (cs.num_instance_variables() + cs.num_witness_variables()) {
+    for _ in 0..num_variables.next_power_of_two() - num_variables {
         cs.new_witness_variable(|| Ok(ConstraintF::zero())).unwrap();
     }
 
@@ -76,12 +83,12 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     };
 
     println!("Generate R1CS time: {:?}", time.elapsed());
-    let m = cs.num_constraints() / Net::n_parties();
+    let m = cs.num_constraints();
     println!("number of constraints: {:?}", cs.num_constraints());
     println!("number of variables: {:?}", cs.num_witness_variables() + cs.num_instance_variables());
 
     let mut rng = StdRng::seed_from_u64(0u64);
-    let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, m_prime): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<Bn254>::build_de_r1cs_index(l, m, &cs_matrix).unwrap();
+    let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, m_prime, _paddings) = Indexer::<Bn254>::de_build_de_r1cs_index_data_parallel(Net::party_id(), l, m, &cs_matrix).unwrap();
     println!("log m_prime: {:?}", log2(m_prime));
 
     let time = Instant::now();
@@ -111,7 +118,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     // indexer works
     // common preprocess
     let time = Instant::now();
-    let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bn254>::preprocess(sub_prover_id, m, l, &cs_matrix, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
+    let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bn254>::preprocess_data_parallel(sub_prover_id, m, l, &cs_matrix, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
     // new preprocess to file
     // let (pre_mes_prover, pre_mes_verifier) = Indexer::<Bn254>::new_preprocess_to_file(m, l, &cs, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
     // println!("Prover {:?} Indexer time: {:?}", sub_prover_id, time.elapsed());
@@ -135,7 +142,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let timer1 = start_timer!(|| "Prover starts to prove");
     let mut transcript : Transcript = Transcript::new(b"Random R1CS");
     let timer2 = start_timer!(|| "Build r1cs vecs and polys");
-    let r1cs_de_vecs: R1CSVectors<Bn254> = R1CSVectors::<Bn254>::build(sub_prover_id, m, l, challenge_r, &cs, &cs_matrix).unwrap();
+    let r1cs_de_vecs: R1CSVectors<Bn254> = R1CSVectors::<Bn254>::build_data_parallel(sub_prover_id, m, challenge_r, &cs, &cs_matrix).unwrap();
 
     //self tets
     // let vec_r = generate_powers(&challenge_r, m * l);

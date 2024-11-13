@@ -492,8 +492,8 @@ fn preprocessing_gadgetes_test_with_same_m_and_mprime() {
 
     // test lookup relations
     // test col lookup relation
-    let (lower_evals_1, _lower_polys_1) = Indexer::<Bls12_381>::compute_lower_a_b_evals_and_polys(0, &row, &col, &m_domain, &x_domain);
-    let (lower_evals_2, _lower_polys_2) = Indexer::<Bls12_381>::compute_lower_a_b_evals_and_polys(1, &row, &col, &m_domain, &x_domain);
+    let (lower_evals_1, _lower_polys_1) = Indexer::<Bls12_381>::compute_lower_a_b_evals_and_polys(&row[0], &col[0], &m_domain, &x_domain);
+    let (lower_evals_2, _lower_polys_2) = Indexer::<Bls12_381>::compute_lower_a_b_evals_and_polys(&row[1], &col[1], &m_domain, &x_domain);
     let de_f1_b_pa_evals_1: Vec<MyField> = lower_evals_1.eval_lb_pa.par_iter()
         .zip(upper_b_t_evals_1.eval_b_pa.par_iter())
         .map(|(lower, upper)| (gamma + beta * lower + upper).inverse().unwrap())
@@ -802,8 +802,8 @@ fn preprocessing_gadgetes_test_with_distinct_m_and_mprime() {
 
     // test lookup relations
     // test col lookup relation
-    let (lower_evals_1, _lower_polys_1) = Indexer::<Bls12_381>::compute_lower_a_b_evals_and_polys(0, &row, &col, &m_domain, &x_domain);
-    let (lower_evals_2, _lower_polys_2) = Indexer::<Bls12_381>::compute_lower_a_b_evals_and_polys(1, &row, &col, &m_domain, &x_domain);
+    let (lower_evals_1, _lower_polys_1) = Indexer::<Bls12_381>::compute_lower_a_b_evals_and_polys(&row[0], &col[0], &m_domain, &x_domain);
+    let (lower_evals_2, _lower_polys_2) = Indexer::<Bls12_381>::compute_lower_a_b_evals_and_polys(&row[1], &col[1], &m_domain, &x_domain);
     let de_f1_b_pa_evals_1: Vec<MyField> = lower_evals_1.eval_lb_pa.par_iter()
         .zip(upper_b_t_evals_1.eval_b_pa.par_iter())
         .map(|(lower, upper)| (gamma + beta * lower + upper).inverse().unwrap())

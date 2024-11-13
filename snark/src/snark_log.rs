@@ -81,9 +81,9 @@ impl<P: Pairing> DeSNARKLog<P> {
         // let m_prime = m_srs.len();
 
         // Derive the message
-        let PreMesProver { upper_r_poly, de_row_index_vecs, de_col_index_vecs, val_evals, val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys, de_poly_l } = pre_mes_prover;
-        let row_index_vec = &de_row_index_vecs[sub_prover_id];
-        let col_index_vec = &de_col_index_vecs[sub_prover_id];
+        let PreMesProver { upper_r_poly, de_row_index_vec, de_col_index_vec, val_evals, val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys, de_poly_l } = pre_mes_prover;
+        let row_index_vec = de_row_index_vec;
+        let col_index_vec = de_col_index_vec;
 
         // commit secret polynomials
         let step = start_timer!(|| "commit witnesses");

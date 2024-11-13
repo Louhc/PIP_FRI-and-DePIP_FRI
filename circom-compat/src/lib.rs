@@ -33,7 +33,7 @@ impl<F: PrimeField> R1CSFile<F> {
     /// ```rust,ignore
     /// let reader = BufReader::new(Cursor::new(&data[..]));
     /// ```
-    pub fn new<R1: Read + Seek, R2: BufRead + Seek>(mut reader: R1, witness_reader: R2) -> IoResult<R1CSFile<F>> {
+    pub fn new<R: Read + Seek>(mut reader: R) -> IoResult<R1CSFile<F>> {
         let mut magic = [0u8; 4];
         reader.read_exact(&mut magic)?;
         if magic != [0x72, 0x31, 0x63, 0x73] {
@@ -99,7 +99,7 @@ impl<F: PrimeField> R1CSFile<F> {
 
         reader.seek(SeekFrom::Start(*constraint_offset?))?;
 
-        let constraints = read_constraints::<&mut R1, F>(&mut reader, &header)?;
+        let constraints = read_constraints::<&mut R, F>(&mut reader, &header)?;
 
         let wire2label_offset = sec_offsets.get(&wire2label_type).ok_or_else(|| {
             Error::new(
@@ -118,14 +118,13 @@ impl<F: PrimeField> R1CSFile<F> {
         });
 
         let wire_mapping = read_map(&mut reader, *wire2label_size?, &header)?;
-        let witness = read_witness(witness_reader);
 
         Ok(R1CSFile {
             version,
             header,
             constraints,
             wire_mapping,
-            witness
+            witness: vec![],
         })
     }
 }
@@ -232,7 +231,7 @@ fn read_map<R: Read>(mut reader: R, size: u64, header: &Header) -> IoResult<Vec<
     Ok(vec)
 }
 
-fn read_witness<F: PrimeField>(reader: impl BufRead) -> Vec<F> {
+pub fn read_witness<F: PrimeField>(reader: impl BufRead) -> Vec<F> {
     reader.lines()
         .skip(1)
         .filter_map(|line| {
@@ -246,30 +245,32 @@ fn read_witness<F: PrimeField>(reader: impl BufRead) -> Vec<F> {
         .collect()
 }
 
-impl<F: PrimeField> ConstraintSynthesizer<F> for R1CSFile<F> {
-    fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> Result<(), SynthesisError> {
-        let num_inputs = (1 + self.header.n_pub_in + self.header.n_pub_out) as usize;
-        let num_variables = (1 + self.header.n_wires) as usize;
+impl<F: PrimeField> R1CSFile<F> {
+    pub fn generate_constraints(&self, cs: ConstraintSystemRef<F>) -> Result<(), SynthesisError> {
+        let num_inputs = (self.header.n_pub_in + self.header.n_pub_out) as usize;
+        let num_variables = (self.header.n_wires) as usize;
         let num_aux = num_variables - num_inputs;
 
-        // Start from 1 because Arkworks implicitly allocates One for the first input
-        for i in 1..num_inputs {
+        let offset_instance = cs.num_instance_variables();
+        let offset_witness = cs.num_witness_variables();
+
+        for i in 0..num_inputs {
             cs.new_input_variable(|| {
-                Ok(self.witness[i - 1])
+                Ok(self.witness[i])
             })?;
         }
 
         for i in 0..num_aux {
             cs.new_witness_variable(|| {
-                Ok(self.witness[i + num_inputs - 1])
+                Ok(self.witness[i + num_inputs])
             })?;
         }
 
         let make_index = |index| {
-            if index + 1 < num_inputs {
-                Variable::Instance(index + 1)
+            if index < num_inputs {
+                Variable::Instance(offset_instance + index)
             } else {
-                Variable::Witness(index + 1 - num_inputs)
+                Variable::Witness(offset_witness + index - num_inputs)
             }
         };
         let make_lc = |lc_data: &[(usize, F)]| {
@@ -363,8 +364,7 @@ mod tests {
 "#;
 
         let reader = BufReader::new(Cursor::new(&data[..]));
-        let witness_reader = BufReader::new(Cursor::new(&witness_file[..]));
-        let file = R1CSFile::<Fr>::new(reader, witness_reader).unwrap();
+        let file = R1CSFile::<Fr>::new(reader).unwrap();
         assert_eq!(file.version, 1);
 
         assert_eq!(file.header.field_size, 32);
@@ -391,8 +391,10 @@ mod tests {
         assert_eq!(file.wire_mapping.len(), 7);
         assert_eq!(file.wire_mapping[1], 3);
 
-        assert_eq!(file.witness.len(), 5);
-        assert_eq!(file.witness[0], Fr::ONE);
-        assert_eq!(file.witness[4], Fr::ZERO);
+        let witness_reader = BufReader::new(Cursor::new(&witness_file[..]));
+        let witness = read_witness::<Fr>(witness_reader);
+        assert_eq!(witness.len(), 5);
+        assert_eq!(witness[0], Fr::ONE);
+        assert_eq!(witness[4], Fr::ZERO);
     }
 }
