@@ -3,7 +3,7 @@
 //! Spec: <https://github.com/iden3/r1csfile/blob/master/doc/r1cs_bin_format.md>
 use ark_ff::PrimeField;
 use byteorder::{LittleEndian, ReadBytesExt};
-use std::io::{BufRead, BufReader, Error, ErrorKind};
+use std::io::{BufRead, Error, ErrorKind};
 
 use ark_serialize::{SerializationError, SerializationError::IoError};
 use ark_std::io::{Read, Seek, SeekFrom};
