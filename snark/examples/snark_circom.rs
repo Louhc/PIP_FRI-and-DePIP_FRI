@@ -1,8 +1,7 @@
-// usage
-// RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' cargo build --release --example snark_pre --no-default-features --features "parallel asm"
-// RAYON_NUM_THREADS=32 ./snark_linear_verifier_test 2 ../../../snark/data/4
+// usage example for 4 sub-provers in the local environment
+// RAYON_NUM_THREADS=N RUSTFLAGS="-C target-cpu=native -C target-feature=+bmi2,+adx" cargo build --release --example snark_circom --no-default-features --features "parallel asm"
+// RAYON_NUM_THREADS=N ./snark_circom 0/1/2/3 ../../../snark/data/4
 
-// use ark_Bn254::Bn254;
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_std::{log2, rand::RngCore};
 use my_kzg::biv_batch_kzg::BivBatchKZG;
@@ -25,6 +24,8 @@ use std::{fs::File, io::BufReader};
 use ark_std::Zero;
 
 type ConstraintF = ark_bn254::Fr;
+
+// This is the snark test for rollup transactions.
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "example", about = "An example of StructOpt usage.")]
@@ -54,6 +55,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let reader = BufReader::new(File::open("data/circuit.r1cs").unwrap());
     let mut r1cs = R1CSFile::<ConstraintF>::new(reader).unwrap();
     
+    // This is the tx number of **Each** sub-prover
     const NUM_TXS : usize = 2;
 
     // Repeat the same R1CS a couple times, using a random witness each time
@@ -84,8 +86,8 @@ fn test_helper(l: usize, sub_prover_id: usize) {
 
     println!("Generate R1CS time: {:?}", time.elapsed());
     let m = cs.num_constraints();
-    println!("number of constraints: {:?}", cs.num_constraints());
-    println!("number of variables: {:?}", cs.num_witness_variables() + cs.num_instance_variables());
+    println!("number of constraints per machine: {:?}", cs.num_constraints());
+    println!("number of variables per machine: {:?}", cs.num_witness_variables() + cs.num_instance_variables());
 
     let mut rng = StdRng::seed_from_u64(0u64);
     let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, m_prime, _paddings) = Indexer::<Bn254>::de_build_de_r1cs_index_data_parallel(Net::party_id(), l, m, &cs_matrix).unwrap();

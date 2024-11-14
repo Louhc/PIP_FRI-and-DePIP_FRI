@@ -1,6 +1,6 @@
-// usage
-// RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' cargo build --release --example snark_pre --no-default-features --features "parallel asm print-trace"
-// RAYON_NUM_THREADS=32 ./snark_linear_verifier_test 2 ../../../snark/data/4
+// usage example for 4 sub-provers in the local environment
+// RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' target-feature=+bmi2,+adx" cargo +nightly build --release --example snark_pre --no-default-features --features "parallel asm"
+// RAYON_NUM_THREADS=32 ./snark_pre 0/1/2/3 ../../../snark/data/4
 
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_ec::pairing::Pairing;

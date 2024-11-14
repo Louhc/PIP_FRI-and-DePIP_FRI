@@ -7,7 +7,6 @@ use my_ipa::ipa::IPA;
 use my_ipa::helper::{R1CSPublicPolys, R1CSWitnessPolys};
 use ark_ff::{Zero, One, Field};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
-// use std::time::Instant;
 use rayon::prelude::*;
 use crate::{indexer::{PreMesProver, PreMesVerifier}, prover_nopre::NoPreProver};
 use my_kzg::par_join_3;
@@ -78,7 +77,6 @@ impl<P: Pairing> DeSNARKLog<P> {
 
         let m = x_srs.len();
         let l = Net::n_parties();
-        // let m_prime = m_srs.len();
 
         // Derive the message
         let PreMesProver { upper_r_poly, de_row_index_vec, de_col_index_vec, val_evals, val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys, de_poly_l } = pre_mes_prover;
@@ -410,7 +408,6 @@ impl<P: Pairing> DeSNARKLog<P> {
         } else {
             Vec::new()
         };
-        // TODO: try to make a novel use of repeated points
         let (evals_t_f2_q2_n, proof_t_f2_q2_n) = PreProver::<P>::open_t_f2_q2_n(sub_prover_id, &x_srs, &upper_a_t_polys, &upper_b_t_polys, &polys_f2, &poly_q2, &n_polys, &x_domain, &delta, &gamma, transcript);
         if Net::am_master() {
             assert_eq!(evals_t_f2_q2_n.len(), 22);
@@ -701,10 +698,8 @@ impl<P: Pairing> DeSNARKLog<P> {
 
             let check1 = left_hand == right_hand;
             assert!(check1);
-            // println!("Verifier evaluation check time: {:?}", time.elapsed());
 
             // evaluation check of f_pa(alpha, beta), f_pb(alpha, beta), f_pc(alpha, beta)
-            // let time = Instant::now();
             let z_m_prime_eval_delta = m_domain.evaluate_vanishing_polynomial(delta);
             let delta_minus_u3 = delta - u3;
             let eval_rlc = linear_combination_field::<P>(evals_p_alpha_beta, &w);
@@ -727,12 +722,10 @@ impl<P: Pairing> DeSNARKLog<P> {
             let left_hand = eval_rlc * eval_l[0] * zeta_minus_u4 * delta_minus_u3;
             let check11 = left_hand == right_hand;
             assert!(check11);
-            // println!("Verifier f_pa, f_pb, f_pc evaluation check: {:?}", time.elapsed());
 
             // verify lookup evaluation validity
             // check T's evaluation validity
             // T_col
-            // let time = Instant::now();
             let evals_t_col = evals_t_f2_q2_n[2].clone();
             let l_h_m_minums_1 = evaluate_one_lagrange::<P>(m-1, &x_domain, &delta);
             assert!(evals_t_col[0] == P::ScalarField::one());
@@ -747,7 +740,6 @@ impl<P: Pairing> DeSNARKLog<P> {
             let power = ((m * l) as f64).sqrt().floor() as usize;
             let r_sqrt = r.pow([power as u64]);
             assert!(evals_t_row_high[2] == r_sqrt * evals_t_row_high[1] + l_h_m_minums_1 * (P::ScalarField::one() - r_sqrt.pow([m as u64])));
-            // println!("Verfier T evaluation check: {:?}", time.elapsed());
 
             let left_evals = (0..9)
                 .map(|i| evals_val_upper_lower_a_b_f1[21 + i] * (gamma + beta * evals_val_upper_lower_a_b_f1[12 + i] + evals_val_upper_lower_a_b_f1[3 + i]) - P::ScalarField::one())
@@ -759,7 +751,6 @@ impl<P: Pairing> DeSNARKLog<P> {
             assert_eq!(left_hand, right_hand);
 
             // check f2 evaluation validity
-            // let time = Instant::now();
             let constant = gamma + beta * delta;
             let right_eval_1 = evals_t_f2_q2_n[3][1] * (constant + evals_t_f2_q2_n[0][1]) - evals_t_f2_q2_n[13][0];
             let right_eval_2 = evals_t_f2_q2_n[4][1] * (constant + evals_t_f2_q2_n[1][1]) - evals_t_f2_q2_n[14][0];
@@ -786,7 +777,6 @@ impl<P: Pairing> DeSNARKLog<P> {
             assert_eq!(evals_f1[6] * factor, evals_t_f2_q2_n[9][0]);
             assert_eq!(evals_f1[7] * factor, evals_t_f2_q2_n[10][0]);
             assert_eq!(evals_f1[8] * factor, evals_t_f2_q2_n[11][0]);
-            // println!("f1 f2 check: {:?}", time.elapsed());
             true
         });
 

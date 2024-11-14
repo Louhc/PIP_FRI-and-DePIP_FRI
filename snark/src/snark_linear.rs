@@ -98,7 +98,6 @@ impl<P: Pairing> DeSNARKLinear<P> {
         } else {
             Vec::new()
         };
-        // let coms_g1_h1 = vec![com_g1_h1.0, com_g1_h1.1];
         println!("Prover {:?} g_1 h_1 commit time: {:?}", sub_prover_id, time.elapsed());
 
         // generate new challenges alpha and u2
@@ -206,7 +205,6 @@ impl<P: Pairing> DeSNARKLinear<P> {
             let eval_b_r_inverse_beta = polynomials_y[7].evaluate(&beta);
             let eval_b_0_beta = polynomials_y[8].evaluate(&beta);
             let eval_c_r_beta = polynomials_y[9].evaluate(&beta);
-            // let eval_r_beta = polynomials_y[10].evaluate(&beta);
 
             let vec1 = vec![eval_w_alpha_beta, eval_ar_alpha_beta, eval_a_r_beta, eval_b_alpha_beta, eval_b_r_inverse_beta, eval_b_0_beta, eval_c_r_beta];
             let evals_g2_h2 = vec![eval_g2, eval_h2_low, eval_h2_high];
@@ -242,7 +240,6 @@ impl<P: Pairing> DeSNARKLinear<P> {
         r: &P::ScalarField,
         transcript: &mut Transcript,
     ) -> bool {
-        // Self-test of evaluation validity
 
         let m = x_domain.size();
         let l = y_domain.size();

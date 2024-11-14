@@ -189,7 +189,6 @@ pub struct Indexer<P: Pairing> {
 
 impl<P: Pairing> Indexer<P> {
 
-    // TODO: can still be distributed like coms_n and com_l
     pub fn preprocess (
         sub_prover_id: usize,
         m: usize,
@@ -244,83 +243,6 @@ impl<P: Pairing> Indexer<P> {
             PreMesProver{upper_r_poly, de_row_index_vec, de_col_index_vec, val_evals: de_val_evals_vec, val_polys, lower_a_b_evals, lower_a_b_polys, n_evals, n_polys, de_poly_l}, 
             PreMesVerifier{com_upper_r, coms_val, coms_lower_a_b, com_l, coms_n}
         )
-    }
-
-    // Create a new `Preprocessing` from the cs and domains and write it to a file.
-    pub fn new_to_file(
-        sub_prover_id: usize,
-        m: usize,
-        l: usize,
-        cs_matrix: &ConstraintMatrices<P::ScalarField>,
-        powers: &Vec<P::G1Affine>,
-        m_powers: &Vec<P::G1Affine>,
-        x_srs: &Vec<P::G1Affine>,
-        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
-        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
-        m_domain: &GeneralEvaluationDomain<P::ScalarField>,
-        file_path_prover: &str, 
-        file_path_verifier: &str, 
-    ) -> Result<(PreMesProver<P>, PreMesVerifier<P>), Box<dyn Error>> {
-        let (pre_mes_prover, pre_mes_verifier) = Self::preprocess(sub_prover_id, m, l, &cs_matrix, powers, m_powers, x_srs, x_domain, y_domain, m_domain);
-
-        let file_prover = std::fs::File::create(file_path_prover)?;
-        let writer_prover = std::io::BufWriter::new(file_prover);
-        bincode::serialize_into(writer_prover, &pre_mes_prover)?;
-
-        let file_verifier = std::fs::File::create(file_path_verifier)?;
-        let writer_verifier = std::io::BufWriter::new(file_verifier);
-        bincode::serialize_into(writer_verifier, &pre_mes_verifier)?;
-        Ok((pre_mes_prover, pre_mes_verifier))
-    }
-
-    pub fn read_from_file(
-        file_path_prover: &str,
-        file_path_verifier: &str,
-    ) -> Result<(PreMesProver<P>, PreMesVerifier<P>), Box<dyn Error>> {
-        let file_prover = std::fs::File::open(file_path_prover)?;
-        let reader_prover = std::io::BufReader::new(file_prover);
-        let pre_mes_prover = bincode::deserialize_from(reader_prover)?;
-
-        let file_verifier = std::fs::File::open(file_path_verifier)?;
-        let reader_verifier = std::io::BufReader::new(file_verifier);
-        let pre_mes_verifier = bincode::deserialize_from(reader_verifier)?;
-        Ok((pre_mes_prover, pre_mes_verifier))
-    }
-
-    pub fn new_preprocess_to_file (
-        sub_prover_id: usize,
-        m: usize,
-        l: usize,
-        cs_matrix: &ConstraintMatrices<P::ScalarField>,
-        powers: &Vec<P::G1Affine>,
-        m_powers: &Vec<P::G1Affine>,
-        x_srs: &Vec<P::G1Affine>,
-        x_domain: &GeneralEvaluationDomain<P::ScalarField>,
-        y_domain: &GeneralEvaluationDomain<P::ScalarField>,
-        m_domain: &GeneralEvaluationDomain<P::ScalarField>,
-    ) -> (PreMesProver<P>, PreMesVerifier<P>) {
-        let pre_mes_prover_filepath = format!("./data/Pre_Mes_Prover-{}-{}.paras", m, l);
-        let pre_mes_verifier_filepath = format!("./data/Pre_Mes_Verifier-{}-{}.paras", m, l);
-
-        let time = Instant::now();
-        let (pre_mes_prover, pre_mes_verifier) = Self::new_to_file(sub_prover_id, m, l, cs_matrix, powers, m_powers, x_srs, x_domain, y_domain, m_domain, &pre_mes_prover_filepath, &pre_mes_verifier_filepath).unwrap();
-        println!("Indexer preprocessing and writes to file time: {:?}", time.elapsed());
-        
-        (pre_mes_prover, pre_mes_verifier)
-    }
-
-    pub fn preprocess_from_file (
-        m: usize,
-        l: usize,
-    ) -> Result<(PreMesProver<P>, PreMesVerifier<P>), Box<dyn Error>> {
-        let pre_mes_prover_filepath = format!("./data/Pre_Mes_Prover-{}-{}.paras", m, l);
-        let pre_mes_verifier_filepath = format!("./data/Pre_Mes_Verifier-{}-{}.paras", m, l);
-
-        let time = Instant::now();
-        let (pre_mes_prover, pre_mes_verifier) = Self::read_from_file(&pre_mes_prover_filepath, &pre_mes_verifier_filepath)?;
-        println!("Reads preprocessing from file time: {:?}", time.elapsed());
-
-        Ok((pre_mes_prover, pre_mes_verifier))
     }
 
     fn decompose(
@@ -994,17 +916,10 @@ impl<P: Pairing> Indexer<P> {
         powers: &Vec<P::G1Affine>,
         x_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (UnivariatePolynomial<P::ScalarField>, P::G1) {
-        // let x_polynomials: Vec<UnivariatePolynomial<P::ScalarField>> = (0..l).into_par_iter().map(|i| {
-        //     let mut vec = vec![P::ScalarField::zero(); i+1];
-        //     vec[i] = P::ScalarField::one();
-        //     UnivariatePolynomial::from_coefficients_vec(vec)
-        // }).collect();
-        // let x_polynomials_res = x_polynomials.clone();
         let mut vec = vec![P::ScalarField::zero(); sub_prover_id + 1];
         vec[sub_prover_id] = P::ScalarField::one();
         let x_polynomial = UnivariatePolynomial::from_coefficients_vec(vec);
 
-        // let biv_poly = BivariatePolynomial{x_polynomials};
         let com = BivBatchKZG::<P>::de_commit(sub_prover_id, &powers, &[&x_polynomial], x_domain);
         let com = if Net::am_master() {
             com.unwrap()[0]

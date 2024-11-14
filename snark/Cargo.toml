@@ -16,13 +16,11 @@ rayon = { version = "1", optional = true }
 merlin = "3.0.0"
 my_kzg = { path = "../kzg" }
 my_ipa = { path = "../ipa" }
-ark-rollup = {path = "../rollup"}
 de_network = { version = "0.1.0", path = "../de_network"}
 structopt = "0.3"
 ark-r1cs-std = { version = "0.4", default-features = false, optional = true }
 ark-crypto-primitives = { version = "^0.3.0", default-features = true }
 ark-ff = { version = "0.4", default-features = false, features = [ "asm" ], optional = true}
-ark-simple-payments = { path = "../simple-payments", default-features = true }
 
 bincode = "1.3.3"
 serde = { version = "1.0", features = ["derive"] }

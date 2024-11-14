@@ -167,7 +167,6 @@ impl<P: Pairing> PreProver<P> {
                 let poly = interpolate_from_eval_domain::<P>(evals.clone(), m_domain);
                 (poly, evals)
             }).unzip(),
-            // REPEAT COMPUTE: all sub-provers have t_low and t_high, and t_row_low and t_row_high are computed repeatedly
             || {
                 let t_low_evals : Vec<_> = generate_powers(r, m);
                 let t_row_low = interpolate_from_eval_domain::<P>(t_low_evals.clone(), x_domain);
@@ -217,8 +216,6 @@ impl<P: Pairing> PreProver<P> {
         };
         end_timer!(step);
 
-        // REPEAT COMPUTE: only need commitments to t_low and t_high but all sub-provers have t_low and t_high
-        // here we use split msm to commit to avoid the problem
         let step = start_timer!(|| "compute t");
         let size = x_srs.len() / Net::n_parties();
         let start = sub_prover_id * size;
@@ -307,8 +304,6 @@ impl<P: Pairing> PreProver<P> {
         x_srs: &[P::G1Affine],
         upper_b_t_polys: &DeBandTPolys<P>,
     ) -> P::G1 {
-        // REPEAT COMPUTE: only need commitments to t_col but all sub-provers have t_col
-        // here we use split msm to commit to avoid the problem
         let size = x_srs.len() / Net::n_parties();
         let start = sub_prover_id * size;
         let end = start + size;
@@ -344,7 +339,6 @@ impl<P: Pairing> PreProver<P> {
         }
     }
 
-    // need self-check of the validity
     pub fn compute_pub_evals_alpha_beta (
         upper_a_t_evals: &DeAandTEvals<P>,
         upper_b_t_evals: &DeBandTEvals<P>,
@@ -412,7 +406,6 @@ impl<P: Pairing> PreProver<P> {
 
         let w = x_domain.group_gen();
 
-        // REPEAT COMPUTE: only need commitments to f2's but all sub-provers have f2, the computation to get polys_f2 is repeated
         let (polys_f2, polys_f1) = 
         rayon::join(
             || {
@@ -570,8 +563,6 @@ impl<P: Pairing> PreProver<P> {
         // send lower evals to master
         // compute f1 evals at delta
         let f1_evals: Vec<P::ScalarField> = sub_polys_f1.par_iter().map(|poly| poly.evaluate(delta)).collect();
-        // let f1_total_evals = Net::send_to_master(&f1_evals);
-        // let lower_total_evals = Net::send_to_master(lower_evals);
         let lower_f1_evals = Net::send_to_master(&(lower_evals.clone(), f1_evals));
 
         let poly_one = UnivariatePolynomial::from_coefficients_vec(vec![P::ScalarField::one()]);
@@ -580,8 +571,6 @@ impl<P: Pairing> PreProver<P> {
             let lower_f1_evals = lower_f1_evals.unwrap();
             let lower_total_evals: Vec<Vec<P::ScalarField>> = lower_f1_evals.clone().into_par_iter().map(|eval| eval.0).collect();
             let f1_total_evals: Vec<Vec<P::ScalarField>> = lower_f1_evals.into_par_iter().map(|eval| eval.1).collect();
-            // let lower_total_evals = lower_total_evals.unwrap();
-            // let f1_total_evals = f1_total_evals.unwrap();
             let (upper_row_pa_low_delta, upper_row_pa_high_delta, upper_row_pb_low_delta): (Vec<P::ScalarField>, Vec<P::ScalarField>, Vec<P::ScalarField>) = par_join_3!(
                 || upper_total_evals.par_iter().map(|evals| evals[3]).collect(),
                 || upper_total_evals.par_iter().map(|evals| evals[4]).collect(),
@@ -742,13 +731,8 @@ impl<P: Pairing> PreProver<P> {
         polys_f2: &Vec<UnivariatePolynomial<P::ScalarField>>,
         m_domain: &GeneralEvaluationDomain<P::ScalarField>,
     ) -> (Vec<P::G1>, Vec<P::G1>) {
-        // let time = Instant::now();
         let coms_f1 = BivBatchKZG::<P>::de_commit(sub_prover_id, &m_powers, &sub_polys_f1.iter().collect::<Vec<_>>(), m_domain);
-        // println!("Prover {:?} commits f1 time: {:?}", sub_prover_id, time.elapsed());
     
-        // REPEAT COMPUTE: only need commitments to f2's but all sub-provers have f2's
-        // here we use split msm to commit to avoid the problem
-        // let time = Instant::now();
         let size = x_srs.len() / Net::n_parties();
         let start = sub_prover_id * size;
         let end = start + size;
@@ -772,7 +756,6 @@ impl<P: Pairing> PreProver<P> {
         } else {
             vec![P::G1::zero(); 9]
         };
-        // println!("Prover {:?} commits f2 time: {:?}", sub_prover_id, time.elapsed());
 
         let coms_f1 = if Net::am_master() {
             let coms_f1 = coms_f1.unwrap();
@@ -796,7 +779,6 @@ impl<P: Pairing> PreProver<P> {
     ) -> Vec<UnivariatePolynomial<P::ScalarField>> {
         let m_prime = m_domain.size();
         let domain_4m = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(4 * m_prime).unwrap();
-        // let eval_beta = evaluate_one_lagrange::<P>(sub_prover_id, y_domain, &beta);
         
         // Multiply this factor first to save 3m multiplication compared to doing it when the domain is enlarged
         let mut pa = val_polys.val_pa.clone();
@@ -878,7 +860,6 @@ impl<P: Pairing> PreProver<P> {
     }
 
     // compute de-evals of upper and lower polys at delta
-    // keep the order 
     pub fn compute_evals_at_delta_beta_and_g3_h3_proofs (
         m_srs: &[P::G1Affine],
         val_polys: &DeValPolys<P>,
@@ -920,7 +901,6 @@ impl<P: Pairing> PreProver<P> {
         g3_h3_evals: &Vec<P::ScalarField>,
         proof_g3_h3: &P::G1,
     ) -> (Vec<Vec<P::ScalarField>>, Vec<P::ScalarField>, P::G1) {
-        // total evals
         let evals = Net::send_to_master(&(upper_evals.clone(), g3_h3_evals.clone(), proof_g3_h3.clone()));
 
         let (upper_total_evals, evals_g3_h3, proof_g3_h3) = if Net::am_master() {
@@ -1158,13 +1138,6 @@ impl<P: Pairing> PreProver<P> {
                 elem *= domain_2x.group_gen_inv();
             });
 
-        // test for lagrange commit and open
-        // let elements: Vec<P::ScalarField> = domain_2x.elements().collect();
-        // println!("size is: {:?}", elements.len());
-        // let evals_q2: Vec<P::ScalarField> = elements.par_iter().zip(evals_left.par_iter()).map(|(a, b)| *b / domain_2x.evaluate_vanishing_polynomial(*a)).collect();
-        // let poly_q2_test = interpolate_from_eval_domain::<P>(evals_q2, &domain_2x);
-        // assert_eq!(poly_q2, poly_q2_test);
-
         // generate com_q2 distributedly
         let size = x_srs.len() / Net::n_parties();
         let start = sub_prover_id * size;
@@ -1182,7 +1155,6 @@ impl<P: Pairing> PreProver<P> {
         (poly_q2, com_q2)
     }
 
-    // REPEAT COMPUTE: involve the open of t, f2, q2, n
     pub fn open_t_f2_q2_n (
         sub_prover_id: usize,
         x_srs: &[P::G1Affine],
@@ -1339,7 +1311,6 @@ impl<P: Pairing> PreProver<P> {
         (evals, (com_h, com_l))
     }
 
-    // TODO: here the evals are sent again
     pub fn open_val_upper_lower_a_b_f1 (
         sub_prover_id: usize,
         m_powers: &Vec<P::G1Affine>,

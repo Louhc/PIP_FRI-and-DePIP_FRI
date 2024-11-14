@@ -328,7 +328,6 @@ fn preprocessing_gadgetes_test_with_same_m_and_mprime() {
     let f_four = MyField::from(4);
     let (pa, pb, pc, _w, _a, _b, _c) = init::<Bls12_381>();
 
-    // TODO: consider m_prime is not power-of-two
     let row_1 = DeRowIndex {
         row_pa_low: vec![0, 1], row_pa_high: vec![0, 0],
         row_pb_low: vec![0, 1], row_pb_high: vec![1, 1],

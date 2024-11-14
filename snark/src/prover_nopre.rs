@@ -72,12 +72,6 @@ impl<P: Pairing> NoPreProver<P> {
             end_timer!(step);
             (evals_r, eval_b_virtual)
         }, || {
-            // let eval_a_r = wit_polys.poly_a.evaluate(r);
-            // let eval_b_0 = wit_polys.poly_b.evaluate(&P::ScalarField::zero());
-            // let eval_b_inverse = wit_polys.poly_b.evaluate(&r.clone().inverse().unwrap());
-            // let eval_b_virtual = eval_b_inverse * r_pow_m + eval_b_0 * (P::ScalarField::one() - r_pow_m);
-            // let eval_c_r = wit_polys.poly_c.evaluate(r);
-            // let eval_r_pow_m_mul_c_r = UnivariatePolynomial::from_coefficients_vec(vec![-eval_r * eval_c_r]);
             let step = start_timer!(|| "evals f");
             let polys_f = vec![&pub_polys.poly_pa, &pub_polys.poly_pb, &pub_polys.poly_pc, &wit_polys.poly_w, &poly_ar, &wit_polys.poly_b];
             let evals_f: Vec<Vec<P::ScalarField>> = polys_f.par_iter().map(|&poly| poly.evaluate_over_domain_by_ref(domain_2x).evals).collect();
@@ -113,19 +107,6 @@ impl<P: Pairing> NoPreProver<P> {
     ) -> Vec<P::ScalarField> {
         let polys_alpha = vec![&pub_polys.poly_pa, &pub_polys.poly_pb, &pub_polys.poly_pc, &wit_polys.poly_w, &wit_polys.poly_a, &wit_polys.poly_b];
         let points_alpha = vec![*alpha, *alpha, *alpha, *alpha, *r * alpha, *alpha];
-        
-        // let eval_pa_alpha = pub_polys.poly_pa.evaluate(&alpha);
-        // let eval_pb_alpha = pub_polys.poly_pb.evaluate(&alpha);
-        // let eval_pc_alpha = pub_polys.poly_pc.evaluate(&alpha);
-        // let eval_w_alpha = wit_polys.poly_w.evaluate(&alpha);
-        // let eval_ar_alpha = wit_polys.poly_a.evaluate(&(*r * alpha));
-        // assert_eq!(eval_ar_alpha, poly_ar.evaluate(&alpha));
-        // let eval_a_r = eval_a_r;
-        // let eval_b_alpha = wit_polys.poly_b.evaluate(&alpha);
-        // let eval_b_r_inverse = eval_b_inverse;
-        // let eval_b_0 = eval_b_0;
-        // let eval_c_r = eval_c_r;
-
         polys_alpha.par_iter().zip(points_alpha.par_iter()).map(|(poly, point)| poly.evaluate(&point)).collect()
     }
 
@@ -142,7 +123,6 @@ impl<P: Pairing> NoPreProver<P> {
         (evals_g1_h1, proof_g1_h1)
     }
 
-    // TODO: Very possible to save couple FFTs/IFFTs here, but it's too small to matter for now
     pub fn compute_y_polys_and_2nd_target_poly (
         l: usize,
         message: &Vec<(Vec<P::ScalarField>, P::G1)>,
@@ -173,8 +153,6 @@ impl<P: Pairing> NoPreProver<P> {
 
             let polynomials_y: Vec<UnivariatePolynomial<P::ScalarField>> = evals_alpha.into_par_iter()
                 .map(|evals| Self::interpolate_from_eval_domain(evals, &y_domain)).collect();
-
-            // use fft to get evaluations can be two times faster
             let domain_2y = <GeneralEvaluationDomain<P::ScalarField> as EvaluationDomain<P::ScalarField>>::new(2 * l).unwrap();
 
             let ((evals_pa_alpha, evals_pb_alpha, evals_pc_alpha),

@@ -1,6 +1,6 @@
-// usage
-// RAYON_NUM_THREADS=32 cargo build --release --example snark_nopre --no-default-features --features "parallel"
-// RAYON_NUM_THREADS=32 ./snark_nopre ../../../snark/data/4
+// usage example for 4 sub-provers in the local environment
+// RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' target-feature=+bmi2,+adx" cargo +nightly build --release --example snark_nopre --no-default-features --features "parallel asm"
+// RAYON_NUM_THREADS=32 ./snark_nopre 0/1/2/3 ../../../snark/data/4
 
 
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
@@ -48,7 +48,6 @@ fn init() -> (usize, usize, usize) {
     (m, l, sub_prover_id)
 }
 
-// update to true r1cs
 fn main() {
     let (m, l, sub_prover_id) = init();
     let mut rng = StdRng::seed_from_u64(0u64);
@@ -83,8 +82,6 @@ fn main() {
     let r1cs_de_vecs = r1cs_vecs_all[sub_prover_id].clone();
     let r1cs_de_pub_vecs: Vec<R1CSPubVectors<Bls12_381>> = r1cs_vecs_all.par_iter().map(|vec| R1CSPubVectors{vec_x: vec.vec_x.clone(), vec_y: vec.vec_y.clone(), vec_z: vec.vec_z.clone()}).collect();
     println!("Generate R1CS instances time: {:?}", time.elapsed());
-
-    // let (r1cs_de_vecs, r1cs_pub_vecs) = generate_r1cs_de_vectors::<Bls12_381>(sub_prover_id, m, l, &challenge_r);
 
     let time = Instant::now();
     let mut transcript : Transcript = Transcript::new(b"R1CS inner product");
