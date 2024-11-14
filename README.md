@@ -43,7 +43,8 @@ It shows the prover time, verifier time, and proof size of running the trivial b
 
 The library provides distributed schemes, including the distributed batch bivariate KZG, on random double-dimension points or on random points with the same point over the $Y$ dimension, the distributed SNARK with linear verifier, and the distributed SNARK with constant verifier complexity via preprocessing.
 
-For these distributed schemes, we provide local tests to simulate the distributed network to guarantee the reproducibility using 4 cores.
+For these distributed schemes, we provide local tests to simulate the distributed network to guarantee the reproducibility.
+We use 4 sub-provers.
 
 For the distributed batch bivariate KZG, invoke:
 ```bash
@@ -53,7 +54,7 @@ RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' cargo build --release --exa
 
 ./run_local.sh de_biv_batch_kzg 
 ```
-or 
+or the following for the KZG with same point on $Y$-dimension:
 ```bash
 ./run_local.sh de_biv_batch_kzg_same_point
 ```
@@ -61,9 +62,7 @@ where $N=4$, and also for the $N$ 's below.
 
 For the distrbuted SNARK with linear verifier complexity, invoke:
 ```bash
-cd snark
-
-RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' cargo build --release --example snark_nopre --no-default-features --features "parallel asm"    
+cd snark   
 
 ./run_local.sh snark_nopre
 ```
@@ -72,9 +71,18 @@ For the distrbuted SNARK with constant verifier complexity, invoke:
 ```bash
 cd snark
 
-RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' cargo build --release --example snark_pre --no-default-features --features "parallel asm"    
-
 ./run_local.sh snark_pre
 ```
+for random R1CS, or 
+```bash
+cd snark/data
 
+unxz circuit.r1cs.xz 
 
+tar -xJvf witness.tar.xz
+
+cd snark
+
+./run_local.sh snark_circom
+```
+for zkRollup transactions.

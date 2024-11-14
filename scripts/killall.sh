@@ -8,7 +8,7 @@ done < wan_ip.txt
 
 for i in ${!wanIPs[@]}; do
     ip=${wanIPs[$i]}
-    ssh -p 16789 weihan@$ip killall snark_pre &
+    ssh root@$ip killall snark_circom &
 done
 wait
 

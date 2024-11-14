@@ -1,0 +1,90 @@
+Opt { id: 11, input: "./data/32" }
+deNetwork ready!
+Generate R1CS time: 31.202898367s
+number of constraints per machine: 8388608
+number of variables per machine: 8388608
+log m_prime: 25
+Setup time: 465.246269065s
+Indexer time: 154.397448069s
+Prover 11 starts to prove
+Prove time: 408.362532133s
+Verify time: 209ns
+Opt { id: 11, input: "./data/16" }
+deNetwork ready!
+Generate R1CS time: 31.051814957s
+number of constraints per machine: 8388608
+number of variables per machine: 8388608
+log m_prime: 25
+Setup time: 228.735299414s
+Indexer time: 137.804964184s
+Prover 11 starts to prove
+Prove time: 404.083397159s
+Verify time: 221ns
+Opt { id: 11, input: "./data/16" }
+deNetwork ready!
+Generate R1CS time: 15.741480028s
+number of constraints per machine: 4194304
+number of variables per machine: 4194304
+log m_prime: 24
+Setup time: 112.090279313s
+Indexer time: 71.591503469s
+Prover 11 starts to prove
+Prove time: 208.361444286s
+Verify time: 202ns
+Opt { id: 11, input: "./data/16" }
+deNetwork ready!
+Generate R1CS time: 7.941321736s
+number of constraints per machine: 2097152
+number of variables per machine: 2097152
+log m_prime: 23
+Setup time: 57.214895339s
+Indexer time: 35.21818045s
+Prover 11 starts to prove
+Prove time: 103.887361002s
+Verify time: 215ns
+Opt { id: 11, input: "./data/16" }
+deNetwork ready!
+Generate R1CS time: 4.051492249s
+number of constraints per machine: 1048576
+number of variables per machine: 1048576
+log m_prime: 22
+Setup time: 28.541120264s
+Indexer time: 17.160423517s
+Prover 11 starts to prove
+Prove time: 51.39384909s
+Verify time: 230ns
+Opt { id: 11, input: "./data/16" }
+deNetwork ready!
+Generate R1CS time: 2.10441746s
+number of constraints per machine: 524288
+number of variables per machine: 524288
+log m_prime: 21
+Setup time: 14.910578095s
+Indexer time: 9.7380319s
+Prover 11 starts to prove
+Prove time: 26.705367517s
+Verify time: 1ns
+Opt { id: 11, input: "./data/8" }
+thread 'main' panicked at de_network/src/multi.rs:70:9:
+assertion failed: id < self.peers.len()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Opt { id: 11, input: "./data/8" }
+thread 'main' panicked at de_network/src/multi.rs:70:9:
+assertion failed: id < self.peers.len()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Opt { id: 11, input: "./data/8" }
+thread 'main' panicked at de_network/src/multi.rs:70:9:
+assertion failed: id < self.peers.len()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Opt { id: 11, input: "./data/8" }
+thread 'main' panicked at de_network/src/multi.rs:70:9:
+assertion failed: id < self.peers.len()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Opt { id: 11, input: "./data/8" }
+thread 'main' panicked at de_network/src/multi.rs:70:9:
+assertion failed: id < self.peers.len()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Opt { id: 11, input: "./data/8" }
+thread 'main' panicked at de_network/src/multi.rs:70:9:
+assertion failed: id < self.peers.len()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

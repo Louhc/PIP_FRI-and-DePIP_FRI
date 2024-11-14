@@ -1,0 +1,11 @@
+Opt { id: 27, input: "./data/32" }
+deNetwork ready!
+Generate R1CS time: 31.457592638s
+number of constraints per machine: 8388608
+number of variables per machine: 8388608
+log m_prime: 25
+Setup time: 472.89903908s
+Indexer time: 167.354828609s
+Prover 27 starts to prove
+Prove time: 408.188750952s
+Verify time: 353ns

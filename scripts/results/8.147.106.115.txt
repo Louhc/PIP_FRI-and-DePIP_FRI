@@ -1,0 +1,132 @@
+Opt { id: 1, input: "./data/32" }
+deNetwork ready!
+Generate R1CS time: 31.555015812s
+number of constraints per machine: 8388608
+number of variables per machine: 8388608
+log m_prime: 25
+Setup time: 471.455729217s
+Indexer time: 148.945276712s
+Prover 1 starts to prove
+Prove time: 409.047159657s
+Verify time: 240ns
+Opt { id: 1, input: "./data/16" }
+deNetwork ready!
+Generate R1CS time: 31.743534608s
+number of constraints per machine: 8388608
+number of variables per machine: 8388608
+log m_prime: 25
+Setup time: 228.870981724s
+Indexer time: 139.456513786s
+Prover 1 starts to prove
+Prove time: 404.521775654s
+Verify time: 225ns
+Opt { id: 1, input: "./data/16" }
+deNetwork ready!
+Generate R1CS time: 15.669991196s
+number of constraints per machine: 4194304
+number of variables per machine: 4194304
+log m_prime: 24
+Setup time: 115.116188507s
+Indexer time: 70.596111991s
+Prover 1 starts to prove
+Prove time: 208.210079581s
+Verify time: 235ns
+Opt { id: 1, input: "./data/16" }
+deNetwork ready!
+Generate R1CS time: 7.952677817s
+number of constraints per machine: 2097152
+number of variables per machine: 2097152
+log m_prime: 23
+Setup time: 59.129714688s
+Indexer time: 33.624903362s
+Prover 1 starts to prove
+Prove time: 103.95522421s
+Verify time: 351ns
+Opt { id: 1, input: "./data/16" }
+deNetwork ready!
+Generate R1CS time: 4.08216325s
+number of constraints per machine: 1048576
+number of variables per machine: 1048576
+log m_prime: 22
+Setup time: 28.883459785s
+Indexer time: 16.658396783s
+Prover 1 starts to prove
+Prove time: 51.394761777s
+Verify time: 245ns
+Opt { id: 1, input: "./data/16" }
+deNetwork ready!
+Generate R1CS time: 2.13850681s
+number of constraints per machine: 524288
+number of variables per machine: 524288
+log m_prime: 21
+Setup time: 15.1623046s
+Indexer time: 8.670940309s
+Prover 1 starts to prove
+Prove time: 26.719064851s
+Verify time: 1ns
+Opt { id: 1, input: "./data/8" }
+deNetwork ready!
+Generate R1CS time: 2.128811635s
+number of constraints per machine: 524288
+number of variables per machine: 524288
+log m_prime: 21
+Setup time: 7.938213069s
+Indexer time: 9.702435166s
+Prover 1 starts to prove
+Prove time: 27.332743206s
+Verify time: 1ns
+Opt { id: 1, input: "./data/8" }
+deNetwork ready!
+Generate R1CS time: 4.097927032s
+number of constraints per machine: 1048576
+number of variables per machine: 1048576
+log m_prime: 22
+Setup time: 15.701017309s
+Indexer time: 18.147673267s
+Prover 1 starts to prove
+Prove time: 52.876402862s
+Verify time: 4ns
+Opt { id: 1, input: "./data/8" }
+deNetwork ready!
+Generate R1CS time: 7.98045381s
+number of constraints per machine: 2097152
+number of variables per machine: 2097152
+log m_prime: 23
+Setup time: 31.244324165s
+Indexer time: 33.112928583s
+Prover 1 starts to prove
+Prove time: 101.14712846s
+Verify time: 4ns
+Opt { id: 1, input: "./data/8" }
+deNetwork ready!
+Generate R1CS time: 4.212556748s
+number of constraints per machine: 1048576
+number of variables per machine: 1048576
+log m_prime: 22
+Setup time: 15.725362264s
+Indexer time: 16.589364733s
+Prover 1 starts to prove
+Prove time: 52.911086716s
+Verify time: 1ns
+Opt { id: 1, input: "./data/8" }
+deNetwork ready!
+Generate R1CS time: 15.621149409s
+number of constraints per machine: 4194304
+number of variables per machine: 4194304
+log m_prime: 24
+Setup time: 61.981334491s
+Indexer time: 66.671301496s
+Prover 1 starts to prove
+Prove time: 203.08365852s
+Verify time: 1ns
+Opt { id: 1, input: "./data/8" }
+deNetwork ready!
+Generate R1CS time: 31.260584076s
+number of constraints per machine: 8388608
+number of variables per machine: 8388608
+log m_prime: 25
+Setup time: 123.59349235s
+Indexer time: 147.141221389s
+Prover 1 starts to prove
+Prove time: 418.437069874s
+Verify time: 1ns

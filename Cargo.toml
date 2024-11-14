@@ -6,8 +6,6 @@ members = [
   "kzg",
   "ipa",
   "snark",
-  "simple-payments",
-  "rollup",
 ]
 
 [patch.crates-io]

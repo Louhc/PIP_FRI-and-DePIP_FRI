@@ -56,8 +56,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let mut r1cs = R1CSFile::<ConstraintF>::new(reader).unwrap();
     
     // This is the tx number of **Each** sub-prover
-    const NUM_TXS : usize = 2;
-
+    const NUM_TXS : usize = 32;
     // Repeat the same R1CS a couple times, using a random witness each time
     let mut rng = ark_std::test_rng();
     for _ in 0..NUM_TXS {
@@ -152,13 +151,16 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     }
 
     let time = Instant::now();
+    let repetitions = 50;
     if Net::am_master() {
-        let mut transcript : Transcript = Transcript::new(b"Random R1CS");
-        let is_valid = DeSNARKLog::<Bn254>::r1cs_verify_preprocess(&v_srs, &m_v_srs, 
-            &pre_mes_verifier, &proof.unwrap(), &domain_x, &domain_y, &domain_m, &challenge_r, &mut transcript);
-        assert!(is_valid);
+        for _ in 0..repetitions {
+            let mut transcript : Transcript = Transcript::new(b"Random R1CS");
+            let is_valid = DeSNARKLog::<Bn254>::r1cs_verify_preprocess(&v_srs, &m_v_srs, 
+                &pre_mes_verifier, proof.as_ref().unwrap(), &domain_x, &domain_y, &domain_m, &challenge_r, &mut transcript);
+            assert!(is_valid);
+        }
     }
-    println!("Verify time: {:?}", time.elapsed());
+    println!("Verify time: {:?}", time.elapsed() / repetitions);
 }
 
 fn main() {
