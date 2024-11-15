@@ -79,10 +79,10 @@ unxz circuit.r1cs.xz
 
 tar -xJvf witness.tar.xz
 ```
-Then, run the scripts:
+Then, invoke:
 ```bash
 cd snark
 
 ./run_local.sh snark_circom
 ```
-The terminal would print the concrete time of Setup time, Indexer time, Prover time, Verifeir time, and Proof size.
+The terminal would print the concrete Setup time, Indexer time, Prover time, Verifeir time, and Proof size.
