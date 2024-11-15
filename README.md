@@ -1,6 +1,6 @@
-<h1 align="center">District1 (Distributed R1CS-Targeted SNARKs)</h1>
+<h1 align="center">Soloist (Distributed SNARKs for Rank-1 Constraint System)</h1>
 
-___District1___ is a Rust library for a distributed SNARK for R1CS with constant proof size, constant verifier complexity, and constant amortized communication complexity.
+___Soloist___ is a Rust library for a distributed SNARK for R1CS with constant proof size, constant verifier complexity, and constant amortized communication complexity.
 It also includes various implementations which may of independent interests, such as an improved inner product argument with constant proof size following the "Polynomial interactive oracle proof (PIOP) + Polynomial commitment scheme (PCS)" approach, and a bivariate batch KZG PCS first supporting multiple polynomials and points.
 
 **WARNING:** This is an academic proof-of-concept prototype, and in particular has not received careful code review. This implementation is NOT ready for production use.
@@ -67,22 +67,23 @@ cd snark
 ./run_local.sh snark_nopre
 ```
 
-For the distrbuted SNARK with constant verifier complexity, invoke:
+For the distrbuted SNARK with constant verifier complexity running over random R1CS, invoke:
 ```bash
 cd snark
 
 ./run_local.sh snark_pre
 ```
-for random R1CS, or 
+For zkRollup transactions, first unzip the r1cs and its witness. We provide 128 sets of random witness.
 ```bash
 cd snark/data
 
 unxz circuit.r1cs.xz 
 
 tar -xJvf witness.tar.xz
-
+```
+Then, run the scripts:
+```
 cd snark
 
 ./run_local.sh snark_circom
 ```
-for zkRollup transactions.
