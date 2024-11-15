@@ -1,7 +1,7 @@
 <h1 align="center">Soloist (Distributed SNARKs for Rank-1 Constraint System)</h1>
 
-___Soloist___ is a Rust library for a distributed SNARK for R1CS with constant proof size, constant verifier complexity, and constant amortized communication complexity.
-It also includes various implementations which may of independent interests, such as an improved inner product argument with constant proof size following the "Polynomial interactive oracle proof (PIOP) + Polynomial commitment scheme (PCS)" approach, and a bivariate batch KZG PCS first supporting multiple polynomials and points.
+This is a Rust library for ___Soloist___, a distributed SNARK for R1CS with constant proof size, constant verifier complexity, and constant amortized communication complexity.
+This library also includes implementations and benmarks of the underlying sub-protocols, such as an improved inner product argument with constant proof size from univariate sum-check and coefficient-based polynomials, and a bivariate batch KZG PCS first supporting multiple polynomials and multiple points.
 
 **WARNING:** This is an academic proof-of-concept prototype, and in particular has not received careful code review. This implementation is NOT ready for production use.
 
@@ -27,7 +27,8 @@ cargo build
 ## Benchmarks of non-distributed schemes
 
 The libary comes with benchmarks for inner product arguments and batch bivariate KZG with the same evaluation points on the $Y$-dimension.
-To run our IPA and see a performance comparison of IPAs from univariate sum-check and Larent polynomials, invoke:
+
+To run our IPA and see a performance comparison of IPAs from univariate sum-check in [Marlin](https://eprint.iacr.org/2019/1047) and Larent polynomials in [Dark](https://eprint.iacr.org/2019/1229), invoke:
 ```
 cargo bench --bench my_ipa 
 ```
@@ -37,20 +38,18 @@ To run the batch bivariate KZG, invoke:
 ```
 cargo bench --bench biv_batch_kzg
 ```
-It shows the prover time, verifier time, and proof size of running the trivial bivariate KZG multiple times and our batch bivariate KZG.
+It shows the prover time, verifier time, and proof size of our batch bivariaet KZG and directly running the bivariate KZG in [PST13](https://eprint.iacr.org/2011/587.pdf) for multiple times.
 
 ## Benchmarks of distributed schemes
 
 The library provides distributed schemes, including the distributed batch bivariate KZG, on random double-dimension points or on random points with the same point over the $Y$ dimension, the distributed SNARK with linear verifier, and the distributed SNARK with constant verifier complexity via preprocessing.
 
 For these distributed schemes, we provide local tests to simulate the distributed network to guarantee the reproducibility.
-We use 4 sub-provers.
+We utilize 4 sub-provers, which requires the machine with at least 4 cores.
 
 For the distributed batch bivariate KZG, invoke:
 ```bash
 cd kzg
-
-RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' cargo build --release --example de_biv_batch_kzg --no-default-features --features "parallel asm"    
 
 ./run_local.sh de_biv_batch_kzg 
 ```
@@ -58,7 +57,6 @@ or the following for the KZG with same point on $Y$-dimension:
 ```bash
 ./run_local.sh de_biv_batch_kzg_same_point
 ```
-where $N=4$, and also for the $N$ 's below.
 
 For the distrbuted SNARK with linear verifier complexity, invoke:
 ```bash
@@ -87,3 +85,4 @@ cd snark
 
 ./run_local.sh snark_circom
 ```
+The terminal would print the concrete time of Setup time, Indexer time, Prover time, Verifeir time, and Proof size.
