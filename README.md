@@ -44,8 +44,20 @@ It shows the prover time, verifier time, and proof size of our batch bivariaet K
 
 The library provides distributed schemes, including the distributed batch bivariate KZG, on random double-dimension points or on random points with the same point over the $Y$ dimension, the distributed SNARK with linear verifier, and the distributed SNARK with constant verifier complexity via preprocessing.
 
-For these distributed schemes, we provide local tests to simulate the distributed network to guarantee the reproducibility.
-We utilize 4 sub-provers, which requires the machine with at least 4 cores.
+For these distributed schemes, run
+```bash
+RAYON_NUM_THREADS=N RUSTFLAGS="-C target-cpu=native" cargo build --release --example <protocol_name> --no-default-features --features "parallel asm"
+```
+on each sub-prover for building, where $N$ is the number of cores for parallelization for each sub-prover.
+
+Then, invoke on each sub-prover
+```bash
+cd target/release/examples 
+./<protocol_name> <id> <file_of_ip>
+```
+
+To guarantee the reproducibility, we provide local tests to simulate the distributed network.
+For the local tests, we utilize 4 sub-provers, which requires the local machine with at least 4 cores.
 
 For the distributed batch bivariate KZG, invoke:
 ```bash
