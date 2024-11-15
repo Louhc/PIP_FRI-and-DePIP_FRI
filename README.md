@@ -1,7 +1,7 @@
 <h1 align="center">Soloist (Distributed SNARKs for Rank-1 Constraint System)</h1>
 
 This is a Rust library for ___Soloist___, a distributed SNARK for R1CS with constant proof size, constant verifier complexity, and constant amortized communication complexity.
-This library also includes implementations and benmarks of the underlying sub-protocols, such as an improved inner product argument with constant proof size from univariate sum-check and coefficient-based polynomials, and a bivariate batch KZG PCS first supporting multiple polynomials and multiple points.
+This library also includes implementations and benchmarks of the underlying sub-protocols, such as an improved inner product argument with constant proof size from univariate sum-check and coefficient-based polynomials, and a bivariate batch KZG PCS first supporting multiple polynomials and multiple points.
 
 **WARNING:** This is an academic proof-of-concept prototype, and in particular has not received careful code review. This implementation is NOT ready for production use.
 
@@ -80,7 +80,7 @@ unxz circuit.r1cs.xz
 tar -xJvf witness.tar.xz
 ```
 Then, run the scripts:
-```
+```bash
 cd snark
 
 ./run_local.sh snark_circom
