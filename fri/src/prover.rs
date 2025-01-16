@@ -1,4 +1,4 @@
-use ark_ff::{PrimeField, batch_inversion};
+use ark_ff::{batch_inversion, BigInt, PrimeField};
 use ark_poly::polynomial::univariate::DensePolynomial as UnivariatePolynomial;
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 
@@ -52,6 +52,7 @@ impl<T: PrimeField> Prover<T> {
         verifier.set_final_value(self.final_value.unwrap());
     }
 
+    // f(w^2) = (f(w) + f(-w))/2 + (f(w) - f(-w))/2w
     fn evaluation_next_domain(&self, folding_value: &Vec<T>, round: usize, challenge: T) -> Vec<T> {
         let mut res = vec![];
         let len = self.interpolate_cosets[round].size();
@@ -60,6 +61,7 @@ impl<T: PrimeField> Prover<T> {
             let x = folding_value[i];
             let nx = folding_value[i + len / 2];
             let new_v = (x + nx) + challenge * (x - nx) * coset.element(i).inverse().unwrap();
+            let new_v = new_v * T::from_u64(2 as u64).unwrap().inverse().unwrap();
             res.push(new_v);
         }
         res

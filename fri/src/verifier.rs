@@ -80,6 +80,7 @@ impl<T: PrimeField> Verifier<T> {
                 let nx = (*get_folding_value)(&(j + domain_size / 2));
                 let v =
                     x + nx + challenge * (x - nx) * self.interpolate_cosets[i].element(*j).inverse().unwrap();
+                let v = v * T::from_u64(2).unwrap().inverse().unwrap();
                 if i == self.total_round - 1 {
                     assert_eq!(v, self.final_value.unwrap());
                 } else {
