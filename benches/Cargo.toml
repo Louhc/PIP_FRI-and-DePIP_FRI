@@ -35,8 +35,13 @@ name = "my_ipa"
 path = "benches/ipa.rs"
 harness = false
 
+[[bench]]
+name = "fft"
+path = "benches/fft.rs"
+harness = false
+
 [features]
-default = [ "parallel", "asm" ]
-parallel = [ "rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel", "ark-crypto-primitives/parallel"]
+default = ["asm" ]
+parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel", "ark-crypto-primitives/parallel"]
 print-trace = [ "ark-std/print-trace" ]
 asm = ["ark-ff"]

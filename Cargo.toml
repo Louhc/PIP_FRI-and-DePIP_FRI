@@ -6,15 +6,18 @@ members = [
   "kzg",
   "ipa",
   "snark",
+  "utils",
+  "fri",
+  "gemini-fri"
 ]
 
 [patch.crates-io]
-ark-ff = { path = "local_dep/algebra/ff"}
-ark-ec = { path = "local_dep/algebra/ec" }
-ark-serialize = { path = "local_dep/algebra/serialize" }
-ark-bn254 = { path = "local_dep/curves/bn254" }
-ark-bls12-381 = { path = "local_dep/curves/bls12_381" }
-ark-relations = { path = "local_dep/snark/relations" }
+ark-ff = { git = "https://github.com/zhaowenlan1779/algebra", branch = "optimize" }
+ark-ec = { git = "https://github.com/zhaowenlan1779/algebra", branch = "optimize" }
+ark-serialize = { git = "https://github.com/zhaowenlan1779/algebra", branch = "optimize" }
+ark-bn254 = { git = "https://github.com/zhaowenlan1779/curves", branch = "optimize" }
+ark-bls12-381 = { git = "https://github.com/zhaowenlan1779/curves", branch = "optimize" }
+ark-relations = { git = "https://github.com/zhaowenlan1779/snark", branch = "optimize" }
 
 [profile.release]
 lto = "fat"
