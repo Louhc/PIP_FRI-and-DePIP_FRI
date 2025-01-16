@@ -78,14 +78,6 @@ impl<T: PrimeField> Prover<T> {
                     .map(|x| x - point)
                     .collect();
                 batch_inversion(inv_vec.as_mut_slice());
-                // let inv: Vec<T> = batch_inverse(
-                //     &mut self.interpolate_cosets[0]
-                //         .all_elements()
-                //         .into_iter()
-                //         .map(|x| x - point)
-                //         .collect(),
-                // );
-                // res = Some(self.polynomial.evaluate(&point));
                 let v = self.interpolations[0].vec.clone();
                 self.evaluation_next_domain(
                     &v.into_iter()
@@ -105,7 +97,6 @@ impl<T: PrimeField> Prover<T> {
                 self.final_value = Some(next_evalutation[0]);
             }
         }
-        // res.unwrap()
     }
 
     pub fn open(&mut self, point: T, eval: T, verifier: &mut Verifier<T>) -> Vec<QueryResult<T>> {
