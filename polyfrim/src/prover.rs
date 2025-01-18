@@ -1,11 +1,13 @@
 use super::verifier::One2ManyVerifier;
 use ark_ff::PrimeField;
+use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use utils::helper::MultilinearPolynomial;
 
 use utils::merkle_tree::MERKLE_ROOT_SIZE;
 use utils::query_result::QueryResult;
+use utils::CODE_RATE;
 use utils::{
-    helper::to_bytes_vec,
+    helper::Helper,
     merkle_tree::MerkleTreeProver,
     fiat_shamir::RandomOracle,
 };
@@ -21,7 +23,7 @@ impl<T: PrimeField> InterpolateValue<T> {
         let len = value.len() / 2;
         let merkle_tree = MerkleTreeProver::new(
             (0..len)
-                .map(|i| to_bytes_vec(&[value[i], value[i + len]]))
+                .map(|i| Helper::to_bytes_vec(&[value[i], value[i + len]]))
                 .collect(),
         );
         Self { value, merkle_tree }
@@ -52,26 +54,24 @@ impl<T: PrimeField> InterpolateValue<T> {
 #[derive(Clone)]
 pub struct One2ManyProver<T: PrimeField> {
     total_round: usize,
-    variable_num: usize,
-    interpolate_cosets: Vec<Coset<T>>,
+    interpolate_cosets: Vec<GeneralEvaluationDomain<T>>,
     functions: Vec<InterpolateValue<T>>,
     foldings: Vec<InterpolateValue<T>>,
     oracle: RandomOracle<T>,
-    final_value: Option<Polynomial<T>>,
+    final_value: Option<T>,
 }
 
 impl<T: PrimeField> One2ManyProver<T> {
     pub fn new(
         total_round: usize,
-        interpolate_coset: &Vec<Coset<T>>,
+        interpolate_coset: &Vec<GeneralEvaluationDomain<T>>,
         polynomial: MultilinearPolynomial<T>,
         oracle: &RandomOracle<T>,
     ) -> One2ManyProver<T> {
-        let interpolation = interpolate_coset[0].fft(polynomial.coefficients().clone());
+        let interpolation = interpolate_coset[0].fft(&polynomial.coefficients());
 
         One2ManyProver {
             total_round,
-            variable_num: polynomial.variable_num(),
             interpolate_cosets: interpolate_coset.clone(),
             functions: vec![InterpolateValue::new(interpolation)],
             foldings: vec![],
@@ -85,21 +85,18 @@ impl<T: PrimeField> One2ManyProver<T> {
         self.functions[0].commit()
     }
 
-    fn fold(values: &Vec<T>, parameter: T, coset: &Coset<T>) -> Vec<T> {
-        let len = values.len() / 2;
-        let res = (0..len)
-            .into_iter()
-            .map(|i| {
-                let x = values[i];
-                let nx = values[i + len];
-                let new_v = (x + nx) + parameter * (x - nx) * coset.element_inv_at(i);
-                new_v * T::TWO_INV
-            })
-            .collect();
-        res
+    pub fn open(&mut self, verifier: &mut One2ManyVerifier<T>, open_point: &Vec<T>) -> (Vec<QueryResult<T>>, Vec<QueryResult<T>>) {
+        self.commit_functions(&open_point, verifier);
+        self.prove();
+        self.commit_foldings(verifier);
+        let (folding_proof, function_proof) = self.query();
+        (folding_proof, function_proof)
     }
 
-    pub fn commit_functions(&mut self, open_point: &Vec<T>, verifier: &mut One2ManyVerifier<T>) {
+    // generate f_1, f_2, ..., f_\mu, where f_\mu is a constant
+    pub fn commit_functions(&mut self, open_point: &Vec<T>, 
+        verifier: &mut One2ManyVerifier<T>
+    ) {
         let mut evaluation = None;
         for round in 0..self.total_round {
             let next_evaluation = Self::fold(
@@ -111,10 +108,13 @@ impl<T: PrimeField> One2ManyProver<T> {
             if round < self.total_round - 1 {
                 self.functions.push(InterpolateValue::new(next_evaluation));
             } else {
-                let mut coefficients = self.interpolate_cosets[round + 1].ifft(next_evaluation);
-                coefficients.truncate(1 << (self.variable_num - self.total_round));
-                // Univariate polynomial is also a multilinear polynomial
-                evaluation = Some(MultilinearPolynomial::new(coefficients));
+                assert_eq!(next_evaluation.len(), 1 << CODE_RATE);
+                // evaluation = Some(next_evaluation);
+                // let mut coefficients = self.interpolate_cosets[round + 1].ifft(&next_evaluation);
+                // coefficients.truncate(1 << (self.variable_num - self.total_round));
+                // // Univariate polynomial is also a multilinear polynomial
+                // evaluation = Some(MultilinearPolynomial::new(coefficients));
+                evaluation = Some(next_evaluation[0]);
             }
         }
         for i in 1..self.total_round {
@@ -124,15 +124,33 @@ impl<T: PrimeField> One2ManyProver<T> {
         verifier.set_evaluation(evaluation.unwrap());
     }
 
+    fn fold(values: &Vec<T>, parameter: T, coset: &GeneralEvaluationDomain<T>) -> Vec<T> {
+        let len = values.len() / 2;
+        let res = (0..len)
+            .into_iter()
+            .map(|i| {
+                let x = values[i];
+                let nx = values[i + len];
+                let new_v = (x + nx) + parameter * (x - nx) * coset.element(i).inverse().unwrap();
+                new_v * T::from_u64(2 as u64).unwrap().inverse().unwrap()
+            })
+            .collect();
+        res
+    }
+
     pub fn commit_foldings(&self, verifier: &mut One2ManyVerifier<T>) {
         for i in 0..(self.total_round - 1) {
             let interpolation = &self.foldings[i];
             verifier.receive_folding_root(interpolation.leave_num(), interpolation.commit());
         }
-        verifier.set_final_value(self.final_value.as_ref().unwrap());
+        verifier.set_final_value(self.final_value.unwrap());
     }
 
-    fn evaluation_next_domain(&self, round: usize, challenge: T) -> Vec<T> {
+    // generate and push foldings, p_0, p_1, ..., p_\mu, where
+    // p_0 = g_0(X) + \alpha_0 h_0(X), and f_0(X) = g_0(X^2) + X h_0(X^2)
+    // \phi_1(X) = p_0 + \alpha_0^2 f_1,
+    // p_1 = g_1 + alpha_1 h_1, and \phi_1(X) = g_1(X^2) + X h_1(X^2) 
+    fn evaluation_next_domain(&self, round: usize, last_challenge: Option<T>, cur_challenge: T) -> Vec<T> {
         let mut res = vec![];
         let len = self.interpolate_cosets[round].size();
         let get_folding_value = if round == 0 {
@@ -142,34 +160,50 @@ impl<T: PrimeField> One2ManyProver<T> {
         };
         let coset = &self.interpolate_cosets[round];
         for i in 0..(len / 2) {
-            let x = get_folding_value.value[i];
-            let nx = get_folding_value.value[i + len / 2];
-            let new_v = (x + nx) + challenge * (x - nx) * coset.element_inv_at(i);
             if round == 0 {
+                assert_eq!(last_challenge, None);
+                let x = get_folding_value.value[i];
+                let nx = get_folding_value.value[i + len / 2];
+                let new_v = (x + nx) + cur_challenge * (x - nx) * coset.element(i).inverse().unwrap();
                 res.push(new_v);
             } else {
                 let fv = &self.functions[round];
                 let x = fv.value[i];
                 let nx = fv.value[i + len / 2];
+                let last_challenge_square = last_challenge.unwrap().pow([2 as u64]);
+                let phi_x = get_folding_value.value[i] + last_challenge_square * x;
+                let phi_nx = get_folding_value.value[i + len / 2] + last_challenge_square * nx;
                 let new_v =
-                    (new_v * challenge + (x + nx)) * challenge + (x - nx) * coset.element_inv_at(i);
+                    (phi_x + phi_nx) + cur_challenge * (phi_x - phi_nx) * coset.element(i).inverse().unwrap();
                 res.push(new_v);
             }
         }
         res
     }
 
-    // generate and push foldings
+    // generate and push foldings, p_0, p_1, ..., p_\mu, where
+    // p_0 = g_0(X) + \alpha_0 h_0(X), and f_0(X) = g_0(X^2) + X h_0(X^2)
+    // \phi_1(X) = p_0 + \alpha_0 ^2 f_1
+    // p_1 = g_1(X) + \alpha_1 h_1(X), and \phi_1(X) = g_1(X^2) + X h_1(X^2)
+    // \phi_2(X) = p_1 + \alpha_1 ^2 f_2
+    // ....
+    // \phi_{\mu}(X) = p_{\mu - 1} + \alpha_{\mu - 1}^2 f_\mu
     pub fn prove(&mut self) {
         for i in 0..self.total_round {
-            let challenge = self.oracle.folding_challenges[i];
+            let cur_challenge = self.oracle.folding_challenges[i];
+            let mut last_challenge = None;
+            if i > 0 {
+                last_challenge = Some(self.oracle.folding_challenges[i-1]);
+            }
             if i < self.total_round - 1 {
-                let next_evalutation = self.evaluation_next_domain(i, challenge);
+                let next_evalutation = self.evaluation_next_domain(i, last_challenge, cur_challenge);
                 self.foldings.push(InterpolateValue::new(next_evalutation));
             } else {
-                let next_evalutation = self.evaluation_next_domain(i, challenge);
-                let coefficients = self.interpolate_cosets[i + 1].ifft(next_evalutation);
-                self.final_value = Some(Polynomial::new(coefficients));
+                let next_evalutation = self.evaluation_next_domain(i, last_challenge, cur_challenge);
+                assert_eq!(next_evalutation.len(), 1 << CODE_RATE);
+                // let coefficients = self.interpolate_cosets[i + 1].ifft(&next_evalutation);
+                // self.final_value = Some(UnivariatePolynomial::from_coefficients_vec(coefficients));
+                self.final_value = Some(next_evalutation[0]);
             }
         }
     }
@@ -194,4 +228,5 @@ impl<T: PrimeField> One2ManyProver<T> {
         }
         (folding_res, functions_res)
     }
+
 }

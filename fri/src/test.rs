@@ -48,7 +48,7 @@ mod tests {
             .iter()
             .map(|x| x.proof_size())
             .sum::<usize>()
-            + variable_num * MERKLE_ROOT_SIZE;
+            + (variable_num - 1) * MERKLE_ROOT_SIZE;
         println!("proof size is {:?} KB", proof_size / 1024);
     }
 }

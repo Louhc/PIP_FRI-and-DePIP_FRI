@@ -48,7 +48,7 @@ mod tests {
 
         // proof size
         let proof_size =  tuples.len() * size_of::<Tuple<T>>()
-            + variable_num * MERKLE_ROOT_SIZE * 2
+            + (2 * variable_num - 3) * MERKLE_ROOT_SIZE
             + 2 * size_of::<T>()
             + folding_proofs.iter().map(|x| x.proof_size()).sum::<usize>()
             + function_proofs

@@ -1,10 +1,8 @@
-use ff::PrimeField;
-use rand::thread_rng;
-use util::algebra::polynomial::{MultilinearPolynomial, Polynomial};
-use util::merkle_tree::MERKLE_ROOT_SIZE;
-use util::random_oracle::RandomOracle;
-use util::{
-    algebra::{coset::Coset, field::Field},
+use ark_ff::PrimeField;
+use utils::merkle_tree::MERKLE_ROOT_SIZE;
+use utils::fiat_shamir::RandomOracle;
+use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
+use utils::{
     merkle_tree::MerkleTreeVerifier,
     query_result::QueryResult,
 };
@@ -12,27 +10,25 @@ use util::{
 #[derive(Clone)]
 pub struct One2ManyVerifier<T: PrimeField> {
     total_round: usize,
-    log_max_degree: usize,
-    interpolate_cosets: Vec<Coset<T>>,
+    interpolate_cosets: Vec<GeneralEvaluationDomain<T>>,
     function_root: Vec<MerkleTreeVerifier>,
     folding_root: Vec<MerkleTreeVerifier>,
     oracle: RandomOracle<T>,
-    final_value: Option<Polynomial<T>>,
-    evaluation: Option<MultilinearPolynomial<T>>,
+    final_value: Option<T>,
+    evaluation: Option<T>,
     open_point: Vec<T>,
 }
 
 impl<T: PrimeField> One2ManyVerifier<T> {
     pub fn new(
         total_round: usize,
-        log_max_degree: usize,
-        coset: &Vec<Coset<T>>,
+        coset: &Vec<GeneralEvaluationDomain<T>>,
         commit: [u8; MERKLE_ROOT_SIZE],
         oracle: &RandomOracle<T>,
+        open_point: &Vec<T>,
     ) -> Self {
         One2ManyVerifier {
             total_round,
-            log_max_degree,
             interpolate_cosets: coset.clone(),
             function_root: vec![MerkleTreeVerifier {
                 merkle_root: commit,
@@ -42,10 +38,7 @@ impl<T: PrimeField> One2ManyVerifier<T> {
             oracle: oracle.clone(),
             final_value: None,
             evaluation: None,
-            open_point: (0..log_max_degree)
-                .into_iter()
-                .map(|_| T::random(rand::thread_rng()))
-                .collect(),
+            open_point: open_point.clone(),
         }
     }
 
@@ -53,7 +46,7 @@ impl<T: PrimeField> One2ManyVerifier<T> {
         self.open_point.clone()
     }
 
-    pub fn set_evaluation(&mut self, evaluation: MultilinearPolynomial<T>) {
+    pub fn set_evaluation(&mut self, evaluation: T) {
         self.evaluation = Some(evaluation);
     }
 
@@ -75,15 +68,23 @@ impl<T: PrimeField> One2ManyVerifier<T> {
         });
     }
 
-    pub fn set_final_value(&mut self, value: &Polynomial<T>) {
-        assert!(value.degree() <= 1 << (self.log_max_degree - self.total_round));
-        self.final_value = Some(value.clone());
+    pub fn set_final_value(&mut self, value: T) {
+        // assert!(value.degree() <= 1 << (self.log_max_degree - self.total_round));
+        self.final_value = Some(value);
     }
 
+
+    // p_0 = g_0(X) + \alpha_0 h_0(X), and f_0(X) = g_0(X^2) + X h_0(X^2)
+    // \phi_1(X) = p_0 + \alpha_0 ^2 f_1
+    // p_1 = g_1(X) + \alpha_1 h_1(X), and \phi_1(X) = g_1(X^2) + X h_1(X^2)
+    // \phi_2(X) = p_1 + \alpha_1 ^2 f_2
+    // ....
+    // \phi_{\mu}(X) = p_{\mu - 1} + \alpha_{\mu - 1}^2 f_\mu
     pub fn verify(
         &self,
         folding_proof: &Vec<QueryResult<T>>,
         function_proof: &Vec<QueryResult<T>>,
+        evaluation: T,
     ) -> bool {
         let mut leaf_indices = self.oracle.query_list.clone();
         for i in 0..self.total_round {
@@ -98,57 +99,67 @@ impl<T: PrimeField> One2ManyVerifier<T> {
             if i == 0 {
                 function_proof[i].verify_merkle_tree(&leaf_indices, &self.function_root[i]);
             } else {
+                function_proof[i].verify_merkle_tree(&leaf_indices, &self.function_root[i]);
                 folding_proof[i - 1].verify_merkle_tree(&leaf_indices, &self.folding_root[i - 1]);
             }
 
-            let challenge = self.oracle.folding_challenges[i];
+            let last_challenge = if i == 0 {
+                None
+            } 
+            else {
+                Some(self.oracle.folding_challenges[i-1])
+            };
+            let cur_challenge = self.oracle.folding_challenges[i];
+
+            // f_0, p_0, p_1, ..., p_{\mu-2}
+            // p_{\mu - 1} is a constant
             let get_folding_value = if i == 0 {
                 &function_proof[i].proof_values
             } else {
                 &folding_proof[i - 1].proof_values
             };
 
-            let function_values = if i != 0 {
-                let function_query_result = &function_proof[i];
-                function_query_result.verify_merkle_tree(&leaf_indices, &self.function_root[i]);
-                Some(&function_query_result.proof_values)
-            } else {
-                None
-            };
+            // f_0, f_1, ..., f_{\mu - 1}
+            // f_{\mu} is a constant
+            let function_values = &function_proof[i].proof_values;
+
             for j in &leaf_indices {
-                let x = get_folding_value[j];
-                let nx = get_folding_value[&(j + domain_size / 2)];
-                let v =
-                    x + nx + challenge * (x - nx) * self.interpolate_cosets[i].element_inv_at(*j);
+                // verifier folding proofs
+                let f_x = function_values[j];
+                let f_nx = function_values[&(j + domain_size / 2)];
+
                 if i != 0 {
-                    let x = function_values.as_ref().unwrap()[j];
-                    let nx = function_values.as_ref().unwrap()[&(j + domain_size / 2)];
-                    let v = (v * challenge + (x + nx)) * challenge
-                        + (x - nx) * self.interpolate_cosets[i].element_inv_at(*j);
+                    let p_x = get_folding_value[j];
+                    let p_nx = get_folding_value[&(j + domain_size / 2)];
+
+                    let last_challenge_square = last_challenge.unwrap().pow([2 as u64]);
+                    let phi_x = p_x + last_challenge_square * f_x;
+                    let phi_nx = p_nx + last_challenge_square * f_nx;
+
+                    let new_v = (phi_x + phi_nx) + cur_challenge * (phi_x - phi_nx) * self.interpolate_cosets[i].element(*j).inverse().unwrap();
                     if i == self.total_round - 1 {
-                        let x = self.interpolate_cosets[i + 1].element_at(*j);
-                        if v != self.final_value.as_ref().unwrap().evaluation_at(x) {
+                        if new_v != self.final_value.unwrap() {
                             return false;
                         }
-                    } else if v != folding_proof[i].proof_values[j] {
+                    } else if new_v != folding_proof[i].proof_values[j] {
                         return false;
                     }
                 } else {
+                    let x = get_folding_value[j];
+                    let nx = get_folding_value[&(j + domain_size / 2)];
+                    let v = x + nx + cur_challenge * (x - nx) * self.interpolate_cosets[i].element(*j).inverse().unwrap();
                     if v != folding_proof[i].proof_values[j] {
                         return false;
                     }
                 }
-                let x = function_proof[i].proof_values[j];
-                let nx = function_proof[i].proof_values[&(j + domain_size / 2)];
-                let v = x
-                    + nx
-                    + self.open_point[i] * (x - nx) * self.interpolate_cosets[i].element_inv_at(*j);
+
+                // verify function_proofs
+                let v = (f_x + f_nx) + self.open_point[i] * (f_x - f_nx) * self.interpolate_cosets[i].element(*j).inverse().unwrap();
                 if i < self.total_round - 1 {
-                    assert_eq!(v, function_proof[i + 1].proof_values[j] * T::from(2));
+                    assert_eq!(v, function_proof[i + 1].proof_values[j] * T::from_u64(2 as u64).unwrap());
                 } else {
-                    let x = self.interpolate_cosets[i + 1].element_at(*j);
-                    let poly_v = self.evaluation.as_ref().unwrap().evaluate_as_polynomial(x);
-                    assert_eq!(v, poly_v * T::from(2));
+                    assert_eq!(v, evaluation * T::from_u64(2 as u64).unwrap());
+                    assert_eq!(v, self.evaluation.unwrap() * T::from_u64(2 as u64).unwrap());
                 }
             }
         }
