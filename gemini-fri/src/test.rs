@@ -16,7 +16,7 @@ mod tests {
 
     #[test]
     fn hyperplonk_test() {
-        let variable_num: usize = 10;
+        let variable_num: usize = 16;
         let mut rng = StdRng::seed_from_u64(0u64);
         let polynomial = MultilinearPolynomial::rand(variable_num);
         let point = (0..variable_num)

@@ -49,8 +49,42 @@ impl<T: PrimeField> Helper<T> {
         result
     }
 
+    pub fn linear_combine(weights: &Vec<T>, vectors: &Vec<Vec<T>>) -> Vec<T> {
+        if vectors.is_empty() || weights.is_empty() || vectors[0].is_empty() {
+            return vec![];
+        }
+        let length = vectors[0].len();
+        if vectors.iter().any(|v| v.len() != length) || vectors.len() != weights.len() {
+            panic!("All vectors must be the same length and match the number of weights.");
+        }
+    
+        let mut result = vec![T::zero(); length];
+        for (weight, vector) in weights.iter().zip(vectors.iter()) {
+            for (i, &value) in vector.iter().enumerate() {
+                result[i] += *weight * value;
+            }
+        }
+        result
+    }
 }
 
+pub fn nearest_power_of_two(num: usize) -> usize {
+    if num.is_power_of_two() {
+        return num;
+    }
+
+    let mut power_of_two = 1;
+    while power_of_two < num {
+        power_of_two <<= 1;
+    }
+
+    let lower_power_of_two = power_of_two >> 1;
+    if num - lower_power_of_two < power_of_two - num {
+        lower_power_of_two
+    } else {
+        power_of_two
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct MultilinearPolynomial<T: PrimeField>

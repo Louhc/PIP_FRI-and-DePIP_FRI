@@ -1,5 +1,5 @@
 [package]
-name = "polyfrim"
+name = "pip_fri"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,8 +12,4 @@ rand = {version = "0.8.5"}
 ark-poly = { version = "0.4"}
 ark-serialize = { version = "0.4", features = [ "derive" ] }
 utils = {path = "../utils"}
-
-[features]
-parallel = ["ark-poly/parallel"]
-
-# cargo build --features "parallel"
+polyfrim = {path = "../polyfrim"}

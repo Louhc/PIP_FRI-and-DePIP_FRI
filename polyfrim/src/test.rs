@@ -16,7 +16,7 @@ mod tests {
 
     #[test]
     fn polyfrim_test() {
-        let variable_num: usize = 13;
+        let variable_num: usize = 14;
         let mut rng = StdRng::seed_from_u64(0u64);
         let polynomial = MultilinearPolynomial::rand(variable_num);
         let point = (0..variable_num)
@@ -58,5 +58,13 @@ mod tests {
             + (2 * variable_num - 3) * MERKLE_ROOT_SIZE
             + size_of::<T>() * 2;
         println!("proof size is {:?} KB", proof_size / 1024);
+
+        let path_proof_size = folding_proof.iter().map(|x| x.path_proof_size()).sum::<usize>()
+            + function_proof.iter().map(|x| x.path_proof_size()).sum::<usize>();
+        println!("path proof size is {:?} KB", path_proof_size / 1024);
+
+        let field_proof_size = folding_proof.iter().map(|x| x.field_proof_size()).sum::<usize>()
+            + function_proof.iter().map(|x| x.field_proof_size()).sum::<usize>();
+        println!("field proof size is {:?} KB", field_proof_size / 1024);
     }
 }
