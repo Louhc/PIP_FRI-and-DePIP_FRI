@@ -12,8 +12,8 @@ use utils::{
 };
 use ark_poly::{GeneralEvaluationDomain, EvaluationDomain};
 
-// use std::sync::mpsc;
-// use std::thread;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 
 #[derive(Clone)]
@@ -82,6 +82,19 @@ impl<T: PrimeField> Prover<T> {
     ) -> Prover<T> {
         // Divide the polynomial into polynomials, and generate the rlc_poly and tensor_poly
         let poly_num = get_poly_num(&polynomial);
+
+        // #[cfg(feature = "parallel")]
+        // println!("You are using the parallel feature for poly commit");
+        #[cfg(feature = "parallel")]
+        let interpolation_sub_polynomials: Vec<Vec<T>> = polynomial
+            .chunks(poly_num)
+            .par_iter()
+            .map(|x| interpolate_cosets[0].fft(&x.coefficients()))
+            .collect();
+
+        // #[cfg(not(feature = "parallel"))]
+        // println!("You are not using the parallel feature for poly commit");
+        #[cfg(not(feature = "parallel"))]
         let interpolation_sub_polynomials: Vec<Vec<T>> = polynomial
             .chunks(poly_num)
             .iter()

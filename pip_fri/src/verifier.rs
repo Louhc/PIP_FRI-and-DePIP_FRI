@@ -153,7 +153,7 @@ impl<T: PrimeField> Verifier<T> {
                         f_nx_final += f_nx_values[k] * self.combination[k];
                     }
                     new_map.insert(*j, f_x_final);
-                    new_map.insert((j + domain_size / 2), f_nx_final);
+                    new_map.insert(j + domain_size / 2, f_nx_final);
                 }
                 new_map
             } else {

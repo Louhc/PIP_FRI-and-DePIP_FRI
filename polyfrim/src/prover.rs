@@ -12,6 +12,8 @@ use utils::{
     fiat_shamir::RandomOracle,
 };
 
+
+
 #[derive(Clone)]
 struct InterpolateValue<T: PrimeField> {
     value: Vec<T>,

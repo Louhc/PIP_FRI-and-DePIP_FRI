@@ -112,6 +112,14 @@ impl<T: PrimeField> QueryVecsResult<T> {
         res
     }
 
+    pub fn path_proof_size(&self) -> usize {
+        self.proof_bytes.len()
+    }
+
+    pub fn field_proof_size(&self) -> usize {
+        self.proof_values.len() * self.vecs_length * size_of::<T>()
+    }
+
     pub fn proof_size(&self) -> usize {
         self.proof_bytes.len() + self.proof_values.len() * self.vecs_length * size_of::<T>()
     }

@@ -1,11 +1,10 @@
 use crate::helper::Helper;
 use crate::merkle_tree::MerkleTreeVerifier;
 use ark_ff::PrimeField;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::mem::size_of;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct QueryResult<T: PrimeField> {
     pub proof_bytes: Vec<u8>,
     pub proof_values: HashMap<usize, T>,

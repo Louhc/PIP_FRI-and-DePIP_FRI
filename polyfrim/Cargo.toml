@@ -13,7 +13,14 @@ ark-poly = { version = "0.4"}
 ark-serialize = { version = "0.4", features = [ "derive" ] }
 utils = {path = "../utils"}
 
+[dev-dependencies]
+criterion = "0.4.0"
+
 [features]
 parallel = ["ark-poly/parallel"]
 
-# cargo build --features "parallel"
+# RAYON_NUM_THREADS=8 cargo bench --features "parallel" -p polyfrim
+
+[[bench]]
+name = "bench"
+harness = false
