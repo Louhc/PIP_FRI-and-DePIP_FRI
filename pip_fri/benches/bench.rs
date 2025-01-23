@@ -11,7 +11,7 @@ use utils::goldilocks::Goldilocks as T;
 use utils::helper::Helper;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-use pip_fri::common::*;
+use utils::interpolate_vecs_value::*;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;

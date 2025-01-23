@@ -1,6 +1,6 @@
 use super::verifier::Verifier;
 use utils::helper::MultilinearPolynomial;
-use crate::common::{get_poly_num, QueryVecsResult, InterpolateVecsValue};
+use utils::interpolate_vecs_value::{get_poly_num, QueryVecsResult, InterpolateVecsValue};
 use ark_ff::PrimeField;
 pub use utils::merkle_tree::MERKLE_ROOT_SIZE;
 use utils::query_result::QueryResult;

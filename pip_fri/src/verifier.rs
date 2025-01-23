@@ -5,7 +5,7 @@ use utils::merkle_tree::MERKLE_ROOT_SIZE;
 use utils::fiat_shamir::RandomOracle;
 use utils::{merkle_tree::MerkleTreeVerifier, query_result::QueryResult};
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
-use crate::common::*;
+use utils::interpolate_vecs_value::*;
 
 #[derive(Clone, Debug)]
 pub struct Verifier<T: PrimeField> {

@@ -4,6 +4,7 @@ pub mod ipa;
 pub mod ipa_from_laurent;
 pub mod helper;
 pub mod r1cs;
+// pub mod ipa_fri;
 
 use std::error::Error as ErrorTrait;
 pub type Error = Box<dyn ErrorTrait>;

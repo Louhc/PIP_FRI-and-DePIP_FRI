@@ -56,7 +56,7 @@ fn test_helper(l: usize, sub_prover_id: usize) {
     let mut r1cs = R1CSFile::<ConstraintF>::new(reader).unwrap();
     
     // This is the tx number of **Each** sub-prover
-    const NUM_TXS : usize = 32;
+    const NUM_TXS : usize = 4;
     // Repeat the same R1CS a couple times, using a random witness each time
     let mut rng = ark_std::test_rng();
     for _ in 0..NUM_TXS {

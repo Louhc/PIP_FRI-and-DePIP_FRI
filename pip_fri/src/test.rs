@@ -13,7 +13,7 @@ mod tests {
     use utils::helper::Helper;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
-    use crate::common::*;
+    use utils::interpolate_vecs_value::*;
 
     #[test]
     fn pip_fri_test() {
