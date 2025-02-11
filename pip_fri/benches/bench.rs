@@ -71,7 +71,7 @@ fn commit(criterion: &mut Criterion, variable_num: usize) {
 }
 
 fn bench_commit(c: &mut Criterion) {
-    for i in 18..=22 {
+    for i in 18..=18 {
         commit(c, i);
     }
 }
@@ -171,7 +171,7 @@ fn open(criterion: &mut Criterion, variable_num: usize) {
 }
 
 fn bench_open(c: &mut Criterion) {
-    for i in 10..=10 {
+    for i in 18..=18 {
         open(c, i);
     }
 }
@@ -218,7 +218,7 @@ fn verify(criterion: &mut Criterion, variable_num: usize) {
 }
 
 fn bench_verify(c: &mut Criterion) {
-    for i in 10..=10 {
+    for i in 18..=18 {
         verify(c, i);
     }
 }
@@ -230,8 +230,8 @@ criterion_group! {
     // bench_single_fft, 
     // bench_multi_fft,
     bench_commit, 
-    // bench_open, 
-    // bench_verify
+    bench_open, 
+    bench_verify
 }
 
 criterion_main!(benches);

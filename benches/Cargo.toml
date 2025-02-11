@@ -6,7 +6,7 @@ edition = "2018"
 [dependencies]
 merlin = "3.0.0"
 rayon = { version = "1", optional = true }
-ark-ff = { version = "0.4", features = [ "asm" ], optional = true}
+ark-ff = { version = "0.4"}
 
 [dev-dependencies]
 ark-ec = { version = "0.4", default-features = false }
@@ -41,7 +41,5 @@ path = "benches/fft.rs"
 harness = false
 
 [features]
-default = ["asm" ]
 parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel", "ark-crypto-primitives/parallel"]
 print-trace = [ "ark-std/print-trace" ]
-asm = ["ark-ff"]

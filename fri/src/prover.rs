@@ -1,7 +1,6 @@
 use ark_ff::{batch_inversion, PrimeField};
 use ark_poly::polynomial::univariate::DensePolynomial as UnivariatePolynomial;
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
-use utils::helper::Helper;
 use utils::interpolate_vecs_value::{InterpolateVecsValue, QueryVecsResult};
 
 use crate::verifier::BatchVerifier;

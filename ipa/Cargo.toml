@@ -19,6 +19,7 @@ de_network = { version = "0.1.0", path = "../de_network"}
 structopt = "0.3"
 ark-relations = "0.4"
 utils = {path = "../utils"}
+fri = {path = "../fri"}
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.4.0-alpha.2", features = [ "curve", "asm" ] }
@@ -28,9 +29,14 @@ ark-r1cs-std = "0.4"
 blake2 = "0.10.6"
 
 csv = "1"
+criterion = "0.4.0"
 
 [features]
 default = [ "parallel" ]
 parallel = [ "rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel", "ark-relations/parallel"]
 print-trace = [ "ark-std/print-trace" ]
 asm = [ "ark-ff" ]
+
+[[bench]]
+name = "bench"
+harness = false

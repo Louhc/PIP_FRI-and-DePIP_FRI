@@ -19,7 +19,7 @@ rayon = { version = "1", optional = true }
 criterion = "0.4.0"
 
 [features]
-parallel = ["ark-poly/parallel", "rayon"]
+parallel = [ "rayon", "ark-ff/parallel", "ark-poly/parallel", "ark-ff/asm"]
 
 [[bench]]
 name = "bench"

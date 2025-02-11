@@ -17,7 +17,7 @@ mod tests {
 
     #[test]
     fn pip_fri_test() {
-        let variable_num: usize = 16;
+        let variable_num: usize = 21;
         let mut rng = StdRng::seed_from_u64(0u64);
         let polynomial = MultilinearPolynomial::rand(variable_num);
         let point = (0..variable_num)
@@ -26,7 +26,8 @@ mod tests {
         let eval = polynomial.evaluate(&point);
 
         // Divide and generate public informations
-        let poly_num = get_poly_num(&polynomial);
+        // let poly_num = get_poly_num(&polynomial);
+        let poly_num = 2;
         println!("poly num is: {:?}", poly_num);
         let sub_variable_num = get_sub_variable_num(&polynomial);
         let (sub_open_point, remaining_var) = point.split_at(sub_variable_num);
@@ -115,7 +116,7 @@ mod tests {
 
     #[test]
     fn test_proof_size() {
-        for i in 15..=16 {
+        for i in 18..=18 {
             let (path_proof_size, field_proof_size) = output_proof_size(i);
             println!(
                 "PIP-FRI (path, field)_proof_size of {} variables is ({}, {}) Kbytes",

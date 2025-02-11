@@ -5,13 +5,13 @@ use crate::merkle_tree::{MerkleTreeVerifier, MerkleTreeProver};
 use crate::merkle_tree::MERKLE_ROOT_SIZE;
 
 pub fn get_poly_num<T: PrimeField>(poly: &MultilinearPolynomial<T>) -> usize {
-    nearest_power_of_two(poly.variable_num())
+    nearest_power_of_two(poly.variable_num() * 4)
 }
 
 // for comparison with Orion, we set poly_num directly nearest_power_of_two
 // we currently only use non-zk version as Orion
 pub fn get_sub_variable_num<T: PrimeField>(poly: &MultilinearPolynomial<T>) -> usize {
-    let poly_num = nearest_power_of_two(poly.variable_num());
+    let poly_num = get_poly_num(poly);
     (poly.coefficients().len() / poly_num).ilog2() as usize
 }
 

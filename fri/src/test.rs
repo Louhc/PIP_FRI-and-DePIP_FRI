@@ -20,7 +20,7 @@ mod tests {
 
     #[test]
     fn fri_pcs_test() {
-        let variable_num: usize = 10;
+        let variable_num: usize = 20;
         let degree: usize = (1 << variable_num) - 1;
         let mut rng = StdRng::seed_from_u64(0u64);
         let polynomial = UnivariatePolynomial::rand(degree, &mut rng);
@@ -51,14 +51,15 @@ mod tests {
             .map(|x| x.proof_size())
             .sum::<usize>()
             + (variable_num - 1) * MERKLE_ROOT_SIZE;
+        println!("first round proof size is {:?} KB ", proof[0].proof_size() / 1024);
         println!("proof size is {:?} KB", proof_size / 1024);
     }
 
 
     #[test]
     fn batch_fri_pcs_test() {
-        let poly_num = 4;
-        let variable_num: usize = 10;
+        let poly_num = 2;
+        let variable_num: usize = 15;
         let degree: usize = (1 << variable_num) - 1;
         let mut rng = StdRng::seed_from_u64(0u64);
         let mut polynomials = vec![];
