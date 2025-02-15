@@ -9,5 +9,5 @@ pub mod fiat_shamir;
 pub mod commit_open_vec;
 pub mod interpolate_vecs_value;
 
-pub const CODE_RATE: usize = 2;
+pub const CODE_RATE: usize = 3;
 pub const SECURITY_BITS: usize = 128;

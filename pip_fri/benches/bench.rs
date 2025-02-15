@@ -36,7 +36,8 @@ fn commit(criterion: &mut Criterion, variable_num: usize) {
     let _eval = polynomial.evaluate(&point);
 
     // Divide and generate public informations
-    let _poly_num = get_poly_num(&polynomial);
+    let poly_num = get_poly_num(&polynomial);
+    println!("poly_nums is: {:?}", poly_num);
     let sub_variable_num = get_sub_variable_num(&polynomial);
     let (_sub_open_point, remaining_var) = point.split_at(sub_variable_num);
     // w_1, w_2, ...,
@@ -71,7 +72,7 @@ fn commit(criterion: &mut Criterion, variable_num: usize) {
 }
 
 fn bench_commit(c: &mut Criterion) {
-    for i in 18..=18 {
+    for i in 20..=20 {
         commit(c, i);
     }
 }
@@ -118,14 +119,14 @@ fn multi_single_fft(criterion: &mut Criterion, variable_num: usize, log_num: usi
 }
 
 fn bench_single_fft(c: &mut Criterion) {
-    for i in 20..=25 {
+    for i in 20..=24 {
         single_fft(c, i);
     }
 }
 
 fn bench_multi_fft(c: &mut Criterion) {
-    for i in 20..=25 {
-        multi_single_fft(c, i, 1);
+    for i in 20..=24 {
+        multi_single_fft(c, i, 8);
     }
 }
 
@@ -230,8 +231,8 @@ criterion_group! {
     // bench_single_fft, 
     // bench_multi_fft,
     bench_commit, 
-    bench_open, 
-    bench_verify
+    // bench_open, 
+    // bench_verify
 }
 
 criterion_main!(benches);

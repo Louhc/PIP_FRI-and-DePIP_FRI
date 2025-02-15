@@ -11,6 +11,7 @@ use utils::{
     CODE_RATE,
 };
 use ark_poly::{GeneralEvaluationDomain, EvaluationDomain};
+use ark_std::{start_timer, end_timer};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -82,6 +83,7 @@ impl<T: PrimeField> Prover<T> {
     ) -> Prover<T> {
         // Divide the polynomial into polynomials, and generate the rlc_poly and tensor_poly
         let poly_num = get_poly_num(&polynomial);
+        let step = start_timer!(|| "NTT");
 
         // #[cfg(feature = "parallel")]
         // println!("You are using the parallel feature for poly commit");
@@ -101,7 +103,10 @@ impl<T: PrimeField> Prover<T> {
             .map(|x| interpolate_cosets[0].fft(&x.coefficients()))
             .collect();
 
+        end_timer!(step);
         // Compute the actual polynomial invoked into FRI
+
+        let step = start_timer!(|| "rlc");
         let mut rlc_polynomial = interpolation_sub_polynomials[0].clone();
         for i in interpolation_sub_polynomials.iter().skip(1) {
             for j in 0..rlc_polynomial.len() {
@@ -111,8 +116,12 @@ impl<T: PrimeField> Prover<T> {
         }
         // Compute the tensor_polynomial, the actual polynomial invoked into function
         let tensor_polynomial = Helper::linear_combine(tensor, &interpolation_sub_polynomials);
+        end_timer!(step);
 
+        // this step takes the majority of time
+        let step = start_timer!(|| "Merkle tree");
         let interpolate_initial_polynomials = InterpolateVecsValue::new(interpolation_sub_polynomials);
+        end_timer!(step);
 
         Prover {
             total_round,
@@ -129,7 +138,10 @@ impl<T: PrimeField> Prover<T> {
     }
 
     pub fn commit_polynomial(&mut self) -> [u8; MERKLE_ROOT_SIZE] {
-        self.interpolate_initial_polynomials.commit()
+        // let step = start_timer!(|| "Merkle tree");
+        let com = self.interpolate_initial_polynomials.commit();
+        // end_timer!(step);
+        com
     }
 
     // used for function recursive
