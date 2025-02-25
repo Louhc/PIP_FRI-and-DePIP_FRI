@@ -19,8 +19,8 @@ rayon = { version = "1", optional = true }
 criterion = "0.4.0"
 
 [features]
-parallel = ["rayon"]
-# parallel = [ "rayon", "ark-ff/parallel", "ark-poly/parallel", "ark-ff/asm"]
+# parallel = ["rayon"]
+parallel = [ "rayon", "ark-ff/parallel", "ark-poly/parallel", "ark-ff/asm"]
 print-trace = [ "ark-std/print-trace" ]
 
 [[bench]]

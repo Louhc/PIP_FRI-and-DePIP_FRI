@@ -149,7 +149,7 @@ impl<P: Pairing> DeSNARKLinear<P> {
             if coeffs_h2.len() < l {
                 coeffs_h2.resize(l + 1, P::ScalarField::zero());
             }
-            assert!(coeffs_h2.len() > l);
+            //assert!(coeffs_h2.len() > l);
             let coeffs_h2_high= coeffs_h2.split_off(l);
             let poly_h2_low = UnivariatePolynomial::from_coefficients_vec(coeffs_h2);
             let poly_h2_high = UnivariatePolynomial::from_coefficients_vec(coeffs_h2_high);

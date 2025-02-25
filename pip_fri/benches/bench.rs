@@ -1,7 +1,7 @@
 extern crate criterion;
 use criterion::*;
 
-use pip_fri::{prover::Prover, verifier::Verifier};
+use pip_fri::{prover::Prover, verifier::Verifier, zkprover::ZKProver, zkverifier::ZKVerifier};
 use ark_ff::{Field, UniformRand};
 use ark_poly::{GeneralEvaluationDomain, EvaluationDomain};
 use utils::helper::MultilinearPolynomial;
@@ -71,9 +71,226 @@ fn commit(criterion: &mut Criterion, variable_num: usize) {
     });
 }
 
+fn zk_commit(criterion: &mut Criterion, variable_num: usize) {
+    let mut rng = StdRng::seed_from_u64(0u64);
+    let polynomial = MultilinearPolynomial::rand(variable_num);
+    let point = (0..variable_num)
+        .map(|_| T::rand(&mut rng))
+        .collect::<Vec<T>>();
+    let _eval = polynomial.evaluate(&point);
+
+    let sub_variable_num = get_sub_variable_num(&polynomial);
+    let (sub_open_point, remaining_var) = point.split_at(sub_variable_num);
+    let mut sub_open_point = sub_open_point.to_vec();
+    sub_open_point.push(T::ZERO);
+    // w_1, w_2, ...,
+    let tensor = get_tensor(&remaining_var.to_vec());
+
+    // Setup
+    let mut interpolate_cosets = vec![GeneralEvaluationDomain::new_coset(
+        1 << (sub_variable_num + 1 + CODE_RATE),
+        T::rand(&mut rng),
+    ).unwrap()];
+    for i in 1..(sub_variable_num + 1) {
+        interpolate_cosets.push(Helper::pow(&interpolate_cosets[i-1], 2));
+    }
+    let oracle = RandomOracle::new(sub_variable_num + 1, SECURITY_BITS / CODE_RATE);
+
+    criterion.bench_function(&format!("zk-pip-fri commit {}", variable_num), move |b| {
+        b.iter_batched(
+            || polynomial.clone(),
+            |p| {
+                let mut prover = ZKProver::new(sub_variable_num + 1, &interpolate_cosets, p, &oracle, &tensor);
+                prover.commit_polynomial();
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
 fn bench_commit(c: &mut Criterion) {
-    for i in 20..=20 {
+    for i in 13..=18 {
         commit(c, i);
+        zk_commit(c, i);
+    }
+}
+
+fn open(criterion: &mut Criterion, variable_num: usize) {
+    let mut rng = StdRng::seed_from_u64(0u64);
+    let polynomial = MultilinearPolynomial::rand(variable_num);
+    let point = (0..variable_num)
+        .map(|_| T::rand(&mut rng))
+        .collect::<Vec<T>>();
+    let _eval = polynomial.evaluate(&point);
+
+    // Divide and generate public informations
+    let _poly_num = get_poly_num(&polynomial);
+    let sub_variable_num = get_sub_variable_num(&polynomial);
+    let (sub_open_point, remaining_var) = point.split_at(sub_variable_num);
+    // w_1, w_2, ...,
+    let tensor = get_tensor(&remaining_var.to_vec());
+
+    // Setup
+    let mut interpolate_cosets = vec![GeneralEvaluationDomain::new_coset(
+        1 << (sub_variable_num + CODE_RATE),
+        T::rand(&mut rng),
+    ).unwrap()];
+    for i in 1..sub_variable_num {
+        interpolate_cosets.push(Helper::pow(&interpolate_cosets[i-1], 2));
+    }
+    let oracle = RandomOracle::new(sub_variable_num, SECURITY_BITS / CODE_RATE);
+    let mut prover = Prover::new(sub_variable_num, &interpolate_cosets, polynomial, &oracle, &tensor);
+
+    // commit
+    let commitment = prover.commit_polynomial();
+    let mut verifier = Verifier::new(sub_variable_num, commitment, &interpolate_cosets, &oracle, &sub_open_point.to_vec(), &tensor);
+
+    criterion.bench_function(&format!("pip-fri open {}", variable_num), move |b| {
+        b.iter_batched(
+            || prover.clone(),
+            |mut p| {
+                p.open(&sub_open_point.to_vec(), &mut verifier)
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
+fn zk_open(criterion: &mut Criterion, variable_num: usize) {
+    let mut rng = StdRng::seed_from_u64(0u64);
+    let polynomial = MultilinearPolynomial::rand(variable_num);
+    let point = (0..variable_num)
+        .map(|_| T::rand(&mut rng))
+        .collect::<Vec<T>>();
+    let _eval = polynomial.evaluate(&point);
+
+    let sub_variable_num = get_sub_variable_num(&polynomial);
+    let (sub_open_point, remaining_var) = point.split_at(sub_variable_num);
+    let mut sub_open_point = sub_open_point.to_vec();
+    sub_open_point.push(T::ZERO);
+    // w_1, w_2, ...,
+    let tensor = get_tensor(&remaining_var.to_vec());
+
+    // Setup
+    let mut interpolate_cosets = vec![GeneralEvaluationDomain::new_coset(
+        1 << (sub_variable_num + 1 + CODE_RATE),
+        T::rand(&mut rng),
+    ).unwrap()];
+    for i in 1..(sub_variable_num + 1) {
+        interpolate_cosets.push(Helper::pow(&interpolate_cosets[i-1], 2));
+    }
+    let oracle = RandomOracle::new(sub_variable_num + 1, SECURITY_BITS / CODE_RATE);
+    let mut prover = ZKProver::new(sub_variable_num + 1, &interpolate_cosets, polynomial, &oracle, &tensor);
+    
+    // commit
+    let commitment = prover.commit_polynomial();
+    let mut verifier = ZKVerifier::new(sub_variable_num + 1, commitment, &interpolate_cosets, &oracle, &sub_open_point, &tensor);
+
+    criterion.bench_function(&format!("zk-pip-fri open {}", variable_num), move |b| {
+        b.iter_batched(
+            || prover.clone(),
+            |mut p| {
+                p.open(&sub_open_point, &mut verifier);
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
+fn bench_open(c: &mut Criterion) {
+    for i in 13..=18 {
+        open(c, i);
+        zk_open(c, i);
+    }
+}
+
+fn verify(criterion: &mut Criterion, variable_num: usize) {
+    let mut rng = StdRng::seed_from_u64(0u64);
+    let polynomial = MultilinearPolynomial::rand(variable_num);
+    let point = (0..variable_num)
+        .map(|_| T::rand(&mut rng))
+        .collect::<Vec<T>>();
+    let eval = polynomial.evaluate(&point);
+
+    // Divide and generate public informations
+    let _poly_num = get_poly_num(&polynomial);
+    let sub_variable_num = get_sub_variable_num(&polynomial);
+    let (sub_open_point, remaining_var) = point.split_at(sub_variable_num);
+    // w_1, w_2, ...,
+    let tensor = get_tensor(&remaining_var.to_vec());
+
+    // Setup
+    let mut interpolate_cosets = vec![GeneralEvaluationDomain::new_coset(
+        1 << (sub_variable_num + CODE_RATE),
+        T::rand(&mut rng),
+    ).unwrap()];
+    for i in 1..sub_variable_num {
+        interpolate_cosets.push(Helper::pow(&interpolate_cosets[i-1], 2));
+    }
+    let oracle = RandomOracle::new(sub_variable_num, SECURITY_BITS / CODE_RATE);
+    let mut prover = Prover::new(sub_variable_num, &interpolate_cosets, polynomial, &oracle, &tensor);
+
+    // commit
+    let commitment = prover.commit_polynomial();
+    let mut verifier = Verifier::new(sub_variable_num, commitment, &interpolate_cosets, &oracle, &sub_open_point.to_vec(), &tensor);
+
+    // open
+    let (polynomial_proof, folding_proof, function_proof) = prover.open(&sub_open_point.to_vec(), &mut verifier);
+    
+    criterion.bench_function(&format!("pip-fri verify {}", variable_num), move |b| {
+        b.iter(|| {
+            let is_valid = verifier.verify(&polynomial_proof, &folding_proof, &function_proof, eval);
+            assert!(is_valid);
+        })
+    });
+}
+
+
+fn zk_verify(criterion: &mut Criterion, variable_num: usize) {
+    let mut rng = StdRng::seed_from_u64(0u64);
+    let polynomial = MultilinearPolynomial::rand(variable_num);
+    let point = (0..variable_num)
+        .map(|_| T::rand(&mut rng))
+        .collect::<Vec<T>>();
+    let eval = polynomial.evaluate(&point);
+
+    let sub_variable_num = get_sub_variable_num(&polynomial);
+    let (sub_open_point, remaining_var) = point.split_at(sub_variable_num);
+    let mut sub_open_point = sub_open_point.to_vec();
+    sub_open_point.push(T::ZERO);
+    // w_1, w_2, ...,
+    let tensor = get_tensor(&remaining_var.to_vec());
+
+    // Setup
+    let mut interpolate_cosets = vec![GeneralEvaluationDomain::new_coset(
+        1 << (sub_variable_num + 1 + CODE_RATE),
+        T::rand(&mut rng),
+    ).unwrap()];
+    for i in 1..(sub_variable_num + 1) {
+        interpolate_cosets.push(Helper::pow(&interpolate_cosets[i-1], 2));
+    }
+    let oracle = RandomOracle::new(sub_variable_num + 1, SECURITY_BITS / CODE_RATE);
+    let mut prover = ZKProver::new(sub_variable_num + 1, &interpolate_cosets, polynomial, &oracle, &tensor);
+    
+    // commit
+    let commitment = prover.commit_polynomial();
+    let mut verifier = ZKVerifier::new(sub_variable_num + 1, commitment, &interpolate_cosets, &oracle, &sub_open_point, &tensor);
+
+    // open
+    let (polynomial_proof, folding_proof, function_proof) = prover.open(&sub_open_point, &mut verifier);
+    
+    criterion.bench_function(&format!("zk-pip-fri verify {}", variable_num), move |b| {
+        b.iter(|| {
+            let is_valid = verifier.verify(&polynomial_proof, &folding_proof, &function_proof, eval);
+            assert!(is_valid);
+        })
+    });
+}
+
+fn bench_verify(c: &mut Criterion) {
+    for i in 13..=18 {
+        verify(c, i);
+        zk_verify(c, i);
     }
 }
 
@@ -130,100 +347,6 @@ fn bench_multi_fft(c: &mut Criterion) {
     }
 }
 
-fn open(criterion: &mut Criterion, variable_num: usize) {
-    let mut rng = StdRng::seed_from_u64(0u64);
-    let polynomial = MultilinearPolynomial::rand(variable_num);
-    let point = (0..variable_num)
-        .map(|_| T::rand(&mut rng))
-        .collect::<Vec<T>>();
-    let _eval = polynomial.evaluate(&point);
-
-    // Divide and generate public informations
-    let _poly_num = get_poly_num(&polynomial);
-    let sub_variable_num = get_sub_variable_num(&polynomial);
-    let (sub_open_point, remaining_var) = point.split_at(sub_variable_num);
-    // w_1, w_2, ...,
-    let tensor = get_tensor(&remaining_var.to_vec());
-
-    // Setup
-    let mut interpolate_cosets = vec![GeneralEvaluationDomain::new_coset(
-        1 << (sub_variable_num + CODE_RATE),
-        T::rand(&mut rng),
-    ).unwrap()];
-    for i in 1..sub_variable_num {
-        interpolate_cosets.push(Helper::pow(&interpolate_cosets[i-1], 2));
-    }
-    let oracle = RandomOracle::new(sub_variable_num, SECURITY_BITS / CODE_RATE);
-    let mut prover = Prover::new(sub_variable_num, &interpolate_cosets, polynomial, &oracle, &tensor);
-
-    // commit
-    let commitment = prover.commit_polynomial();
-    let mut verifier = Verifier::new(sub_variable_num, commitment, &interpolate_cosets, &oracle, &sub_open_point.to_vec(), &tensor);
-
-    criterion.bench_function(&format!("pip-fri open {}", variable_num), move |b| {
-        b.iter_batched(
-            || prover.clone(),
-            |mut p| {
-                p.open(&sub_open_point.to_vec(), &mut verifier)
-            },
-            BatchSize::SmallInput,
-        )
-    });
-}
-
-fn bench_open(c: &mut Criterion) {
-    for i in 18..=18 {
-        open(c, i);
-    }
-}
-
-fn verify(criterion: &mut Criterion, variable_num: usize) {
-    let mut rng = StdRng::seed_from_u64(0u64);
-    let polynomial = MultilinearPolynomial::rand(variable_num);
-    let point = (0..variable_num)
-        .map(|_| T::rand(&mut rng))
-        .collect::<Vec<T>>();
-    let eval = polynomial.evaluate(&point);
-
-    // Divide and generate public informations
-    let _poly_num = get_poly_num(&polynomial);
-    let sub_variable_num = get_sub_variable_num(&polynomial);
-    let (sub_open_point, remaining_var) = point.split_at(sub_variable_num);
-    // w_1, w_2, ...,
-    let tensor = get_tensor(&remaining_var.to_vec());
-
-    // Setup
-    let mut interpolate_cosets = vec![GeneralEvaluationDomain::new_coset(
-        1 << (sub_variable_num + CODE_RATE),
-        T::rand(&mut rng),
-    ).unwrap()];
-    for i in 1..sub_variable_num {
-        interpolate_cosets.push(Helper::pow(&interpolate_cosets[i-1], 2));
-    }
-    let oracle = RandomOracle::new(sub_variable_num, SECURITY_BITS / CODE_RATE);
-    let mut prover = Prover::new(sub_variable_num, &interpolate_cosets, polynomial, &oracle, &tensor);
-
-    // commit
-    let commitment = prover.commit_polynomial();
-    let mut verifier = Verifier::new(sub_variable_num, commitment, &interpolate_cosets, &oracle, &sub_open_point.to_vec(), &tensor);
-
-    // open
-    let (polynomial_proof, folding_proof, function_proof) = prover.open(&sub_open_point.to_vec(), &mut verifier);
-    
-    criterion.bench_function(&format!("pip-fri verify {}", variable_num), move |b| {
-        b.iter(|| {
-            let is_valid = verifier.verify(&polynomial_proof, &folding_proof, &function_proof, eval);
-            assert!(is_valid);
-        })
-    });
-}
-
-fn bench_verify(c: &mut Criterion) {
-    for i in 18..=18 {
-        verify(c, i);
-    }
-}
-
 criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
@@ -231,8 +354,8 @@ criterion_group! {
     // bench_single_fft, 
     // bench_multi_fft,
     bench_commit, 
-    // bench_open, 
-    // bench_verify
+    bench_open, 
+    bench_verify
 }
 
 criterion_main!(benches);
