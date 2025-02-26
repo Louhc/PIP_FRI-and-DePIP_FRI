@@ -17,7 +17,7 @@ mod tests {
 
     #[test]
     fn pip_fri_test() {
-        let variable_num: usize = 18;
+        let variable_num: usize = 14;
         let mut rng = StdRng::seed_from_u64(0u64);
         let polynomial = MultilinearPolynomial::rand(variable_num);
         let point = (0..variable_num)

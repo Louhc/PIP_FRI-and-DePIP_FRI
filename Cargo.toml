@@ -11,6 +11,7 @@ members = [
   "gemini-fri",
   "polyfrim",
   "pip_fri",
+  "virgo",
 ]
 
 [patch.crates-io]
