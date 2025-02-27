@@ -1,6 +1,7 @@
 extern crate criterion;
 use criterion::*;
 
+use pip_fri::prover::MERKLE_ROOT_SIZE;
 use pip_fri::{prover::Prover, verifier::Verifier, zkprover::ZKProver, zkverifier::ZKVerifier};
 use ark_ff::{Field, UniformRand};
 use ark_poly::{GeneralEvaluationDomain, EvaluationDomain};
@@ -239,6 +240,15 @@ fn verify(criterion: &mut Criterion, variable_num: usize) {
 
     // open
     let (polynomial_proof, folding_proof, function_proof) = prover.open(&sub_open_point.to_vec(), &mut verifier);
+    let proof_size = (folding_proof.iter().map(|x| x.path_proof_size()).sum::<usize>()
+        + polynomial_proof.path_proof_size()
+        + function_proof.iter().map(|x| x.path_proof_size()).sum::<usize>()
+        + folding_proof.iter().map(|x| x.field_proof_size()).sum::<usize>()
+        + polynomial_proof.field_proof_size()
+        + function_proof.iter().map(|x| x.field_proof_size()).sum::<usize>()
+        + (2 * sub_variable_num - 3) * MERKLE_ROOT_SIZE
+        + 2 * size_of::<T>());
+    println!("proof size for {} variable is {:?} KB", variable_num, proof_size / 1024);
     
     criterion.bench_function(&format!("pip-fri verify {}", variable_num), move |b| {
         b.iter(|| {

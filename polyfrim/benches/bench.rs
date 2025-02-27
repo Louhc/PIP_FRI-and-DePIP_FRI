@@ -6,11 +6,15 @@ use ark_ff::{Field, UniformRand};
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use utils::helper::MultilinearPolynomial;
 use utils::fiat_shamir::RandomOracle;
+use utils::merkle_tree::MERKLE_ROOT_SIZE;
 use utils::{CODE_RATE, SECURITY_BITS};
 use utils::goldilocks::Goldilocks as T;
 use utils::helper::Helper;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+
+const SMALL: usize = 20;
+const SIZE: usize = 25;
 
 // usage:
 // RAYON_NUM_THREADS=4 cargo bench --features "parallel" -p polyfrim
@@ -47,29 +51,8 @@ fn commit(criterion: &mut Criterion, variable_num: usize) {
 }
 
 fn bench_commit(c: &mut Criterion) {
-    for i in 17..=20 {
+    for i in SMALL..=SIZE {
         commit(c, i);
-    }
-}
-
-fn fft(criterion: &mut Criterion, variable_num: usize) {
-    let mut rng = StdRng::seed_from_u64(0u64);
-    let polynomial: MultilinearPolynomial<T> = MultilinearPolynomial::rand(variable_num);
-    let interpolate_cosets: Vec<GeneralEvaluationDomain<T>> = vec![EvaluationDomain::new_coset(1 << (variable_num + CODE_RATE), T::ONE).unwrap()];
-    criterion.bench_function(&format!("fft log length {}", variable_num + CODE_RATE), move |b| {
-        b.iter_batched(
-            || polynomial.clone(),
-            |p| {
-                let _ = &interpolate_cosets[0].fft(p.coefficients());
-            },
-            BatchSize::SmallInput,
-        )
-    });
-}
-
-fn bench_fft(c: &mut Criterion) {
-    for i in 20..=25 {
-        fft(c, i);
     }
 }
 
@@ -112,7 +95,7 @@ fn open(criterion: &mut Criterion, variable_num: usize) {
 }
 
 fn bench_open(c: &mut Criterion) {
-    for i in 17..=20 {
+    for i in SMALL..=SIZE {
         open(c, i);
     }
 }
@@ -148,6 +131,15 @@ fn verify(criterion: &mut Criterion, variable_num: usize) {
     // open
     let (folding_proof, function_proof) = prover.open(&mut verifier, &point);
 
+    // proof size
+    let proof_size = folding_proof.iter().map(|x| x.proof_size()).sum::<usize>()
+        + function_proof.iter().map(|x| x.proof_size()).sum::<usize>()
+        // p only has \mu - 1 polynomials, and \mu - 2 roots
+        // f involve \mu polynomials, and \mu - 1 roots
+        + (2 * variable_num - 3) * MERKLE_ROOT_SIZE
+        + size_of::<T>() * 2;
+    println!("proof size for {} variable is {:?} KB", variable_num, proof_size / 1024);
+
     criterion.bench_function(&format!("polyfrim verify {}", variable_num), move |b| {
         b.iter(|| {
             verifier.verify(&folding_proof, &function_proof, eval);
@@ -157,7 +149,7 @@ fn verify(criterion: &mut Criterion, variable_num: usize) {
 }
 
 fn bench_verify(c: &mut Criterion) {
-    for i in 17..=20 {
+    for i in SMALL..=SIZE {
         verify(c, i);
     }
 }
@@ -166,7 +158,6 @@ criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
     targets = 
-    // bench_fft, 
     bench_commit, 
     bench_open, 
     bench_verify

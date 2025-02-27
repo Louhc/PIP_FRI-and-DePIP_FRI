@@ -143,7 +143,6 @@ mod tests {
     use utils::{CODE_RATE, SECURITY_BITS};
     const STEP: usize = 1;
     const SIZE: usize = 20;
-    use csv::Writer;
     use utils::goldilocks::Goldilocks as T;
     use crate::prover::RandomOracle;
 

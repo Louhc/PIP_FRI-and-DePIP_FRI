@@ -19,6 +19,9 @@ use virgo::{prover::FriProver,
 // RAYON_NUM_THREADS=8 cargo bench -p virgo
 // RAYON_NUM_THREADS=8 cargo bench --features "parallel" -p virgo
 
+const SMALL: usize = 20;
+const SIZE: usize = 25;
+
 fn commit(criterion: &mut Criterion, variable_num: usize) {
     let mut rng = StdRng::seed_from_u64(0u64);
     let polynomial = MultilinearPolynomial::<T>::rand(variable_num);
@@ -91,9 +94,9 @@ fn zk_commit(criterion: &mut Criterion, variable_num: usize) {
 }
 
 fn bench_commit(c: &mut Criterion) {
-    for i in 11..=15 {
+    for i in SMALL..=SIZE {
         commit(c, i);
-        zk_commit(c, i);
+        // zk_commit(c, i);
     }
 }
 
@@ -201,9 +204,9 @@ fn zk_open(criterion: &mut Criterion, variable_num: usize) {
 }
 
 fn bench_open(c: &mut Criterion) {
-    for i in 11..=15 {
+    for i in SMALL..=SIZE {
         open(c, i);
-        zk_open(c, i);
+        // zk_open(c, i);
     }
 }
 
@@ -311,7 +314,7 @@ fn zk_verify(criterion: &mut Criterion, variable_num: usize) {
         + function_h_proof.proof_size()
         + v_value.len() * (mem::size_of::<usize>() + size_of::<T>())
         + MERKLE_ROOT_SIZE * (variable_num + 1);
-    println!("proof size is: {:?} KB", proof_size / 1024);
+    println!("proof size for {} variable is: {:?} KB", variable_num, proof_size / 1024);
 
     criterion.bench_function(&format!("zk-virgo verify {}", variable_num), move |b| {
         b.iter(|| {
@@ -323,9 +326,9 @@ fn zk_verify(criterion: &mut Criterion, variable_num: usize) {
 }
 
 fn bench_verify(c: &mut Criterion) {
-    for i in 11..=15 {
+    for i in SMALL..=SIZE {
         verify(c, i);
-        zk_verify(c, i);
+        // zk_verify(c, i);
     }
 }
 

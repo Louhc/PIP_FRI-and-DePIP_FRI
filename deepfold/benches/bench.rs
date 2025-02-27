@@ -79,6 +79,9 @@ fn verify<T: PrimeField>(criterion: &mut Criterion, variable_num: usize) {
     let point = verifier.get_open_point();
     let proof = prover.generate_proof(point);
 
+    let proof_size = proof.size();
+    println!("proof size for {} variable is {:?} KB", variable_num, proof_size / 1024);
+
     criterion.bench_function(&format!("deepfold verify {:02}", variable_num), move |b| {
         b.iter_batched(
             || (verifier.clone(), proof.clone()),
