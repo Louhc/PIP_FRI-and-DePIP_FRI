@@ -116,11 +116,15 @@ mod tests {
 
     #[test]
     fn test_proof_size() {
-        for i in 18..=18 {
+        for i in 17..=20 {
             let (path_proof_size, field_proof_size) = output_proof_size(i);
             println!(
                 "PIP-FRI (path, field)_proof_size of {} variables is ({}, {}) Kbytes",
                 i, path_proof_size / 1024, field_proof_size / 1024
+            );
+            println!(
+                "PIP-FRI total_proof_size of {} variables is {} Kbytes",
+                i, (path_proof_size + field_proof_size) / 1024
             );
         }
     }

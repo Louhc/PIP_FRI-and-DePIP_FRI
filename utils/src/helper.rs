@@ -1,8 +1,17 @@
 use ark_ff::{BigInteger, PrimeField};
 use std::marker::PhantomData;
 use ark_serialize::*;
-use ark_poly::{DenseUVPolynomial, EvaluationDomain, GeneralEvaluationDomain, Polynomial};
+use ark_poly::{DenseUVPolynomial, EvaluationDomain, GeneralEvaluationDomain};
 use ark_poly::univariate::DensePolynomial as UnivariatePolynomial;
+
+fn batch_bit_reverse(log_n: usize) -> Vec<usize> {
+    let n = 1 << log_n;
+    let mut res = (0..n).into_iter().map(|_| 0).collect::<Vec<usize>>();
+    for i in 0..n {
+        res[i] = (res[i >> 1] >> 1) | ((i & 1) << (log_n - 1));
+    }
+    res
+}
 
 #[derive(Debug, Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Helper<T: PrimeField> {
@@ -97,27 +106,27 @@ impl<T: PrimeField> MultilinearPolynomial<T> {
         &self.coefficients
     }
 
-    // pub fn evaluate_hypercube(&self) -> Vec<T> {
-    //     let log_n = self.variable_num();
-    //     let n = self.coefficients.len();
-    //     let rank = batch_bit_reverse(log_n);
-    //     let mut res = self.coefficients.clone();
-    //     for i in 0..n {
-    //         if i < rank[i] {
-    //             (res[i], res[rank[i]]) = (res[rank[i]], res[i]);
-    //         }
-    //     }
-    //     for i in 0..log_n {
-    //         let m = 1 << i;
-    //         for j in (0..n).step_by(m * 2) {
-    //             for k in 0..m {
-    //                 let tmp = res[j + k];
-    //                 res[j + k + m] += tmp;
-    //             }
-    //         }
-    //     }
-    //     res
-    // }
+    pub fn evaluate_hypercube(&self) -> Vec<T> {
+        let log_n = self.variable_num();
+        let n = self.coefficients.len();
+        let rank = batch_bit_reverse(log_n);
+        let mut res = self.coefficients.clone();
+        for i in 0..n {
+            if i < rank[i] {
+                (res[i], res[rank[i]]) = (res[rank[i]], res[i]);
+            }
+        }
+        for i in 0..log_n {
+            let m = 1 << i;
+            for j in (0..n).step_by(m * 2) {
+                for k in 0..m {
+                    let tmp = res[j + k];
+                    res[j + k + m] += tmp;
+                }
+            }
+        }
+        res
+    }
 
     pub fn new(coefficients: Vec<T>) -> Self {
         let len = coefficients.len();

@@ -12,6 +12,7 @@ members = [
   "polyfrim",
   "pip_fri",
   "virgo",
+  "deepfold",
 ]
 
 [patch.crates-io]
