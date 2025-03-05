@@ -1,4 +1,5 @@
 extern crate criterion;
+use ark_ec::pairing::Pairing;
 use criterion::*;
 
 use pip_fri::prover::MERKLE_ROOT_SIZE;
@@ -13,8 +14,11 @@ use utils::helper::Helper;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use utils::interpolate_vecs_value::*;
-const SMALL: usize = 20;
-const SIZE: usize = 25;
+// use ark_bls12_381::Bls12_381;
+// type T = <Bls12_381 as Pairing>::ScalarField;
+
+const SMALL: usize = 18;
+const SIZE: usize = 26;
 
 
 #[cfg(feature = "parallel")]
@@ -114,8 +118,8 @@ fn zk_commit(criterion: &mut Criterion, variable_num: usize) {
 
 fn bench_commit(c: &mut Criterion) {
     for i in SMALL..=SIZE {
-        commit(c, i);
-        // zk_commit(c, i);
+        // commit(c, i);
+        zk_commit(c, i);
     }
 }
 
@@ -203,8 +207,8 @@ fn zk_open(criterion: &mut Criterion, variable_num: usize) {
 
 fn bench_open(c: &mut Criterion) {
     for i in SMALL..=SIZE {
-        open(c, i);
-        // zk_open(c, i);
+        // open(c, i);
+        zk_open(c, i);
     }
 }
 
@@ -248,7 +252,22 @@ fn verify(criterion: &mut Criterion, variable_num: usize) {
         + function_proof.iter().map(|x| x.field_proof_size()).sum::<usize>()
         + (2 * sub_variable_num - 3) * MERKLE_ROOT_SIZE
         + 2 * size_of::<T>());
-    println!("proof size for {} variable is {:?} KB", variable_num, proof_size / 1024);
+
+    let path_proof_size = folding_proof.iter().map(|x| x.path_proof_size()).sum::<usize>()
+        + polynomial_proof.path_proof_size()
+        + function_proof.iter().map(|x| x.path_proof_size()).sum::<usize>();
+
+    let field_proof_size = folding_proof.iter().map(|x| x.field_proof_size()).sum::<usize>()
+        + polynomial_proof.field_proof_size()
+        + function_proof.iter().map(|x| x.field_proof_size()).sum::<usize>()
+        + (2 * sub_variable_num - 3) * MERKLE_ROOT_SIZE
+        + 2 * size_of::<T>();
+
+    println!(
+        "pip-fri (path, field)_proof_size of {} variables is ({}, {}) Kbytes",
+        variable_num, path_proof_size / 1024, field_proof_size / 1024
+    );
+    println!("PIP-FRI total proof size for {} variable is {:?} KB", variable_num, proof_size / 1024);
     
     criterion.bench_function(&format!("pip-fri verify {}", variable_num), move |b| {
         b.iter(|| {
@@ -291,6 +310,31 @@ fn zk_verify(criterion: &mut Criterion, variable_num: usize) {
 
     // open
     let (polynomial_proof, folding_proof, function_proof) = prover.open(&sub_open_point, &mut verifier);
+
+    let proof_size = (folding_proof.iter().map(|x| x.path_proof_size()).sum::<usize>()
+        + polynomial_proof.path_proof_size()
+        + function_proof.iter().map(|x| x.path_proof_size()).sum::<usize>()
+        + folding_proof.iter().map(|x| x.field_proof_size()).sum::<usize>()
+        + polynomial_proof.field_proof_size()
+        + function_proof.iter().map(|x| x.field_proof_size()).sum::<usize>()
+        + (2 * (sub_variable_num + 1) - 3) * MERKLE_ROOT_SIZE
+        + 3 * size_of::<T>());
+
+    let path_proof_size = folding_proof.iter().map(|x| x.path_proof_size()).sum::<usize>()
+        + polynomial_proof.path_proof_size()
+        + function_proof.iter().map(|x| x.path_proof_size()).sum::<usize>();
+
+    let field_proof_size = folding_proof.iter().map(|x| x.field_proof_size()).sum::<usize>()
+        + polynomial_proof.field_proof_size()
+        + function_proof.iter().map(|x| x.field_proof_size()).sum::<usize>()
+        + (2 * (sub_variable_num + 1) - 3) * MERKLE_ROOT_SIZE
+        + 3 * size_of::<T>();
+
+    println!(
+        "zk-pip-fri (path, field)_proof_size of {} variables is ({}, {}) Kbytes",
+        variable_num, path_proof_size / 1024, field_proof_size / 1024
+    );
+    println!("zk-PIP-FRI total proof size for {} variable is {:?} KB", variable_num, proof_size / 1024);
     
     criterion.bench_function(&format!("zk-pip-fri verify {}", variable_num), move |b| {
         b.iter(|| {
@@ -302,8 +346,8 @@ fn zk_verify(criterion: &mut Criterion, variable_num: usize) {
 
 fn bench_verify(c: &mut Criterion) {
     for i in SMALL..=SIZE {
-        verify(c, i);
-        // zk_verify(c, i);
+        // verify(c, i);
+        zk_verify(c, i);
     }
 }
 
@@ -349,14 +393,14 @@ fn multi_single_fft(criterion: &mut Criterion, variable_num: usize, log_num: usi
 }
 
 fn bench_single_fft(c: &mut Criterion) {
-    for i in 20..=24 {
+    for i in SMALL..=SIZE {
         single_fft(c, i);
     }
 }
 
 fn bench_multi_fft(c: &mut Criterion) {
-    for i in 20..=24 {
-        multi_single_fft(c, i, 8);
+    for i in SMALL..=SIZE {
+        multi_single_fft(c, i, 7);
     }
 }
 
@@ -366,8 +410,8 @@ criterion_group! {
     targets = 
     // bench_single_fft, 
     // bench_multi_fft,
-    bench_commit, 
-    bench_open, 
+    // bench_commit, 
+    // bench_open, 
     bench_verify
 }
 

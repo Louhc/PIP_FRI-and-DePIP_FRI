@@ -6,6 +6,7 @@ use crate::merkle_tree::MERKLE_ROOT_SIZE;
 
 pub fn get_poly_num<T: PrimeField>(poly: &MultilinearPolynomial<T>) -> usize {
     nearest_power_of_two(poly.variable_num() * 4)
+    // nearest_power_of_two(18 * 4) * (1 << (poly.variable_num() - 18))
 }
 
 // for comparison with Orion, we set poly_num directly nearest_power_of_two

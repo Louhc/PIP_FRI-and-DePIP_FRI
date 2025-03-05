@@ -6,14 +6,14 @@ def randomword(length):
    return ''.join(random.choice(letters) for i in range(length))
 
 tmp_file = randomword(20) + '.txt'
-for i in range(20, 26):
+for i in range(22, 23):
     print('bench fft_gkr of size', i)
     round = 10
     prover_time = 0
     verifier_time = 0
     proof_size = 0
     for j in range(0, round):
-        os.system('chmod +x ./fft_gkr ' + str(i) + ' ' + tmp_file)
+        os.system('./fft_gkr ' + str(i) + ' ' + tmp_file)
         f = open(tmp_file)
         lines = f.readlines()
         v, ps, p = lines[0].split(' ')

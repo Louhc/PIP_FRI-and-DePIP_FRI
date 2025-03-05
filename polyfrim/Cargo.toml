@@ -12,13 +12,17 @@ rand = {version = "0.8.5"}
 ark-poly = { version = "0.4"}
 ark-serialize = { version = "0.4", features = [ "derive" ] }
 utils = {path = "../utils"}
+rayon = { version = "1", optional = true }
+ark-ec = { version = "0.4", default-features = false }
 
 [dev-dependencies]
 criterion = "0.4.0"
+ark-bls12-381 = { version = "0.4.0-alpha.2", features = [ "curve"] }
+ark-bn254 = { version = "0.4.0", features = [ "curve"] }
 
 [features]
-parallel = ["ark-poly/parallel"]
-
+parallel = ["rayon", "ark-ff/parallel", "ark-poly/parallel"]
+print-trace = [ "ark-std/print-trace" ]
 # RAYON_NUM_THREADS=8 cargo bench --features "parallel" -p polyfrim
 
 [[bench]]

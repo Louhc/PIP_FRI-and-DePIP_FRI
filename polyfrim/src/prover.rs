@@ -11,7 +11,7 @@ use utils::{
     merkle_tree::MerkleTreeProver,
     fiat_shamir::RandomOracle,
 };
-
+use ark_std::{start_timer, end_timer};
 
 
 #[derive(Clone)]
@@ -22,12 +22,14 @@ struct InterpolateValue<T: PrimeField> {
 
 impl<T: PrimeField> InterpolateValue<T> {
     fn new(value: Vec<T>) -> Self {
+        let step = start_timer!(|| "Merkle tree first");
         let len = value.len() / 2;
         let merkle_tree = MerkleTreeProver::new(
             (0..len)
                 .map(|i| Helper::to_bytes_vec(&[value[i], value[i + len]]))
                 .collect(),
         );
+        end_timer!(step);
         Self { value, merkle_tree }
     }
 
@@ -70,7 +72,10 @@ impl<T: PrimeField> One2ManyProver<T> {
         polynomial: MultilinearPolynomial<T>,
         oracle: &RandomOracle<T>,
     ) -> One2ManyProver<T> {
+
+        let step = start_timer!(|| "NTT");
         let interpolation = interpolate_coset[0].fft(&polynomial.coefficients());
+        end_timer!(step);
 
         One2ManyProver {
             total_round,
@@ -84,7 +89,10 @@ impl<T: PrimeField> One2ManyProver<T> {
 
     pub fn commit_polynomial(&self) -> [u8; MERKLE_ROOT_SIZE] {
         assert_eq!(self.functions.len(), 1);
-        self.functions[0].commit()
+        let step = start_timer!(|| "Merkle tree second");
+        let commit = self.functions[0].commit();
+        end_timer!(step);
+        commit
     }
 
     pub fn open(&mut self, verifier: &mut One2ManyVerifier<T>, open_point: &Vec<T>) -> (Vec<QueryResult<T>>, Vec<QueryResult<T>>) {

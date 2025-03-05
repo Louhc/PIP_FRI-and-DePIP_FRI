@@ -83,8 +83,8 @@ impl MerkleTreeVerifier {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_test_curves::bls12_381::Fq as Fq;
     use crate::helper::Helper;
+    use ark_test_curves::bls12_381::Fq;
 
     #[test]
     fn commit_and_open() {
@@ -102,11 +102,13 @@ mod tests {
         let root = prover.commit();
         let verifier = MerkleTreeVerifier::new(leave_number, &root);
         let leaf_indices = vec![2, 3];
+        println!("{:?}", leaf_indices);
         let proof_bytes = prover.open(&leaf_indices);
         let open_values = vec![
             Helper::as_bytes_vec(&[Fq::from(5), Fq::from(6), Fq::from(6)]),
             Helper::as_bytes_vec(&[Fq::from(7), Fq::from(8)]),
         ];
+        println!("len: {}", proof_bytes.len() / 32);
         assert!(verifier.verify(proof_bytes, &leaf_indices, &open_values));
     }
 

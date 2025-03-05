@@ -8,13 +8,17 @@ use utils::helper::MultilinearPolynomial;
 use utils::fiat_shamir::RandomOracle;
 use utils::merkle_tree::MERKLE_ROOT_SIZE;
 use utils::{CODE_RATE, SECURITY_BITS};
-use utils::goldilocks::Goldilocks as T;
+// use utils::goldilocks::Goldilocks as T;
 use utils::helper::Helper;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-const SMALL: usize = 20;
-const SIZE: usize = 25;
+use ark_ec::pairing::Pairing;
+use ark_bls12_381::Bls12_381;
+type T = <Bls12_381 as Pairing>::ScalarField;
+
+const SMALL: usize = 18;
+const SIZE: usize = 23;
 
 // usage:
 // RAYON_NUM_THREADS=4 cargo bench --features "parallel" -p polyfrim
@@ -101,7 +105,6 @@ fn bench_open(c: &mut Criterion) {
 }
 
 fn verify(criterion: &mut Criterion, variable_num: usize) {
-    let variable_num: usize = 14;
     let mut rng = StdRng::seed_from_u64(0u64);
     let polynomial = MultilinearPolynomial::rand(variable_num);
     let point = (0..variable_num)
@@ -140,6 +143,21 @@ fn verify(criterion: &mut Criterion, variable_num: usize) {
         + size_of::<T>() * 2;
     println!("proof size for {} variable is {:?} KB", variable_num, proof_size / 1024);
 
+    let path_proof_size = folding_proof.iter().map(|x| x.path_proof_size()).sum::<usize>()
+        + function_proof.iter().map(|x| x.path_proof_size()).sum::<usize>();
+
+    let field_proof_size = folding_proof.iter().map(|x| x.field_proof_size()).sum::<usize>()
+        + function_proof.iter().map(|x| x.field_proof_size()).sum::<usize>();
+    
+    println!(
+        "polyfrim (path, field)_proof_size of {} variables is ({}, {}) Kbytes",
+        variable_num, path_proof_size / 1024, field_proof_size / 1024
+    );
+    println!(
+        "polyfrim total_proof_size of {} variables is {} Kbytes",
+        variable_num, (path_proof_size + field_proof_size) / 1024
+    );
+
     criterion.bench_function(&format!("polyfrim verify {}", variable_num), move |b| {
         b.iter(|| {
             verifier.verify(&folding_proof, &function_proof, eval);
@@ -154,13 +172,45 @@ fn bench_verify(c: &mut Criterion) {
     }
 }
 
+
+fn field_basic_operation(criterion: &mut Criterion, variable_num: usize) {
+    let length: usize = 1 << variable_num;
+    let mut rng = StdRng::seed_from_u64(0u64);
+    let mut left_vec: Vec<T> = vec![];
+    let mut right_vec: Vec<T> = vec![];
+    let res_vec: Vec<T> = vec![];
+    for _ in 0..length {
+        left_vec.push(T::rand(&mut rng));
+        right_vec.push(T::rand(&mut rng));
+    }
+    criterion.bench_function(&format!("mul repeation {}", 1 << variable_num), move |b| {
+        b.iter_batched(
+            || res_vec.clone(),
+            |mut p| {
+                for i in 0..length {
+                    p.push(left_vec[i] * right_vec[i]);
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
+fn bench_field(c: &mut Criterion) {
+    for i in SMALL..=SIZE {
+        field_basic_operation(c, i);
+    }
+}
+
+
 criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
     targets = 
-    bench_commit, 
-    bench_open, 
-    bench_verify
+    // bench_commit, 
+    // bench_open, 
+    bench_verify,
+    // bench_field
 }
 
 criterion_main!(benches);
