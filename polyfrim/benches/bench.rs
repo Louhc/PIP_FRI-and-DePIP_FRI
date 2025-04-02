@@ -1,20 +1,20 @@
 extern crate criterion;
 use criterion::*;
 
-use polyfrim::{prover::One2ManyProver, verifier::One2ManyVerifier};
 use ark_ff::{Field, UniformRand};
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
-use utils::helper::MultilinearPolynomial;
+use polyfrim::{prover::One2ManyProver, verifier::One2ManyVerifier};
 use utils::fiat_shamir::RandomOracle;
+use utils::helper::MultilinearPolynomial;
 use utils::merkle_tree::MERKLE_ROOT_SIZE;
 use utils::{CODE_RATE, SECURITY_BITS};
 // use utils::goldilocks::Goldilocks as T;
-use utils::helper::Helper;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use utils::helper::Helper;
 
-use ark_ec::pairing::Pairing;
 use ark_bls12_381::Bls12_381;
+use ark_ec::pairing::Pairing;
 type T = <Bls12_381 as Pairing>::ScalarField;
 
 const SMALL: usize = 18;
@@ -31,9 +31,13 @@ fn commit(criterion: &mut Criterion, variable_num: usize) {
         .collect::<Vec<T>>();
     let _eval = polynomial.evaluate(&point);
     // setup
-    let mut interpolate_cosets = vec![EvaluationDomain::new_coset(1 << (variable_num + CODE_RATE), T::rand(&mut rng)).unwrap()];
+    let mut interpolate_cosets =
+        vec![
+            EvaluationDomain::new_coset(1 << (variable_num + CODE_RATE), T::rand(&mut rng))
+                .unwrap(),
+        ];
     for i in 1..variable_num {
-        interpolate_cosets.push(Helper::pow(&interpolate_cosets[i-1], 2));
+        interpolate_cosets.push(Helper::pow(&interpolate_cosets[i - 1], 2));
     }
     let oracle = RandomOracle::new(variable_num, SECURITY_BITS / CODE_RATE);
 
@@ -41,12 +45,7 @@ fn commit(criterion: &mut Criterion, variable_num: usize) {
         b.iter_batched(
             || polynomial.clone(),
             |p| {
-                let prover = One2ManyProver::new(
-                    variable_num,
-                    &interpolate_cosets,
-                    p,
-                    &oracle,
-                );
+                let prover = One2ManyProver::new(variable_num, &interpolate_cosets, p, &oracle);
                 prover.commit_polynomial();
             },
             BatchSize::SmallInput,
@@ -69,9 +68,10 @@ fn open(criterion: &mut Criterion, variable_num: usize) {
     let _eval = polynomial.evaluate(&point);
 
     // setup
-    let mut interpolate_cosets = vec![EvaluationDomain::new_coset(1 << (variable_num + CODE_RATE), T::from(1)).unwrap()];
+    let mut interpolate_cosets =
+        vec![EvaluationDomain::new_coset(1 << (variable_num + CODE_RATE), T::from(1)).unwrap()];
     for i in 1..variable_num {
-        interpolate_cosets.push(Helper::pow(&interpolate_cosets[i-1], 2));
+        interpolate_cosets.push(Helper::pow(&interpolate_cosets[i - 1], 2));
     }
 
     let oracle = RandomOracle::new(variable_num, SECURITY_BITS / CODE_RATE);
@@ -79,20 +79,13 @@ fn open(criterion: &mut Criterion, variable_num: usize) {
 
     // commit
     let commit = prover.commit_polynomial();
-    let mut verifier = One2ManyVerifier::new(
-        variable_num,
-        &interpolate_cosets,
-        commit,
-        &oracle,
-        &point,
-    );
+    let mut verifier =
+        One2ManyVerifier::new(variable_num, &interpolate_cosets, commit, &oracle, &point);
 
     criterion.bench_function(&format!("polyfrim open {}", variable_num), move |b| {
         b.iter_batched(
             || prover.clone(),
-            |mut p| {
-                p.open(&mut verifier, &point)
-            },
+            |mut p| p.open(&mut verifier, &point),
             BatchSize::SmallInput,
         )
     });
@@ -113,9 +106,10 @@ fn verify(criterion: &mut Criterion, variable_num: usize) {
     let eval = polynomial.evaluate(&point);
 
     // setup
-    let mut interpolate_cosets = vec![EvaluationDomain::new_coset(1 << (variable_num + CODE_RATE), T::from(1)).unwrap()];
+    let mut interpolate_cosets =
+        vec![EvaluationDomain::new_coset(1 << (variable_num + CODE_RATE), T::from(1)).unwrap()];
     for i in 1..variable_num {
-        interpolate_cosets.push(Helper::pow(&interpolate_cosets[i-1], 2));
+        interpolate_cosets.push(Helper::pow(&interpolate_cosets[i - 1], 2));
     }
 
     let oracle = RandomOracle::new(variable_num, SECURITY_BITS / CODE_RATE);
@@ -123,13 +117,8 @@ fn verify(criterion: &mut Criterion, variable_num: usize) {
 
     // commit
     let commit = prover.commit_polynomial();
-    let mut verifier = One2ManyVerifier::new(
-        variable_num,
-        &interpolate_cosets,
-        commit,
-        &oracle,
-        &point,
-    );
+    let mut verifier =
+        One2ManyVerifier::new(variable_num, &interpolate_cosets, commit, &oracle, &point);
 
     // open
     let (folding_proof, function_proof) = prover.open(&mut verifier, &point);
@@ -141,21 +130,40 @@ fn verify(criterion: &mut Criterion, variable_num: usize) {
         // f involve \mu polynomials, and \mu - 1 roots
         + (2 * variable_num - 3) * MERKLE_ROOT_SIZE
         + size_of::<T>() * 2;
-    println!("proof size for {} variable is {:?} KB", variable_num, proof_size / 1024);
+    println!(
+        "proof size for {} variable is {:?} KB",
+        variable_num,
+        proof_size / 1024
+    );
 
-    let path_proof_size = folding_proof.iter().map(|x| x.path_proof_size()).sum::<usize>()
-        + function_proof.iter().map(|x| x.path_proof_size()).sum::<usize>();
+    let path_proof_size = folding_proof
+        .iter()
+        .map(|x| x.path_proof_size())
+        .sum::<usize>()
+        + function_proof
+            .iter()
+            .map(|x| x.path_proof_size())
+            .sum::<usize>();
 
-    let field_proof_size = folding_proof.iter().map(|x| x.field_proof_size()).sum::<usize>()
-        + function_proof.iter().map(|x| x.field_proof_size()).sum::<usize>();
-    
+    let field_proof_size = folding_proof
+        .iter()
+        .map(|x| x.field_proof_size())
+        .sum::<usize>()
+        + function_proof
+            .iter()
+            .map(|x| x.field_proof_size())
+            .sum::<usize>();
+
     println!(
         "polyfrim (path, field)_proof_size of {} variables is ({}, {}) Kbytes",
-        variable_num, path_proof_size / 1024, field_proof_size / 1024
+        variable_num,
+        path_proof_size / 1024,
+        field_proof_size / 1024
     );
     println!(
         "polyfrim total_proof_size of {} variables is {} Kbytes",
-        variable_num, (path_proof_size + field_proof_size) / 1024
+        variable_num,
+        (path_proof_size + field_proof_size) / 1024
     );
 
     criterion.bench_function(&format!("polyfrim verify {}", variable_num), move |b| {
@@ -171,7 +179,6 @@ fn bench_verify(c: &mut Criterion) {
         verify(c, i);
     }
 }
-
 
 fn field_basic_operation(criterion: &mut Criterion, variable_num: usize) {
     let length: usize = 1 << variable_num;
@@ -202,13 +209,12 @@ fn bench_field(c: &mut Criterion) {
     }
 }
 
-
 criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
-    targets = 
-    // bench_commit, 
-    // bench_open, 
+    targets =
+    // bench_commit,
+    // bench_open,
     bench_verify,
     // bench_field
 }

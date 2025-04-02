@@ -315,4 +315,14 @@ impl DeNet for DeTwoNet {
             ch.recv_vec()
         }
     }
+
+    #[inline]
+    fn distribute_bytes(_bytes: &Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+        unimplemented!("send_bytes_to_party is not implemented yet");
+    }
+
+    #[inline]
+    fn exchange_bytes(_bytes: &Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+        unimplemented!("send_bytes_to_party is not implemented yet");
+    }
 }

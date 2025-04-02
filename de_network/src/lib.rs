@@ -1,8 +1,10 @@
 pub mod multi;
+// pub mod p2p;
 pub mod two;
 
-pub use two::DeTwoNet;
 pub use multi::DeMultiNet;
+// pub use p2p::DeP2PNet;
+pub use two::DeTwoNet;
 
 pub mod channel;
 pub use channel::DeSerNet;
@@ -60,6 +62,8 @@ pub trait DeNet {
     /// Provide bytes iff you're the master!
     fn recv_bytes_from_master(bytes: Option<Vec<Vec<u8>>>) -> Vec<u8>;
 
+    fn distribute_bytes(bytes: &Vec<Vec<u8>>) -> Vec<Vec<u8>>;
+    fn exchange_bytes(bytes: &Vec<Vec<u8>>) -> Vec<Vec<u8>>;
     /// Everyone sends bytes to the master, who recieves those bytes, runs a computation on them, and
     /// redistributes the resulting bytes.
     ///

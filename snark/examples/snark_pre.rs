@@ -2,25 +2,25 @@
 // RAYON_NUM_THREADS=N RUSTFLAGS='-C target-cpu=native' target-feature=+bmi2,+adx" cargo +nightly build --release --example snark_pre --no-default-features --features "parallel asm"
 // RAYON_NUM_THREADS=32 ./snark_pre 0/1/2/3 ../../../snark/data/4
 
-use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use ark_ec::pairing::Pairing;
-use ark_std::log2;
-use my_kzg::biv_batch_kzg::BivBatchKZG;
-use merlin::Transcript;
-use my_ipa::{helper::generate_r1cs_de_polynomials, r1cs::RandomCircuit};
-use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
-use std::path::PathBuf;
-use structopt::StructOpt;
-use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_ff::UniformRand;
-use std::time::Instant;
-use ark_relations::r1cs::{ConstraintSystem, ConstraintSynthesizer};
-use my_snark::snark_log::DeSNARKLog;
-use my_snark::indexer::Indexer;
+use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
+use ark_std::log2;
+use ark_std::rand::{rngs::StdRng, SeedableRng};
+use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
+use merlin::Transcript;
 use my_ipa::r1cs::R1CSVectors;
+use my_ipa::{helper::generate_r1cs_de_polynomials, r1cs::RandomCircuit};
+use my_kzg::biv_batch_kzg::BivBatchKZG;
+use my_snark::indexer::Indexer;
+use my_snark::snark_log::DeSNARKLog;
+use std::path::PathBuf;
+use std::time::Instant;
+use structopt::StructOpt;
 // use ark_bn254::Bn254;
-use ark_std::{start_timer, end_timer};
 use ark_bls12_381::Bls12_381;
+use ark_std::{end_timer, start_timer};
 
 // This is the snark with constant verifier commplexity.
 // Use Bn254 or Bls12_381 to change the underlying curves.
@@ -33,7 +33,6 @@ struct Opt {
 
     /// Input file
     #[structopt(parse(from_os_str))]
-
     input: PathBuf,
 }
 
@@ -61,27 +60,41 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     drop(cs_ref);
 
     let mut rng = StdRng::seed_from_u64(0u64);
-    let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, m_prime): (Vec<_>, Vec<_>, Vec<_>, usize) = Indexer::<E>::build_de_r1cs_index(l, m, &cs_matrix).unwrap();
+    let (_de_row_index_vecs, _de_col_index_vecs, _de_val_evals_vecs, m_prime): (
+        Vec<_>,
+        Vec<_>,
+        Vec<_>,
+        usize,
+    ) = Indexer::<E>::build_de_r1cs_index(l, m, &cs_matrix).unwrap();
     println!("log m_prime: {:?}", log2(m_prime));
 
     let time = Instant::now();
     let challenge_r = E::ScalarField::rand(&mut rng);
-    let domain_x = <GeneralEvaluationDomain<E::ScalarField> as EvaluationDomain<E::ScalarField>>::new(m).unwrap();
-    let domain_y = <GeneralEvaluationDomain<E::ScalarField> as EvaluationDomain<E::ScalarField>>::new(l).unwrap();
+    let domain_x =
+        <GeneralEvaluationDomain<E::ScalarField> as EvaluationDomain<E::ScalarField>>::new(m)
+            .unwrap();
+    let domain_y =
+        <GeneralEvaluationDomain<E::ScalarField> as EvaluationDomain<E::ScalarField>>::new(l)
+            .unwrap();
     let domain_m = if m == m_prime {
         domain_x.clone()
     } else {
-        <GeneralEvaluationDomain<E::ScalarField> as EvaluationDomain<E::ScalarField>>::new(m_prime).unwrap()
+        <GeneralEvaluationDomain<E::ScalarField> as EvaluationDomain<E::ScalarField>>::new(m_prime)
+            .unwrap()
     };
 
     let x_degree = m - 1;
     let y_degree = l - 1;
     let m_degree = m_prime - 1;
-    let ((powers, x_srs, y_srs), v_srs) = BivBatchKZG::<E>::setup_lagrange(&mut rng, x_degree, y_degree, &domain_y).unwrap();
+    let ((powers, x_srs, y_srs), v_srs) =
+        BivBatchKZG::<E>::setup_lagrange(&mut rng, x_degree, y_degree, &domain_y).unwrap();
 
     let ((m_powers, m_srs, m_y_srs), m_v_srs) = {
         if x_degree == m_degree {
-            ((powers.clone(), x_srs.clone(), y_srs.clone()), v_srs.clone())
+            (
+                (powers.clone(), x_srs.clone(), y_srs.clone()),
+                v_srs.clone(),
+            )
         } else {
             BivBatchKZG::<E>::setup_lagrange(&mut rng, m_degree, y_degree, &domain_y).unwrap()
         }
@@ -90,7 +103,18 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
 
     // indexer works
     let time = Instant::now();
-    let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::preprocess(sub_prover_id, m, l, &cs_matrix, &powers, &m_powers, &x_srs, &domain_x, &domain_y, &domain_m);
+    let (pre_mes_prover, pre_mes_verifier) = Indexer::<E>::preprocess(
+        sub_prover_id,
+        m,
+        l,
+        &cs_matrix,
+        &powers,
+        &m_powers,
+        &x_srs,
+        &domain_x,
+        &domain_y,
+        &domain_m,
+    );
     println!("Indexer time: {:?}", time.elapsed());
 
     // Synchronize everyone
@@ -104,17 +128,36 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     println!("Prover {:?} starts to prove", sub_prover_id);
     let timer1 = start_timer!(|| "Prover starts to prove");
     let time = Instant::now();
-    let mut transcript : Transcript = Transcript::new(b"Random R1CS");
+    let mut transcript: Transcript = Transcript::new(b"Random R1CS");
     let timer2 = start_timer!(|| "Build r1cs vecs and polys");
 
-    let r1cs_de_vecs: R1CSVectors<E> = R1CSVectors::<E>::build(sub_prover_id, m, l, challenge_r, &cs, &cs_matrix).unwrap();
+    let r1cs_de_vecs: R1CSVectors<E> =
+        R1CSVectors::<E>::build(sub_prover_id, m, l, challenge_r, &cs, &cs_matrix).unwrap();
     let (sub_pub_polys, sub_wit_polys) = generate_r1cs_de_polynomials::<E>(m, l, r1cs_de_vecs);
     end_timer!(timer2);
-    let proof = DeSNARKLog::<E>::de_r1cs_prove(sub_prover_id, &powers, 
-        &m_powers, &x_srs, &y_srs, &m_srs, &m_y_srs, &sub_wit_polys, &sub_pub_polys, &pre_mes_prover,
-        &challenge_r, &domain_x, &domain_y, &domain_m, &mut transcript);
+    let proof = DeSNARKLog::<E>::de_r1cs_prove(
+        sub_prover_id,
+        &powers,
+        &m_powers,
+        &x_srs,
+        &y_srs,
+        &m_srs,
+        &m_y_srs,
+        &sub_wit_polys,
+        &sub_pub_polys,
+        &pre_mes_prover,
+        &challenge_r,
+        &domain_x,
+        &domain_y,
+        &domain_m,
+        &mut transcript,
+    );
     end_timer!(timer1);
-    println!("Prover {:?} proving time: {:?}", sub_prover_id, time.elapsed());
+    println!(
+        "Prover {:?} proving time: {:?}",
+        sub_prover_id,
+        time.elapsed()
+    );
 
     if Net::am_master() {
         let proof_size = DeSNARKLog::<E>::get_proof_size(proof.as_ref().unwrap());
@@ -125,9 +168,18 @@ fn test_helper<E: Pairing>(m: usize, l: usize, sub_prover_id: usize) {
     let repetitions = 50;
     if Net::am_master() {
         for _ in 0..repetitions {
-            let mut transcript : Transcript = Transcript::new(b"Random R1CS");
-            let is_valid = DeSNARKLog::<E>::r1cs_verify_preprocess(&v_srs, &m_v_srs, 
-                &pre_mes_verifier, proof.as_ref().unwrap(), &domain_x, &domain_y, &domain_m, &challenge_r, &mut transcript);
+            let mut transcript: Transcript = Transcript::new(b"Random R1CS");
+            let is_valid = DeSNARKLog::<E>::r1cs_verify_preprocess(
+                &v_srs,
+                &m_v_srs,
+                &pre_mes_verifier,
+                proof.as_ref().unwrap(),
+                &domain_x,
+                &domain_y,
+                &domain_m,
+                &challenge_r,
+                &mut transcript,
+            );
             assert!(is_valid);
         }
     }

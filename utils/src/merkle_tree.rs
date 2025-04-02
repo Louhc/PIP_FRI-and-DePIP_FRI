@@ -82,9 +82,47 @@ impl MerkleTreeVerifier {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
     use crate::helper::Helper;
     use ark_test_curves::bls12_381::Fq;
+    use rand::{seq::SliceRandom, thread_rng};
+
+    fn get_layer_size(leave_number: usize, leaf_indices: &Vec<usize>) -> (Vec<usize>, usize) {
+        let mut current_level: HashSet<usize> = leaf_indices.iter().cloned().collect();
+        let mut result = Vec::new();
+        let mut total_nodes = leave_number;
+        let mut total_size = 0;
+
+        while total_nodes > 1 {
+            let mut next_level = HashSet::new();
+            let mut sibling_nodes = HashSet::new();
+
+            for &index in &current_level {
+                let sibling_index = if index % 2 == 0 { index + 1 } else { index - 1 };
+                if sibling_index < total_nodes && !current_level.contains(&sibling_index) {
+                    sibling_nodes.insert(sibling_index);
+                }
+                next_level.insert(index / 2);
+            }
+
+            if total_nodes > 2 {
+                result.push(sibling_nodes.len());
+                total_size += sibling_nodes.len();
+            }
+
+            current_level = next_level;
+            total_nodes /= 2;
+        }
+
+        let num_layer = leave_number.next_power_of_two().trailing_zeros() as usize;
+        result.resize(num_layer, 0);
+
+        println!("result: {:?}", result);
+
+        (result, total_size)
+    }
 
     #[test]
     fn commit_and_open() {
@@ -96,6 +134,7 @@ mod tests {
             Helper::as_bytes_vec(&[Fq::from(9), Fq::from(10)]),
             Helper::as_bytes_vec(&[Fq::from(11), Fq::from(12)]),
             Helper::as_bytes_vec(&[Fq::from(13), Fq::from(14)]),
+            Helper::as_bytes_vec(&[Fq::from(13), Fq::from(16)]),
         ];
         let leave_number = leaf_values.len();
         let prover = MerkleTreeProver::new(leaf_values);
@@ -110,6 +149,112 @@ mod tests {
         ];
         println!("len: {}", proof_bytes.len() / 32);
         assert!(verifier.verify(proof_bytes, &leaf_indices, &open_values));
+    }
+
+    #[test]
+    fn test_merkle_open() {
+        let n = 10;
+        let num_open = 32;
+        let threshold = 134;
+        // let n = 13;
+        // let num_open = 16;
+        // let threshold = 124;
+
+        let num_leaves: usize = 1 << n;
+        let leaf_values: Vec<Vec<u8>> = (0..num_leaves).map(|x| x.to_be_bytes().to_vec()).collect();
+        assert_eq!(num_leaves as usize, leaf_values.len());
+        let prover = MerkleTreeProver::new(leaf_values);
+        let root = prover.commit();
+
+        let mut rng = thread_rng();
+        let mut proof_bytes;
+        let mut leaf_indices;
+        let mut attempts = 0;
+        let mut num_nodes = 0;
+        loop {
+            attempts += 1;
+
+            let mut indices: Vec<usize> = (0..num_leaves).collect();
+            indices.shuffle(&mut rng);
+            leaf_indices = indices.into_iter().take(num_open).collect();
+
+            // 生成 proof_bytes
+            proof_bytes = prover.open(&leaf_indices);
+            num_nodes = proof_bytes.len() / 32;
+
+            // 检查条件，满足则退出循环
+            if num_nodes <= threshold {
+                break;
+            }
+        }
+
+        println!(
+            "num helper nodes: {}, total proof size: {} KB, num of repetitions: {}",
+            num_nodes,
+            (num_nodes as f64 * 256.0) / 8192.0,
+            attempts
+        );
+    }
+
+    #[test]
+    fn test_interweave_merkle_open() {
+        // let n = 13;
+        // let num_open = 16;
+        // let threshold = 206;
+        let n = 11;
+        let num_open = 32;
+        let threshold = 240;
+
+        let num_leaves: usize = 1 << n;
+        let leaf_values: Vec<Vec<u8>> = (0..num_leaves).map(|x| x.to_be_bytes().to_vec()).collect();
+        assert_eq!(num_leaves as usize, leaf_values.len());
+        let prover = MerkleTreeProver::new(leaf_values);
+        let root = prover.commit();
+
+        let mut rng = thread_rng();
+        let mut proof_bytes;
+        let mut leaf_indices;
+        let mut attempts = 0;
+        let mut num_nodes = 0;
+        loop {
+            attempts += 1;
+
+            // 分离奇数和偶数索引
+            let odd_indices: Vec<usize> = (0..num_leaves).filter(|x| x % 2 != 0).collect();
+            let even_indices: Vec<usize> = (0..num_leaves).filter(|x| x % 2 == 0).collect();
+
+            // 随机打乱奇数和偶数索引
+            let mut shuffled_odd_indices = odd_indices.clone();
+            let mut shuffled_even_indices = even_indices.clone();
+            shuffled_odd_indices.shuffle(&mut rng);
+            shuffled_even_indices.shuffle(&mut rng);
+
+            // 从奇数和偶数索引中分别选择 num_open 个
+            let selected_odd_indices: Vec<usize> =
+                shuffled_odd_indices.into_iter().take(num_open).collect();
+            let selected_even_indices: Vec<usize> =
+                shuffled_even_indices.into_iter().take(num_open).collect();
+
+            // 合并奇数和偶数索引
+            leaf_indices = [selected_odd_indices, selected_even_indices].concat();
+            leaf_indices.sort();
+
+            // 生成 proof_bytes
+            proof_bytes = prover.open(&leaf_indices);
+            num_nodes = proof_bytes.len() / 32;
+
+            // 检查条件，满足则退出循环
+            if num_nodes <= threshold {
+                break;
+            }
+        }
+
+        println!(
+            "num helper nodes: {}, total proof size: {} KB, num of repetitions: {}",
+            num_nodes,
+            (num_nodes as f64 * 256.0) / 8192.0,
+            attempts
+        );
     }
 
     #[test]

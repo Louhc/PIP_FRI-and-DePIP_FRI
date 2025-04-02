@@ -12,7 +12,7 @@ RAYON_NUM_THREADS=8 RUSTFLAGS="-C target-cpu=native" cargo build --release --exa
 BIN=../target/release/examples/$1
 
 PROCS=()
-for i in 0 1
+for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
 do
   RAYON_NUM_THREADS=2 $BIN $i ./data/4_local &
   pid=$!

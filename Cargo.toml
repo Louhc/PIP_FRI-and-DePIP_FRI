@@ -11,6 +11,7 @@ members = [
   "gemini-fri",
   "polyfrim",
   "pip_fri",
+  "de_pip_fri",
   "virgo",
   "deepfold",
 ]

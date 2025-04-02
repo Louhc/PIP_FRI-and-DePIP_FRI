@@ -191,7 +191,7 @@ impl Connections {
                             let mut bytes_in = vec![0u8; m];
                             bytes_in.copy_from_slice(bytes_out);
                             bytes_in
-                        } 
+                        }
                         // Read from stream the current sub-party's data
                         else {
                             let stream = peer.stream.as_mut().unwrap();
@@ -209,20 +209,15 @@ impl Connections {
                 .map(|data| 8 + data.len())
                 .sum::<usize>();
 
-            Some(
-                party_data
-            )
-        } 
+            Some(party_data)
+        }
         // The party is a sub-party
         else {
             // Just write its data to stream
             self.stats.bytes_sent += m + 8;
             let bytes_size = (m as u64).to_le_bytes();
 
-            let stream = self.peers[0]
-                .stream
-                .as_mut()
-                .unwrap();
+            let stream = self.peers[0].stream.as_mut().unwrap();
             stream.write_all(&bytes_size).unwrap();
             stream.write_all(bytes_out).unwrap();
             None
@@ -240,7 +235,8 @@ impl Connections {
             let bytes_out = bytes_out.unwrap();
             let timer = start_timer!(|| format!("From master"));
             // Iterate over the sub-parties
-            self.stats.bytes_sent += self.peers
+            self.stats.bytes_sent += self
+                .peers
                 .par_iter_mut()
                 .enumerate()
                 .filter(|p| p.0 != own_id)
@@ -256,7 +252,7 @@ impl Connections {
             end_timer!(timer);
             // The master gets its own data
             bytes_out[own_id].clone()
-        } 
+        }
         // The party is a sub-party
         else {
             // Just read from stream
@@ -271,10 +267,115 @@ impl Connections {
         }
         // Result: all sub-parties gets its own data from the master
     }
+
     fn uninit(&mut self) {
         for p in &mut self.peers {
             p.stream = None;
         }
+    }
+
+    fn distribute(&mut self, bytes_out: &Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+        let own_id = self.id;
+        let n = self.peers.len();
+        let m = bytes_out[0].len();
+        let mut bytes_in: Vec<Vec<u8>> = vec![vec![0; m]; n];
+
+        bytes_in[own_id] = bytes_out[own_id].clone();
+
+        // distribute and receive
+        for to_id in 0..n {
+            if to_id == own_id {
+                for from_id in (0..n).filter(|&id| id != own_id) {
+                    let stream = self.peers[from_id].stream.as_mut().unwrap();
+                    let mut bytes_size = [0u8; 8];
+
+                    // println!("id: {}, receiving from {}", own_id, from_id);
+                    stream.read_exact(&mut bytes_size).unwrap();
+                    assert_eq!(m, u64::from_le_bytes(bytes_size) as usize);
+                    self.stats.bytes_recv += m;
+                    stream.read_exact(&mut bytes_in[from_id]).unwrap();
+                    // println!("id: {}, received from {}", own_id, from_id);
+                }
+            } else if to_id != own_id {
+                let bytes_size = (m as u64).to_le_bytes();
+                self.stats.bytes_sent += m + 8;
+                let stream = self.peers[to_id].stream.as_mut().unwrap();
+
+                // println!("id: {}, sending to {}", own_id, to_id);
+                stream.write_all(&bytes_size).unwrap();
+                stream.write_all(&bytes_out[to_id]).unwrap();
+                // println!("id: {}, sent to {}", own_id, to_id);
+            }
+        }
+
+        // println!("id: {}, finish", own_id);
+
+        bytes_in
+    }
+
+    fn exchange(&mut self, bytes_out: &Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+        let n = self.peers.len();
+        let m = bytes_out[0].len();
+
+        let own_id = self.id;
+        let to_id_first = (own_id % (n / 2)) * 2;
+        let to_id_second = to_id_first + 1;
+        let from_id_first = own_id / 2;
+        let from_id_second = from_id_first + n / 2;
+
+        let _to_id_vec = vec![to_id_first, to_id_second];
+        let _from_id_vec = vec![from_id_first, from_id_second];
+
+        // println!(
+        //     "ID: {}, to {} and {}, from {} and {}",
+        //     own_id, to_id_first, to_id_second, from_id_first, from_id_second
+        // );
+
+        let mut bytes_in = vec![vec![0u8; m]; 2];
+
+        if to_id_first == own_id {
+            assert_eq!(from_id_first, own_id);
+            bytes_in[0].copy_from_slice(&bytes_out[0]);
+        } else if to_id_second == own_id {
+            assert_eq!(from_id_second, own_id);
+            bytes_in[1].copy_from_slice(&bytes_out[1]);
+        }
+
+        for i in 0..n {
+            if i == own_id && from_id_first != own_id {
+                let stream = self.peers[from_id_first].stream.as_mut().unwrap();
+                let mut bytes_size = [0u8; 8];
+                stream.read_exact(&mut bytes_size).unwrap();
+                let recv_size = u64::from_le_bytes(bytes_size) as usize;
+                assert_eq!(recv_size, m);
+                stream.read_exact(&mut bytes_in[0]).unwrap();
+            } else if i == to_id_first && to_id_first != own_id {
+                self.stats.bytes_sent += m + 8;
+                let bytes_size = (m as u64).to_le_bytes();
+                let stream = self.peers[to_id_first].stream.as_mut().unwrap();
+                stream.write_all(&bytes_size).unwrap();
+                stream.write_all(&bytes_out[0]).unwrap();
+            }
+        }
+
+        for i in 0..n {
+            if i == own_id && from_id_second != own_id {
+                let stream = self.peers[from_id_second].stream.as_mut().unwrap();
+                let mut bytes_size = [0u8; 8];
+                stream.read_exact(&mut bytes_size).unwrap();
+                let recv_size = u64::from_le_bytes(bytes_size) as usize;
+                assert_eq!(recv_size, m);
+                stream.read_exact(&mut bytes_in[1]).unwrap();
+            } else if i == to_id_second && to_id_second != own_id {
+                self.stats.bytes_sent += m + 8;
+                let bytes_size = (m as u64).to_le_bytes();
+                let stream = self.peers[to_id_second].stream.as_mut().unwrap();
+                stream.write_all(&bytes_size).unwrap();
+                stream.write_all(&bytes_out[1]).unwrap();
+            }
+        }
+
+        bytes_in
     }
 }
 
@@ -335,5 +436,15 @@ impl DeNet for DeMultiNet {
     #[inline]
     fn recv_bytes_from_master(bytes: Option<Vec<Vec<u8>>>) -> Vec<u8> {
         get_ch!().recv_from_master(bytes)
+    }
+
+    #[inline]
+    fn distribute_bytes(bytes: &Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+        get_ch!().distribute(bytes)
+    }
+
+    #[inline]
+    fn exchange_bytes(bytes: &Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+        get_ch!().exchange(bytes)
     }
 }

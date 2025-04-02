@@ -21,6 +21,48 @@ pub trait DeSerNet: DeNet {
     }
 
     #[inline]
+    fn distribute<T: CanonicalDeserialize + CanonicalSerialize>(
+        out: &[T],
+        n: usize,
+    ) -> Vec<Vec<T>> {
+        let segment_size = out.len() / n;
+
+        let serialized_segments: Vec<Vec<u8>> = (0..n)
+            .map(|i| {
+                let mut bytes = Vec::new();
+                out[i * segment_size..(i + 1) * segment_size]
+                    .serialize_uncompressed(&mut bytes)
+                    .unwrap();
+                bytes
+            })
+            .collect();
+
+        Self::distribute_bytes(&serialized_segments)
+            .into_iter()
+            .map(|b| (Vec::<T>::deserialize_uncompressed(&b[..]).unwrap()))
+            .collect()
+    }
+
+    #[inline]
+    fn exchange<T: CanonicalDeserialize + CanonicalSerialize>(out: &[T]) -> Vec<T> {
+        let segment_size = out.len() / 2;
+        let serialized_segments: Vec<Vec<u8>> = (0..2)
+            .map(|i| {
+                let mut bytes = Vec::new();
+                out[i * segment_size..(i + 1) * segment_size]
+                    .serialize_uncompressed(&mut bytes)
+                    .unwrap();
+                bytes
+            })
+            .collect();
+
+        Self::exchange_bytes(&serialized_segments)
+            .into_iter()
+            .flat_map(|b| (Vec::<T>::deserialize_uncompressed(&b[..]).unwrap()))
+            .collect()
+    }
+
+    #[inline]
     fn send_to_master<T: CanonicalDeserialize + CanonicalSerialize>(out: &T) -> Option<Vec<T>> {
         let mut bytes_out = Vec::new();
         out.serialize_uncompressed(&mut bytes_out).unwrap();
@@ -75,7 +117,10 @@ pub trait DeSerNet: DeNet {
     }
 
     #[inline]
-    fn king_compute<T: CanonicalDeserialize + CanonicalSerialize>(x: &T, f: impl Fn(Vec<T>) -> Vec<T>) -> T {
+    fn king_compute<T: CanonicalDeserialize + CanonicalSerialize>(
+        x: &T,
+        f: impl Fn(Vec<T>) -> Vec<T>,
+    ) -> T {
         let king_response = Self::send_to_master(x).map(f);
         Self::recv_from_master(king_response)
     }

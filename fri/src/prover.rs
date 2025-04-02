@@ -1,6 +1,9 @@
+use std::time::Instant;
+
 use ark_ff::{batch_inversion, PrimeField};
 use ark_poly::polynomial::univariate::DensePolynomial as UnivariatePolynomial;
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
+use ark_std::{end_timer, start_timer};
 use utils::interpolate_vecs_value::{InterpolateVecsValue, QueryVecsResult};
 
 use crate::verifier::BatchVerifier;
@@ -120,7 +123,6 @@ impl<T: PrimeField> Prover<T> {
     }
 }
 
-
 #[derive(Clone)]
 pub struct BatchProver<T: PrimeField> {
     total_round: usize,
@@ -141,20 +143,22 @@ impl<T: PrimeField> BatchProver<T> {
         polynomials: &[UnivariatePolynomial<T>],
         oracle: &RandomOracle<T>,
     ) -> BatchProver<T> {
-        let vecs: Vec<Vec<T>> = polynomials.iter().map(|poly| 
-            interpolate_coset[0].fft(&poly.coeffs)
-        ).collect();
-        // Compute the actual polynomial invoked into FRI
-        // let mut rlc_polynomial = vecs[0].clone();
-        // for i in vecs.iter().skip(1) {
-        //     for j in 0..rlc_polynomial.len() {
-        //         rlc_polynomial[j] *= oracle.rlc;
-        //         rlc_polynomial[j] += i[j];
-        //     }
-        // }
-        let interpolate_initial =
-            InterpolateVecsValue::new(vecs);
-        
+        println!("coset[0] size {:?}", interpolate_coset[0].size());
+        println!("poly size {:?}", polynomials[0].coeffs.len());
+        println!("poly num {:?}", polynomials.len());
+        let time = Instant::now();
+        let step = start_timer!(|| "fft");
+        let vecs: Vec<Vec<T>> = polynomials
+            .iter()
+            .map(|poly| interpolate_coset[0].fft(&poly.coeffs))
+            .collect();
+        end_timer!(step);
+        println!("Time: fft: {:?}", time.elapsed());
+
+        // let time = Instant::now();
+        let interpolate_initial = InterpolateVecsValue::new(vecs);
+        // println!("Time: build Merkle tree: {:?}", time.elapsed());
+
         BatchProver {
             total_round,
             interpolate_cosets: interpolate_coset.clone(),
@@ -167,7 +171,10 @@ impl<T: PrimeField> BatchProver<T> {
     }
 
     pub fn commit_polynomial(&self) -> [u8; MERKLE_ROOT_SIZE] {
-        self.interpolation_initial.commit()
+        // let time = Instant::now();
+        let root = self.interpolation_initial.commit();
+        // println!("Time: generate Merkle tree root: {:?}", time.elapsed());
+        root
     }
 
     pub fn commit_foldings(&self, verifier: &mut BatchVerifier<T>) {
@@ -193,7 +200,7 @@ impl<T: PrimeField> BatchProver<T> {
         res
     }
 
-    // may open 
+    // may open
     pub fn prove(&mut self, points: &Vec<T>, evals: &Vec<T>) {
         for i in 0..self.total_round {
             let challenge = self.oracle.folding_challenges[i];
@@ -210,7 +217,8 @@ impl<T: PrimeField> BatchProver<T> {
                         .collect();
                     batch_inversion(inv_vec.as_mut_slice());
 
-                    let eval_vec = vecs[j].iter()
+                    let eval_vec = vecs[j]
+                        .iter()
                         .zip(inv_vec.iter())
                         .map(|(x, inv)| (*x - evals[j]) * inv * rlc_challenge)
                         .collect();
@@ -223,11 +231,7 @@ impl<T: PrimeField> BatchProver<T> {
                     }
                 }
 
-                self.evaluation_next_domain(
-                    &final_vec,
-                    i,
-                    challenge,
-                )
+                self.evaluation_next_domain(&final_vec, i, challenge)
             } else {
                 self.evaluation_next_domain(&self.interpolations[i - 1].vec, i, challenge)
             };
@@ -240,7 +244,12 @@ impl<T: PrimeField> BatchProver<T> {
         }
     }
 
-    pub fn open(&mut self, points: &Vec<T>, evals: &Vec<T>, verifier: &mut BatchVerifier<T>) -> (QueryVecsResult<T>, Vec<QueryResult<T>>) {
+    pub fn open(
+        &mut self,
+        points: &Vec<T>,
+        evals: &Vec<T>,
+        verifier: &mut BatchVerifier<T>,
+    ) -> (QueryVecsResult<T>, Vec<QueryResult<T>>) {
         self.prove(points, evals);
 
         self.commit_foldings(verifier);
@@ -257,8 +266,7 @@ impl<T: PrimeField> BatchProver<T> {
 
             if i == 0 {
                 folding_initial_res.push(self.interpolation_initial.query(&leaf_indices));
-            }
-            else {
+            } else {
                 folding_res.push(self.interpolations[i - 1].open(&leaf_indices));
             }
         }
