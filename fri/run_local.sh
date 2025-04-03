@@ -15,7 +15,7 @@ NUM_PROCESSES=$2
 # BIN=../target/release/examples/$1
 
 if [ -z "$EXAMPLE_NAME" ] || [ -z "$NUM_PROCESSES" ]; then
-  echo "用法: ./run_local.sh <example_name> <num_processes>"
+  echo "usage: ./run_local.sh <example_name> <num_processes>"
   exit 1
 fi
 

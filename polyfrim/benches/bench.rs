@@ -1,8 +1,8 @@
 extern crate criterion;
 use criterion::*;
 
-use ark_ff::{Field, UniformRand};
-use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
+use ark_ff::UniformRand;
+use ark_poly::EvaluationDomain;
 use polyfrim::{prover::One2ManyProver, verifier::One2ManyVerifier};
 use utils::fiat_shamir::RandomOracle;
 use utils::helper::MultilinearPolynomial;
