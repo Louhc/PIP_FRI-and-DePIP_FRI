@@ -3,8 +3,6 @@ use ark_ff::UniformRand;
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use de_network::{DeMultiNet as Net, DeNet, DeSerNet};
 use de_pip_fri::deprover::DeProver;
-use de_pip_fri::prover::Prover;
-use de_pip_fri::verifier;
 use de_pip_fri::verifier::Verifier;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -12,7 +10,6 @@ use std::fs;
 use std::mem::size_of;
 use std::path::PathBuf;
 use std::time::Instant;
-use std::{thread, time::Duration};
 use structopt::StructOpt;
 use time_logger::LOGGER;
 use utils::fiat_shamir::RandomOracle;
@@ -52,7 +49,7 @@ fn init() -> (usize, usize, usize) {
 }
 
 fn main() {
-    let (variable_num, num_parties, sub_prover_id) = init();
+    let (variable_num, _num_parties, sub_prover_id) = init();
 
     fs::create_dir_all("data").unwrap();
     let output_file = format!("data/{}.txt", sub_prover_id);
@@ -60,7 +57,7 @@ fn main() {
 
     let n = Net::n_parties();
 
-    let (poly, sub_polys, eval, sub_variable_num, sub_open_point, tensor) = if Net::am_master() {
+    let (_poly, sub_polys, eval, sub_variable_num, sub_open_point, tensor) = if Net::am_master() {
         let mut rng = StdRng::seed_from_u64(0u64);
 
         let polynomial = MultilinearPolynomial::rand(variable_num);
@@ -140,6 +137,7 @@ fn main() {
         })
         .collect();
 
+    let t2 = Instant::now();
     let mut de_prover = DeProver::new(
         sub_variable_num,
         sub_prover_id,
@@ -149,7 +147,6 @@ fn main() {
         &tensor,
     );
 
-    let t2 = Instant::now();
     let (com, sub_com) = de_prover.de_commit_polynomial();
     LOGGER.lock().unwrap().record(t2.elapsed().as_secs_f64());
 
@@ -166,16 +163,26 @@ fn main() {
         None
     };
 
+    let t3 = Instant::now();
     let (polynomial_proof, folding_proof, function_proof) =
         de_prover.de_open(&sub_com, &sub_open_point, verifier.as_mut());
+    LOGGER.lock().unwrap().record(t3.elapsed().as_secs_f64());
 
     // verify
     if Net::am_master() {
+        let proof_size = folding_proof.iter().map(|x| x.proof_size()).sum::<usize>()
+            + polynomial_proof.proof_size()
+            + function_proof.iter().map(|x| x.proof_size()).sum::<usize>()
+            + (2 * sub_variable_num - 3) * MERKLE_ROOT_SIZE
+            + 2 * size_of::<T>();
+        LOGGER.lock().unwrap().record((proof_size / 1024) as f64);
+        println!("proof size is: {:?}", proof_size / 1024);
         let time = Instant::now();
         assert!(verifier
             .unwrap()
             .verify(&polynomial_proof, &folding_proof, &function_proof, eval));
         println!("Verify time: {:?}", time.elapsed());
+        LOGGER.lock().unwrap().record(time.elapsed().as_secs_f64());
     }
 
     LOGGER.lock().unwrap().flush();

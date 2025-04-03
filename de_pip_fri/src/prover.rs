@@ -8,9 +8,6 @@ pub use utils::merkle_tree::MERKLE_ROOT_SIZE;
 use utils::query_result::QueryResult;
 use utils::{fiat_shamir::RandomOracle, helper::Helper, merkle_tree::MerkleTreeProver, CODE_RATE};
 
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
-
 #[derive(Clone)]
 struct InterpolateValue<T: PrimeField> {
     value: Vec<T>,
@@ -78,18 +75,6 @@ impl<T: PrimeField> Prover<T> {
         let poly_num = get_poly_num(&polynomial);
         let step = start_timer!(|| "NTT");
 
-        // #[cfg(feature = "parallel")]
-        // println!("You are using the parallel feature for poly commit");
-        #[cfg(feature = "parallel")]
-        let interpolation_sub_polynomials: Vec<Vec<T>> = polynomial
-            .chunks(poly_num)
-            .par_iter()
-            .map(|x| interpolate_cosets[0].fft(&x.coefficients()))
-            .collect();
-
-        // #[cfg(not(feature = "parallel"))]
-        // println!("You are not using the parallel feature for poly commit");
-        #[cfg(not(feature = "parallel"))]
         let interpolation_sub_polynomials: Vec<Vec<T>> = polynomial
             .chunks(poly_num)
             .iter()

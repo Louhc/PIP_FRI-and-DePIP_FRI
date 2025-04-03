@@ -27,7 +27,7 @@ ark-bn254 = { version = "0.4.0", features = [ "curve"] }
 
 [features]
 # parallel = ["rayon", "ark-ff/asm"]
-parallel = [ "rayon", "ark-ff/parallel", "ark-poly/parallel"]
+# parallel = [ "rayon", "ark-ff/parallel", "ark-poly/parallel"]
 # parallel = [ "rayon"]
 print-trace = [ "ark-std/print-trace" ]
 

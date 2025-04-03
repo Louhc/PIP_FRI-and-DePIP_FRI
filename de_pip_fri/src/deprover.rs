@@ -18,49 +18,7 @@ use utils::query_result::QueryResult;
 use utils::query_result::QueryResultTest;
 use utils::time_logger::LOGGER;
 use utils::SECURITY_BITS;
-use utils::{fiat_shamir::RandomOracle, merkle_tree::MerkleTreeProver, CODE_RATE};
-
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
-
-#[derive(Clone)]
-struct InterpolateValue<T: PrimeField> {
-    value: Vec<T>,
-    merkle_tree: MerkleTreeProver,
-}
-
-impl<T: PrimeField> InterpolateValue<T> {
-    fn new(value: Vec<T>) -> Self {
-        let len = value.len() / 2;
-        let merkle_tree = MerkleTreeProver::new(
-            (0..len)
-                .map(|i| Helper::to_bytes_vec(&[value[i], value[i + len]]))
-                .collect(),
-        );
-        Self { value, merkle_tree }
-    }
-
-    fn leave_num(&self) -> usize {
-        self.merkle_tree.leave_num()
-    }
-
-    fn commit(&self) -> [u8; MERKLE_ROOT_SIZE] {
-        self.merkle_tree.commit()
-    }
-
-    fn query(&self, leaf_indices: &Vec<usize>) -> QueryResult<T> {
-        let len = self.merkle_tree.leave_num();
-        let proof_values = leaf_indices
-            .iter()
-            .flat_map(|j| [(*j, self.value[*j]), (*j + len, self.value[*j + len])])
-            .collect();
-        let proof_bytes = self.merkle_tree.open(&leaf_indices);
-        QueryResult {
-            proof_bytes,
-            proof_values,
-        }
-    }
-}
+use utils::{fiat_shamir::RandomOracle, CODE_RATE};
 
 #[derive(Clone)]
 pub struct DeProver<T: PrimeField> {
@@ -102,20 +60,9 @@ impl<T: PrimeField> DeProver<T> {
         let t1 = Instant::now();
         let step = start_timer!(|| "NTT");
 
-        // #[cfg(feature = "parallel")]
-        // println!("You are using the parallel feature for poly commit");
-        #[cfg(feature = "parallel")]
         let de_interpolations_vec: Vec<Vec<T>> = (0..sub_polys.len())
             .map(|i| interpolate_cosets[0].fft(&sub_polys[i].coefficients()))
             .collect();
-
-        // #[cfg(not(feature = "parallel"))]
-        // println!("You are not using the parallel feature for poly commit");
-        #[cfg(not(feature = "parallel"))]
-        let de_interpolations_vec: Vec<Vec<T>> = (0..sub_polys.len())
-            .map(|i| interpolate_cosets[0].fft(&sub_polys[i].coefficients()))
-            .collect();
-        // println!("{} x {}", n, de_interpolations.len());
 
         end_timer!(step);
         LOGGER.lock().unwrap().record(t1.elapsed().as_secs_f64());
@@ -304,7 +251,7 @@ impl<T: PrimeField> DeProver<T> {
 
         for round in 0..self.total_round {
             if round < self.de_round {
-                let mut next_evaluation = Vec::new();
+                let next_evaluation;
                 if round == 0 {
                     // exchange the tensor poly
                     let interpolations_len = self.interpolate_tensor_polynomial.len();
@@ -619,8 +566,7 @@ impl<T: PrimeField> DeProver<T> {
             if round < self.de_round {
                 let cur_challenge = folding_challenges[round];
 
-                let mut last_challenge = None;
-                last_challenge = if round > 0 {
+                let last_challenge = if round > 0 {
                     Some(folding_challenges[round - 1])
                 } else {
                     None

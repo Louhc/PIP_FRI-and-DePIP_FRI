@@ -7,7 +7,7 @@ EXAMPLE_NAME=$1
 NUM_PROCESSES=$2
 
 if [ -z "$EXAMPLE_NAME" ] || [ -z "$NUM_PROCESSES" ]; then
-  echo "用法: ./run_local.sh <example_name> <num_processes>"
+  echo "usage: ./run_local.sh <example_name> <num_processes>"
   exit 1
 fi
 
@@ -25,8 +25,14 @@ done
 BIN=../target/release/examples/$EXAMPLE_NAME
 PROCS=()
 
-for ((i = 0; i < NUM_PROCESSES; i++)); do
-  RAYON_NUM_THREADS=1 taskset -c "$((i))" "$BIN" "$i" "$DATA_FILE" &
+# split average cores to run
+for ((i = 0; i < NUM_PROCESSES / 2; i++)); do
+  RAYON_NUM_THREADS=1 taskset -c "$((2 * i))" "$BIN" "$i" "$DATA_FILE" &
+  PROCS+=($!)
+done
+
+for ((i = NUM_PROCESSES / 2; i < NUM_PROCESSES; i++)); do
+  RAYON_NUM_THREADS=1 taskset -c "$((2 * i + 48 - NUM_PROCESSES))" "$BIN" "$i" "$DATA_FILE" &
   PROCS+=($!)
 done
 

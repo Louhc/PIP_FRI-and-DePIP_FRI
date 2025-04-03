@@ -114,7 +114,7 @@ fn main() {
             .map(|sum| format!("{:.3}", (sum / count as f64) * 1000.0))
             .collect();
 
-        println!("Process {:<2}: avg times (ms) = [{}]", i, avgs.join(", "));
+        println!("Process {:<2}: [fft times (ms), commit times (ms), open times (ms), proof size (b), verifier time(ms)] = [{}]", i, avgs.join(", "));
 
         fs::remove_file(&file_path).unwrap();
     }
