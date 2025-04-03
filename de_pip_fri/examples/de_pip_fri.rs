@@ -137,7 +137,6 @@ fn main() {
         })
         .collect();
 
-    let t2 = Instant::now();
     let mut de_prover = DeProver::new(
         sub_variable_num,
         sub_prover_id,
@@ -147,6 +146,7 @@ fn main() {
         &tensor,
     );
 
+    let t2 = Instant::now();
     let (com, sub_com) = de_prover.de_commit_polynomial();
     LOGGER.lock().unwrap().record(t2.elapsed().as_secs_f64());
 

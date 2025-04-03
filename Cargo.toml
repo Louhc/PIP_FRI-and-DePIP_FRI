@@ -8,7 +8,6 @@ members = [
   "snark",
   "utils",
   "fri",
-  "gemini-fri",
   "polyfrim",
   "pip_fri",
   "de_pip_fri",

@@ -55,9 +55,10 @@ impl<T: PrimeField> DeProver<T> {
         // the fixed combination to combine multiple sub polynomials
         tensor: &Vec<T>,
     ) -> DeProver<T> {
+        let total_t = Instant::now();
+        // let t1 = Instant::now();
         let n = Net::n_parties();
 
-        let t1 = Instant::now();
         let step = start_timer!(|| "NTT");
 
         let de_interpolations_vec: Vec<Vec<T>> = (0..sub_polys.len())
@@ -65,9 +66,11 @@ impl<T: PrimeField> DeProver<T> {
             .collect();
 
         end_timer!(step);
-        LOGGER.lock().unwrap().record(t1.elapsed().as_secs_f64());
+        // LOGGER.lock().unwrap().record(t1.elapsed().as_secs_f64());
 
         // exchange intial interpolations
+        let step = start_timer!(|| "Exchange inital interpolations");
+        let time = Instant::now();
         let distributed_interpolations: Vec<(Vec<_>, Vec<_>)> = (0..sub_polys.len())
             .map(|i| {
                 let de_interpolations = &de_interpolations_vec[i];
@@ -98,6 +101,9 @@ impl<T: PrimeField> DeProver<T> {
                 combined_segment
             })
             .collect();
+        end_timer!(step);
+        let exchange_time = time.elapsed().as_secs_f64();
+        println!("Exchange inital interpolations time: {:?}", time.elapsed());
 
         // Compute the actual polynomial invoked into FRI
         let step = start_timer!(|| "rlc");
@@ -133,6 +139,11 @@ impl<T: PrimeField> DeProver<T> {
         let de_round = total_round + CODE_RATE - std::cmp::max(log_2n, CODE_RATE);
         let remain_round = total_round - de_round;
 
+        LOGGER
+            .lock()
+            .unwrap()
+            .record(total_t.elapsed().as_secs_f64() - exchange_time);
+
         if Net::am_master() {
             println!(
                 "# total rounds: {}, # distributed rounds: {}, # remain rounds: {}",
@@ -167,11 +178,13 @@ impl<T: PrimeField> DeProver<T> {
     pub fn de_commit_polynomial(
         &mut self,
     ) -> (Option<[u8; MERKLE_ROOT_SIZE]>, Option<Vec<[u8; 32]>>) {
-        // let step = start_timer!(|| "Merkle tree");
+        let step = start_timer!(|| "Merkle tree");
         let sub_com = self.interpolate_initial_polynomials.commit();
-        // end_timer!(step);
+        end_timer!(step);
+        let step = start_timer!(|| "send sub-root");
         let intial_sub_com = Net::send_to_master(&sub_com);
         self.sub_intial_tree_root = sub_com;
+        end_timer!(step);
         if Net::am_master() {
             self.acc_intial_tree =
                 MerkleTree::<Blake3Algorithm>::from_leaves(&intial_sub_com.as_ref().unwrap());

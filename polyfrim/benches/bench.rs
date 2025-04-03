@@ -213,10 +213,10 @@ criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
     targets =
-    // bench_commit,
-    // bench_open,
+    bench_commit,
+    bench_open,
     bench_verify,
-    // bench_field
+    bench_field
 }
 
 criterion_main!(benches);
