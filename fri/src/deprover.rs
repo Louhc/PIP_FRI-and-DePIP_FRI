@@ -232,9 +232,9 @@ pub struct DeFRIProver<T: PrimeField> {
     // number of rounds for distributed computation
     de_round: usize,
     // number of rounds for remaining computation
-    remain_round: usize,
+    // remain_round: usize,
     // sub-polynomial of sub-prover
-    sub_polynomial: UnivariatePolynomial<T>,
+    // sub_polynomial: UnivariatePolynomial<T>,
     // cosets of the last log_2(n) rounds, only used by master
     interpolate_cosets: Vec<GeneralEvaluationDomain<T>>,
     // intial interpolations
@@ -325,8 +325,8 @@ impl<T: PrimeField> DeFRIProver<T> {
             sub_prover_id,
             total_round: de_round + remain_round,
             de_round,
-            remain_round,
-            sub_polynomial,
+            // remain_round,
+            // sub_polynomial,
             interpolate_cosets: interpolate_coset.clone(),
             initial_interpolations,
             de_interpolations: vec![],

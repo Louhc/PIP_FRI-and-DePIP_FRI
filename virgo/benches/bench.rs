@@ -93,7 +93,7 @@ fn zk_commit(criterion: &mut Criterion, variable_num: usize) {
 fn bench_commit(c: &mut Criterion) {
     for i in SMALL..=SIZE {
         commit(c, i);
-        // zk_commit(c, i);
+        zk_commit(c, i);
     }
 }
 
@@ -201,7 +201,7 @@ fn zk_open(criterion: &mut Criterion, variable_num: usize) {
 fn bench_open(c: &mut Criterion) {
     for i in SMALL..=SIZE {
         open(c, i);
-        // zk_open(c, i);
+        zk_open(c, i);
     }
 }
 
@@ -333,7 +333,7 @@ fn zk_verify(criterion: &mut Criterion, variable_num: usize) {
 fn bench_verify(c: &mut Criterion) {
     for i in SMALL..=SIZE {
         verify(c, i);
-        // zk_verify(c, i);
+        zk_verify(c, i);
     }
 }
 

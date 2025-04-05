@@ -1,11 +1,6 @@
 [workspace]
 
 members = [
-  "benches",
-  "circom-compat",
-  "kzg",
-  "ipa",
-  "snark",
   "utils",
   "fri",
   "polyfrim",

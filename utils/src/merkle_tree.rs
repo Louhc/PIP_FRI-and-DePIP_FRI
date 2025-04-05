@@ -89,7 +89,7 @@ mod tests {
     use ark_test_curves::bls12_381::Fq;
     use rand::{seq::SliceRandom, thread_rng};
 
-    fn get_layer_size(leave_number: usize, leaf_indices: &Vec<usize>) -> (Vec<usize>, usize) {
+    fn _get_layer_size(leave_number: usize, leaf_indices: &Vec<usize>) -> (Vec<usize>, usize) {
         let mut current_level: HashSet<usize> = leaf_indices.iter().cloned().collect();
         let mut result = Vec::new();
         let mut total_nodes = leave_number;
@@ -164,13 +164,13 @@ mod tests {
         let leaf_values: Vec<Vec<u8>> = (0..num_leaves).map(|x| x.to_be_bytes().to_vec()).collect();
         assert_eq!(num_leaves as usize, leaf_values.len());
         let prover = MerkleTreeProver::new(leaf_values);
-        let root = prover.commit();
+        let _root = prover.commit();
 
         let mut rng = thread_rng();
         let mut proof_bytes;
         let mut leaf_indices;
         let mut attempts = 0;
-        let mut num_nodes = 0;
+        let mut num_nodes;
         loop {
             attempts += 1;
 
@@ -209,41 +209,35 @@ mod tests {
         let leaf_values: Vec<Vec<u8>> = (0..num_leaves).map(|x| x.to_be_bytes().to_vec()).collect();
         assert_eq!(num_leaves as usize, leaf_values.len());
         let prover = MerkleTreeProver::new(leaf_values);
-        let root = prover.commit();
+        let _root = prover.commit();
 
         let mut rng = thread_rng();
         let mut proof_bytes;
         let mut leaf_indices;
         let mut attempts = 0;
-        let mut num_nodes = 0;
+        let mut num_nodes;
         loop {
             attempts += 1;
 
-            // 分离奇数和偶数索引
             let odd_indices: Vec<usize> = (0..num_leaves).filter(|x| x % 2 != 0).collect();
             let even_indices: Vec<usize> = (0..num_leaves).filter(|x| x % 2 == 0).collect();
 
-            // 随机打乱奇数和偶数索引
             let mut shuffled_odd_indices = odd_indices.clone();
             let mut shuffled_even_indices = even_indices.clone();
             shuffled_odd_indices.shuffle(&mut rng);
             shuffled_even_indices.shuffle(&mut rng);
 
-            // 从奇数和偶数索引中分别选择 num_open 个
             let selected_odd_indices: Vec<usize> =
                 shuffled_odd_indices.into_iter().take(num_open).collect();
             let selected_even_indices: Vec<usize> =
                 shuffled_even_indices.into_iter().take(num_open).collect();
 
-            // 合并奇数和偶数索引
             leaf_indices = [selected_odd_indices, selected_even_indices].concat();
             leaf_indices.sort();
 
-            // 生成 proof_bytes
             proof_bytes = prover.open(&leaf_indices);
             num_nodes = proof_bytes.len() / 32;
 
-            // 检查条件，满足则退出循环
             if num_nodes <= threshold {
                 break;
             }

@@ -1,5 +1,4 @@
 extern crate criterion;
-use ark_ec::pairing::Pairing;
 use criterion::*;
 
 use ark_ff::{Field, UniformRand};
@@ -121,7 +120,7 @@ fn zk_commit(criterion: &mut Criterion, variable_num: usize) {
 fn bench_commit(c: &mut Criterion) {
     for i in SMALL..=SIZE {
         commit(c, i);
-        // zk_commit(c, i);
+        zk_commit(c, i);
     }
 }
 
@@ -236,7 +235,7 @@ fn zk_open(criterion: &mut Criterion, variable_num: usize) {
 fn bench_open(c: &mut Criterion) {
     for i in SMALL..=SIZE {
         open(c, i);
-        // zk_open(c, i);
+        zk_open(c, i);
     }
 }
 
@@ -287,7 +286,7 @@ fn verify(criterion: &mut Criterion, variable_num: usize) {
     // open
     let (polynomial_proof, folding_proof, function_proof) =
         prover.open(&sub_open_point.to_vec(), &mut verifier);
-    let proof_size = (folding_proof
+    let proof_size = folding_proof
         .iter()
         .map(|x| x.path_proof_size())
         .sum::<usize>()
@@ -306,7 +305,7 @@ fn verify(criterion: &mut Criterion, variable_num: usize) {
             .map(|x| x.field_proof_size())
             .sum::<usize>()
         + (2 * sub_variable_num - 3) * MERKLE_ROOT_SIZE
-        + 2 * size_of::<T>());
+        + 2 * size_of::<T>();
 
     let path_proof_size = folding_proof
         .iter()
@@ -399,7 +398,7 @@ fn zk_verify(criterion: &mut Criterion, variable_num: usize) {
     let (polynomial_proof, folding_proof, function_proof) =
         prover.open(&sub_open_point, &mut verifier);
 
-    let proof_size = (folding_proof
+    let proof_size = folding_proof
         .iter()
         .map(|x| x.path_proof_size())
         .sum::<usize>()
@@ -418,7 +417,7 @@ fn zk_verify(criterion: &mut Criterion, variable_num: usize) {
             .map(|x| x.field_proof_size())
             .sum::<usize>()
         + (2 * (sub_variable_num + 1) - 3) * MERKLE_ROOT_SIZE
-        + 3 * size_of::<T>());
+        + 3 * size_of::<T>();
 
     let path_proof_size = folding_proof
         .iter()
@@ -466,13 +465,12 @@ fn zk_verify(criterion: &mut Criterion, variable_num: usize) {
 fn bench_verify(c: &mut Criterion) {
     for i in SMALL..=SIZE {
         verify(c, i);
-        // zk_verify(c, i);
+        zk_verify(c, i);
     }
 }
 
 // turn on or off the parallel feature for arkworks parallel for fft
 fn single_fft(criterion: &mut Criterion, variable_num: usize) {
-    let mut rng = StdRng::seed_from_u64(0u64);
     let polynomial: MultilinearPolynomial<T> = MultilinearPolynomial::rand(variable_num);
     let interpolate_cosets: Vec<GeneralEvaluationDomain<T>> =
         vec![EvaluationDomain::new_coset(1 << (variable_num + CODE_RATE), T::ONE).unwrap()];
@@ -491,7 +489,6 @@ fn single_fft(criterion: &mut Criterion, variable_num: usize) {
 }
 
 fn multi_single_fft(criterion: &mut Criterion, variable_num: usize, log_num: usize) {
-    let mut rng = StdRng::seed_from_u64(0u64);
     let sub_variable_num = variable_num - log_num;
     let num: usize = 1 << log_num;
     let mut polynomials = vec![];
@@ -541,8 +538,8 @@ criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
     targets =
-    // bench_single_fft,
-    // bench_multi_fft,
+    bench_single_fft,
+    bench_multi_fft,
     bench_commit,
     bench_open,
     bench_verify

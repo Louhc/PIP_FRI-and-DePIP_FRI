@@ -320,15 +320,15 @@ mod tests {
         let vec_1 = vec![T::from(1), T::from(2), T::from(3), T::from(4)];
         let vec_2 = vec![T::from(5), T::from(6), T::from(7), T::from(8)];
         let values = vec![vec_1, vec_2];
-        let leave_number = values[0].len() / 2;
+        let _leave_number = values[0].len() / 2;
 
         let interpolation = InterpolateVecsValue::new(values);
-        let root = interpolation.commit();
+        let _root = interpolation.commit();
         let leaf_indices = vec![1];
         let query_result = interpolation.query(&leaf_indices);
 
         let a = QueryVecsResultTest::from_query_vecs_result(&query_result);
-        let b = QueryVecsResultTest::to_query_vecs_result(&a);
+        let _b = QueryVecsResultTest::to_query_vecs_result(&a);
         // assert_eq!(query_result, b);
     }
 }
