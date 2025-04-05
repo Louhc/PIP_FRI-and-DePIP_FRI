@@ -43,7 +43,7 @@ fn init() -> (usize, usize, usize) {
     assert!(num_parties != 1);
 
     let sub_prover_id = Net::party_id();
-    let variable_num: usize = 20;
+    let variable_num: usize = 22;
 
     (variable_num, num_parties, sub_prover_id)
 }
@@ -101,6 +101,9 @@ fn main() {
         )
     };
 
+    let setup_size_bytes_recv = Net::stats().bytes_recv;
+    let setup_size_bytes_sent = Net::stats().bytes_sent;
+
     // Setup
     let mut interpolate_cosets =
         vec![
@@ -146,9 +149,23 @@ fn main() {
         &tensor,
     );
 
-    let t2 = Instant::now();
+    // println!(
+    //     "id: {}, Net::stats().bytes_recv: {}",
+    //     sub_prover_id,
+    //     Net::stats().bytes_recv - setup_size_bytes_recv
+    // );
+    // println!(
+    //     "id: {}, Net::stats().bytes_sent: {}",
+    //     sub_prover_id,
+    //     Net::stats().bytes_sent - setup_size_bytes_sent
+    // );
+
+    let commit_2_time = Instant::now();
     let (com, sub_com) = de_prover.de_commit_polynomial();
-    LOGGER.lock().unwrap().record(t2.elapsed().as_secs_f64());
+    LOGGER
+        .lock()
+        .unwrap()
+        .record(commit_2_time.elapsed().as_secs_f64());
 
     let mut verifier = if Net::am_master() {
         Some(Verifier::new(
@@ -163,10 +180,24 @@ fn main() {
         None
     };
 
-    let t3 = Instant::now();
+    let open_time = Instant::now();
     let (polynomial_proof, folding_proof, function_proof) =
         de_prover.de_open(&sub_com, &sub_open_point, verifier.as_mut());
-    LOGGER.lock().unwrap().record(t3.elapsed().as_secs_f64());
+    LOGGER
+        .lock()
+        .unwrap()
+        .record(open_time.elapsed().as_secs_f64());
+
+    println!(
+        "id: {}, Net::stats().bytes_recv: {}",
+        sub_prover_id,
+        Net::stats().bytes_recv - setup_size_bytes_recv
+    );
+    println!(
+        "id: {}, Net::stats().bytes_sent: {}",
+        sub_prover_id,
+        Net::stats().bytes_sent - setup_size_bytes_sent
+    );
 
     // verify
     if Net::am_master() {
@@ -176,7 +207,7 @@ fn main() {
             + (2 * sub_variable_num - 3) * MERKLE_ROOT_SIZE
             + 2 * size_of::<T>();
         LOGGER.lock().unwrap().record((proof_size / 1024) as f64);
-        println!("proof size is: {:?}", proof_size / 1024);
+        println!("proof size is: {:?}", (proof_size / 1024) as f64);
         let time = Instant::now();
         assert!(verifier
             .unwrap()

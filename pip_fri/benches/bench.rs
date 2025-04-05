@@ -17,8 +17,8 @@ use utils::{CODE_RATE, SECURITY_BITS};
 // use ark_bls12_381::Bls12_381;
 // type T = <Bls12_381 as Pairing>::ScalarField;
 
-const SMALL: usize = 20;
-const SIZE: usize = 20;
+const SMALL: usize = 18;
+const SIZE: usize = 18;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;

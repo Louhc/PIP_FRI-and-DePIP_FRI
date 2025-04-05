@@ -12,7 +12,7 @@ use utils::{goldilocks::Goldilocks as T, CODE_RATE, SECURITY_BITS};
 use utils::{helper::Helper, merkle_tree::MERKLE_ROOT_SIZE};
 
 fn main() {
-    let variable_num: usize = 20;
+    let variable_num: usize = 22;
     let mut rng = StdRng::seed_from_u64(0u64);
     let polynomial = MultilinearPolynomial::rand(variable_num);
     let point = (0..variable_num)

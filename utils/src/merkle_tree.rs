@@ -178,11 +178,11 @@ mod tests {
             indices.shuffle(&mut rng);
             leaf_indices = indices.into_iter().take(num_open).collect();
 
-            // 生成 proof_bytes
+            // proof_bytes
             proof_bytes = prover.open(&leaf_indices);
             num_nodes = proof_bytes.len() / 32;
 
-            // 检查条件，满足则退出循环
+            // check
             if num_nodes <= threshold {
                 break;
             }

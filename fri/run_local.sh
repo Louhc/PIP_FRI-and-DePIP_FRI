@@ -1,10 +1,8 @@
 #!/usr/bin/bash
 
-# 设置退出时清理子进程
 trap "exit" INT TERM
 trap "kill 0" EXIT
 
-# 参数解析
 EXAMPLE_NAME=$1
 NUM_PROCESSES=$2
 # cargo build --release --example $1 --no-default-features --features "print-trace"
@@ -19,11 +17,9 @@ if [ -z "$EXAMPLE_NAME" ] || [ -z "$NUM_PROCESSES" ]; then
   exit 1
 fi
 
-# 编译
 RUSTFLAGS='-C target-cpu=native' cargo build --release --example "$EXAMPLE_NAME" --no-default-features
 # --features "print-trace"
 
-# 生成 data 文件
 DATA_FILE="./data/${NUM_PROCESSES}_local"
 mkdir -p ./data
 > "$DATA_FILE"
@@ -33,7 +29,6 @@ for ((i = 0; i < NUM_PROCESSES; i++)); do
   echo "127.0.0.1:$PORT" >> "$DATA_FILE"
 done
 
-# 运行进程
 BIN=../target/release/examples/$EXAMPLE_NAME
 PROCS=()
 

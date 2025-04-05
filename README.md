@@ -1,3 +1,118 @@
+<h1 align="center">PIP<sub>FRI</sub>: Shred-to-Shine Metamorphosis in Polynomial Commitment</h1>
+
+This is a Rust library for ___PIP<sub>FRI</sub>___, an efficient FRI/RS-based zero-knowledge multilinear polynomial commitment scheme.
+
+ distributed SNARK for R1CS with constant proof size, constant verifier complexity, and constant amortized communication complexity.
+This library also includes implementations and benchmarks of the underlying sub-protocols, such as an improved inner product argument with constant proof size from univariate sum-check and coefficient-based polynomials, and a bivariate batch KZG PCS first supporting multiple polynomials and multiple points.
+
+## Overview
+
+This repository facilitates benchmarking tests for PIP<sub>FRI</sub> built on the implementations of [PolyFRIM/FRISS](https://github.com/gyp2847399255/PolyFRIM) (USENIX Security 24), [Brakedown](https://github.com/conroi/lcpc) (CRYPTO 23), and [Spartan](https://github.com/Microsoft/Spartan) (CRYPTO 20).
+
+### Implementation details
+
+- **Field and hash**: 
+The field compared with RS-based schemes is $\mathbb{F}_{p^2}$ from PolyFRIM, adopted from [Virgo](https://github.com/sunblaze-ucb/Virgo) (S\&P 20), with $\mathbb{F}_{p}$ where $p = 2^{61} - 1$ as the base field.
+The field compared with GS-based schemes is 255 bit field from Brakedown.
+We use Blake3 with output size of 256 bits as the hash function. 
+
+- **FRI details**: 
+The chosen code rate is $2^{-3}$.
+The security level is 120 bit.
+The soundness choice is the conjectured one, same as implemenations like [plonky2](https://github.com/0xPolygonZero/plonky2) and [estark](https://ia.cr/2021/582).
+To modify these parameters, adjust the `SECURITY_BITS`, `CODE_RATE`, and query number in [utl](pcs/src/lib.rs).
+We do not use the grinding technique, and reduce the polynomial degree stricly by half in each round until a constant, different from optimizations like in plonky2 and estark.
+
+
+### Provided Implementations
+  - **PIP<sub>FRI</sub>**: The multi-linear FRI-based polynomial commitment scheme proposed in paper. Find this mainly in the `pcs/` directory.
+
+  - **Other FRI-based Univariate/Multilinear polynomial commitments**: Include FRI-PCS in `fri/`, Virgo in `virgo/`, Gemini (or HyperPlonk) in `gemini-fri/`, Basefold-RS in `basefold/`, and PolyFRIM in `polyfrim/` for comparative purposes.
+
+  - **SNARK**: We implement PIP<sub>SNARK</sub> by combining the PIOP in Spartan and PIP<sub>FRI</sub>.
+  Find this in [spartan](/spartan/benches/nizk.rs).
+  Same as Orion-SNARK, we only use the linear-verifier version and do not use preprocessing.
+  As Orion-PCS is written in C++, to test the performance of Orion-SNARK, we extract the PIOP times of PIP<sub>SNARK</sub> and add them to the Orion-PCS times for SNARK times.
+
+- **Utilities**: All the above protocols leverage utilities found in `util/`, which includes implementations for Merkle trees, finite fields, polynomials, and other necessary tools.
+
+## Setup
+
+1. **Install Rust**: Follow the instructions on [Rust Installation](https://www.rust-lang.org/tools/install).
+   
+2. **Verify Installation**: Post-installation, ensure everything is set up correctly with:
+   ```bash
+   cargo --version
+   rustup --version
+   ```
+
+3. **Use the Nightly Toolchain**: 
+   ```bash
+   rustup default nightly
+   ```
+
+## PCS tests
+
+- **Benchmark All PCSs**: 
+  ```bash
+  cargo bench
+  ```
+  
+- **Benchmark a Specific PCS**: Choose from `fri`, `virgo`, `gemini-fri`, `basefold`, `polyfrim`, or `pcs`.
+  ```bash
+  cargo bench -p <protocol>
+  ```
+  
+> **Note**: The most extensive benchmarking point may require approximately 80 GB of RAM.
+
+- **Test All Protocols & Output Proof Sizes**: 
+  ```bash
+  cargo test -- --nocapture
+  ```
+
+- **Test & Output Proof Size for a Specific Protocol**: Choose from `fri`, `virgo`, `gemini-fri`, `basefold`, `polyfrim`, or `pcs`.
+  ```bash
+  cargo test -p <protocol> -- --nocapture
+  ```
+
+### Virgo GKR
+
+For the multi-linear polynomial commitment in Virgo, there's an included GKR.
+
+**Benchmarking GKR**:
+1. Execute `bench_gkr.py` within the `virgo/` directory.
+2. This script calls the executable `virgo/fft_gkr` and produces the GKR prover time, verifier time, and proof size.
+
+> **Note**: The executable originates from [Virgo](https://github.com/sunblaze-ucb/Virgo), and we're directly utilizing it here.
+
+For the final evaluation result of Virgo, it's essential to sum the results from the Rust implementation and the GKR. This summation is a manual process.
+
+### Other multilinear PCSs
+
+For Brakedown and [Orion](https://github.com/sunblaze-ucb/Orion), we refer to their open-sourced implementations for results.
+For query numbers, we follow Lemma 1 in [Brakedown](https://eprint.iacr.org/2021/1043) paper.
+
+
+## SNARK tests
+
+To see the prover time, verifier time, and proof size, run
+
+  ```
+  cd spartan
+  cargo build --release --all-features
+  ./target/release/nizk
+  ```
+
+The `polycommit` is commitment time of polynomial commitment; the `polyeval` is prover time of polynomial commitment.
+The `NIZK::prove` time other than PCS commitment and prover time is the prover time of PIOP.
+  
+The `poly_eva_verify` is verifier time of polynomial commitment.
+The verifier time of PIOP can be similarly obatained from `NIZK::verify time`.
+
+The `NIZK::pcs_proof_len` is the proof size of PCS.
+The `NIZK::proof_compressed_len` is the total proof size of SNARK.
+
+
 <h1 align="center">Soloist (Distributed SNARKs for Rank-1 Constraint System)</h1>
 
 This is a Rust library for ___Soloist___, a distributed SNARK for R1CS with constant proof size, constant verifier complexity, and constant amortized communication complexity.

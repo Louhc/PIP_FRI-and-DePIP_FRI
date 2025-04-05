@@ -109,12 +109,22 @@ fn main() {
             count += 1;
         }
 
-        let avgs: Vec<String> = sums
+        let avgs: Vec<f64> = sums
             .iter()
-            .map(|sum| format!("{:.3}", (sum / count as f64) * 1000.0))
+            .map(|sum| (sum / count as f64) * 1000.0)
             .collect();
+        let mut new_avgs = vec![];
+        new_avgs.push(format!("{:.3}", &avgs[0] + &avgs[1]));
+        new_avgs.push(format!("{:.3}", &avgs[4] - &avgs[2] - &avgs[3]));
+        if avgs.len() == 5 {
+            new_avgs.push(format!("{:.3}", 0.0));
+            new_avgs.push(format!("{:.3}", 0.0));
+        } else {
+            new_avgs.push(format!("{:.3}", &avgs[5]));
+            new_avgs.push(format!("{:.3}", &avgs[6]));
+        }
 
-        println!("Process {:<2}: [commit times#1 (ms), commit times#2 (ms), open times (ms), proof size (b), verifier time(ms)] = [{}]", i, avgs.join(", "));
+        println!("Process {:<2}: [commit times (ms), open times (ms), proof size (b), verifier time(ms)] = [{}]", i, new_avgs.join(", "));
 
         fs::remove_file(&file_path).unwrap();
     }

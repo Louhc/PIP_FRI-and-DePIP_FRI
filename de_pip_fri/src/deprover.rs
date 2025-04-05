@@ -103,7 +103,7 @@ impl<T: PrimeField> DeProver<T> {
             .collect();
         end_timer!(step);
         let exchange_time = time.elapsed().as_secs_f64();
-        println!("Exchange inital interpolations time: {:?}", time.elapsed());
+        // println!("Exchange inital interpolations time: {:?}", time.elapsed());
 
         // Compute the actual polynomial invoked into FRI
         let step = start_timer!(|| "rlc");
@@ -262,18 +262,21 @@ impl<T: PrimeField> DeProver<T> {
         let mut evaluation = None;
         let mut func_sub_com_vec = Vec::new();
 
+        let mut exchange_time: f64 = 0.0;
         for round in 0..self.total_round {
             if round < self.de_round {
                 let next_evaluation;
                 if round == 0 {
                     // exchange the tensor poly
                     let interpolations_len = self.interpolate_tensor_polynomial.len();
+                    let time = Instant::now();
                     let first = Net::exchange(
                         &self.interpolate_tensor_polynomial[..interpolations_len / 2],
                     );
                     let second = Net::exchange(
                         &self.interpolate_tensor_polynomial[interpolations_len / 2..],
                     );
+                    exchange_time += time.elapsed().as_secs_f64();
 
                     // fold the exchanged poly
                     next_evaluation = Self::de_fold(
@@ -285,10 +288,12 @@ impl<T: PrimeField> DeProver<T> {
                 } else {
                     // exchange the folded poly
                     let interpolations_len = self.functions[round - 1].vec.len();
+                    let time = Instant::now();
                     let first =
                         Net::exchange(&self.functions[round - 1].vec[..interpolations_len / 2]);
                     let second =
                         Net::exchange(&self.functions[round - 1].vec[interpolations_len / 2..]);
+                    exchange_time += time.elapsed().as_secs_f64();
                     // fold the exchanged poly
 
                     next_evaluation = Self::de_fold(
@@ -379,6 +384,7 @@ impl<T: PrimeField> DeProver<T> {
                 self.sub_func_tree_roots.push(sub_com);
             }
         }
+        LOGGER.lock().unwrap().record(exchange_time);
 
         func_sub_com_vec
     }
@@ -560,6 +566,7 @@ impl<T: PrimeField> DeProver<T> {
     pub fn de_prove(&mut self) {
         let n = Net::n_parties();
         let mut folding_challenges = Vec::new();
+        let mut exchange_time: f64 = 0.0;
 
         // master distributes challenges for folding
         for round in 0..self.de_round {
@@ -588,10 +595,12 @@ impl<T: PrimeField> DeProver<T> {
                 let next_evaluation = if round == 0 {
                     // exchange the tensor poly
                     let interpolations_len = self.interpolate_rlc_polynomial.len();
+                    let time = Instant::now();
                     let first =
                         Net::exchange(&self.interpolate_rlc_polynomial[..interpolations_len / 2]);
                     let second =
                         Net::exchange(&self.interpolate_rlc_polynomial[interpolations_len / 2..]);
+                    exchange_time += time.elapsed().as_secs_f64();
 
                     // fold the exchanged poly
                     self.de_evaluation_next_domain(
@@ -604,10 +613,12 @@ impl<T: PrimeField> DeProver<T> {
                 } else {
                     // exchange the folded poly
                     let interpolations_len = self.foldings[round - 1].vec.len();
+                    let time = Instant::now();
                     let first =
                         Net::exchange(&self.foldings[round - 1].vec[..interpolations_len / 2]);
                     let second =
                         Net::exchange(&self.foldings[round - 1].vec[interpolations_len / 2..]);
+                    exchange_time += time.elapsed().as_secs_f64();
 
                     // fold the exchanged poly
                     self.de_evaluation_next_domain(
@@ -659,6 +670,7 @@ impl<T: PrimeField> DeProver<T> {
                 }
             }
         }
+        LOGGER.lock().unwrap().record(exchange_time);
     }
 
     pub fn query(&self) -> (QueryVecsResult<T>, Vec<QueryResult<T>>, Vec<QueryResult<T>>) {
