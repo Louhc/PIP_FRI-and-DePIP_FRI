@@ -188,16 +188,20 @@ fn main() {
         .unwrap()
         .record(open_time.elapsed().as_secs_f64());
 
-    println!(
-        "id: {}, Net::stats().bytes_recv: {}",
-        sub_prover_id,
-        Net::stats().bytes_recv - setup_size_bytes_recv
-    );
-    println!(
-        "id: {}, Net::stats().bytes_sent: {}",
-        sub_prover_id,
-        Net::stats().bytes_sent - setup_size_bytes_sent
-    );
+    // this is indeed larger than the actual communication
+
+    // println!(
+    //     "id: {}, Net::stats().bytes_recv: {}",
+    //     sub_prover_id,
+    //     Net::stats().bytes_recv - setup_size_bytes_recv
+    // );
+    // println!(
+    //     "id: {}, Net::stats().bytes_sent: {}",
+    //     sub_prover_id,
+    //     Net::stats().bytes_sent - setup_size_bytes_sent
+    // );
+
+    let sent_bytes = Net::stats().bytes_sent - setup_size_bytes_sent;
 
     // verify
     if Net::am_master() {
@@ -206,7 +210,7 @@ fn main() {
             + function_proof.iter().map(|x| x.proof_size()).sum::<usize>()
             + (2 * sub_variable_num - 3) * MERKLE_ROOT_SIZE
             + 2 * size_of::<T>();
-        LOGGER.lock().unwrap().record((proof_size / 1024) as f64);
+        LOGGER.lock().unwrap().record((proof_size as f64 / 1024.0 / 1024.0) as f64);
         println!("proof size is: {:?}", (proof_size / 1024) as f64);
         let time = Instant::now();
         assert!(verifier
@@ -215,6 +219,8 @@ fn main() {
         println!("Verify time: {:?}", time.elapsed());
         LOGGER.lock().unwrap().record(time.elapsed().as_secs_f64());
     }
+
+    LOGGER.lock().unwrap().record((sent_bytes as f64 / 1024.0 / 1024.0) as f64);
 
     LOGGER.lock().unwrap().flush();
 }

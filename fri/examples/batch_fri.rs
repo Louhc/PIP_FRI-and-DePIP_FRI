@@ -14,8 +14,8 @@ use utils::fiat_shamir::RandomOracle;
 use utils::{helper::Helper, merkle_tree::MERKLE_ROOT_SIZE};
 
 fn main() {
-    let poly_num = 8;
-    let variable_num: usize = 20;
+    let poly_num = 1;
+    let variable_num: usize = 22;
     let degree: usize = (1 << variable_num) - 1;
     let mut rng = StdRng::seed_from_u64(0u64);
     let mut polynomials = vec![];
@@ -51,7 +51,9 @@ fn main() {
     end_timer!(step);
 
     // verify
+    let step = start_timer!(|| "verify");
     assert!(verifier.verify(&proof, &evals));
+    end_timer!(step);
 
     // proof size
     let proof_size = proof.0.proof_size()

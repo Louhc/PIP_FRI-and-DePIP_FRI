@@ -35,7 +35,7 @@ fn init() -> (usize, usize, usize, usize) {
     assert!(num_parties.is_power_of_two());
 
     let sub_prover_id = Net::party_id();
-    let variable_num: usize = 20;
+    let variable_num: usize = 22;
 
     let degree: usize = (1 << variable_num) - 1;
     assert!(
@@ -103,6 +103,9 @@ fn main() {
         interpolate_cosets.push(Helper::pow(&interpolate_cosets[i - 1], 2));
     }
 
+    let setup_size_bytes_recv = Net::stats().bytes_recv;
+    let setup_size_bytes_sent = Net::stats().bytes_sent;
+
     // commit
     let oracle = if Net::am_master() {
         Some(RandomOracle::new(variable_num, SECURITY_BITS / CODE_RATE))
@@ -155,6 +158,19 @@ fn main() {
 
     let proof = de_prover.de_open(sub_com, verifier.as_mut());
     println!("Prover {:?} open time: {:?}", sub_prover_id, time.elapsed());
+
+    if Net::am_master() {
+        println!(
+            "id: {}, Net::stats().bytes_recv: {}",
+            sub_prover_id,
+            Net::stats().bytes_recv - setup_size_bytes_recv
+        );
+        println!(
+            "id: {}, Net::stats().bytes_sent: {}",
+            sub_prover_id,
+            Net::stats().bytes_sent - setup_size_bytes_sent
+        );
+    }
 
     // verify
     if Net::am_master() {
