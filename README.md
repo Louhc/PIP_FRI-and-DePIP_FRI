@@ -1,4 +1,4 @@
-<h1 align="center">PIP<sub>FRI</sub>: Shred-to-Shine Metamorphosis in Polynomial Commitment</h1>
+<h1 align="center">PIP<sub>FRI</sub> and DePIP<sub>FRI</sub>: Shred-to-Shine Metamorphosis in Polynomial Commitment</h1>
 
 This is a Rust library for ___PIP<sub>FRI</sub>___, an efficient FRI/RS-based zero-knowledge multilinear polynomial commitment scheme.
 
