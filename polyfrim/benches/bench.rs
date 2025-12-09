@@ -8,14 +8,10 @@ use utils::fiat_shamir::RandomOracle;
 use utils::helper::MultilinearPolynomial;
 use utils::merkle_tree::MERKLE_ROOT_SIZE;
 use utils::{CODE_RATE, SECURITY_BITS};
-// use utils::goldilocks::Goldilocks as T;
+use utils::goldilocks::Goldilocks as T;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use utils::helper::Helper;
-
-use ark_bls12_381::Bls12_381;
-use ark_ec::pairing::Pairing;
-type T = <Bls12_381 as Pairing>::ScalarField;
 
 const SMALL: usize = 18;
 const SIZE: usize = 23;

@@ -13,8 +13,6 @@ use utils::helper::Helper;
 use utils::helper::MultilinearPolynomial;
 use utils::interpolate_vecs_value::*;
 use utils::{CODE_RATE, SECURITY_BITS};
-// use ark_bls12_381::Bls12_381;
-// type T = <Bls12_381 as Pairing>::ScalarField;
 
 const SMALL: usize = 18;
 const SIZE: usize = 18;
