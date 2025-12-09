@@ -14,8 +14,8 @@ use utils::helper::MultilinearPolynomial;
 use utils::interpolate_vecs_value::*;
 use utils::{CODE_RATE, SECURITY_BITS};
 
-const SMALL: usize = 18;
-const SIZE: usize = 18;
+const SMALL: usize = 20;
+const SIZE: usize = 25;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;

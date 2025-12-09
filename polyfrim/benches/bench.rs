@@ -13,8 +13,8 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use utils::helper::Helper;
 
-const SMALL: usize = 18;
-const SIZE: usize = 23;
+const SMALL: usize = 20;
+const SIZE: usize = 25;
 
 // usage:
 // RAYON_NUM_THREADS=4 cargo bench --features "parallel" -p polyfrim

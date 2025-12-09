@@ -43,7 +43,7 @@ fn init() -> (usize, usize, usize) {
     assert!(num_parties != 1);
 
     let sub_prover_id = Net::party_id();
-    let variable_num: usize = 22;
+    let variable_num: usize = 20;
 
     (variable_num, num_parties, sub_prover_id)
 }

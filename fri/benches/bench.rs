@@ -18,8 +18,8 @@ use utils::{CODE_RATE, SECURITY_BITS};
 // RAYON_NUM_THREADS=8 cargo bench -p fri
 // RAYON_NUM_THREADS=8 cargo bench --features "parallel" -p fri
 
-const SMALL: usize = 21;
-const SIZE: usize = 21;
+const SMALL: usize = 20;
+const SIZE: usize = 25;
 const POLY_NUM: usize = 2;
 
 fn commit(criterion: &mut Criterion, variable_num: usize) {
