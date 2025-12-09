@@ -1,4 +1,4 @@
-<h1 align="center">PIP<sub>FRI</sub> and DePIP<sub>FRI</sub>: Shred-to-Shine Metamorphosis in (Distributed) Polynomial Commitments </h1>
+<h1 align="center">PIP<sub>FRI</sub> and DePIP<sub>FRI</sub>: Shred-to-Shine Metamorphosis of (Distributed) Polynomial Commitments </h1>
 
 This is a Rust library for ___PIP<sub>FRI</sub>___ and ___DePIP<sub>FRI</sub>___.
 PIP<sub>FRI</sub> is an efficient FRI-based multilinear polynomial commitment scheme and DePIP<sub>FRI</sub> is its distributed version.
@@ -72,3 +72,5 @@ Then, run
   ```
 
   The sub-prover number should be power of two.
+
+  Our experiments ran on an AMD CPU with multiple cores.
