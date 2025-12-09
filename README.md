@@ -1,14 +1,14 @@
 <h1 align="center">PIP<sub>FRI</sub> and DePIP<sub>FRI</sub>: Shred-to-Shine Metamorphosis of (Distributed) Polynomial Commitments </h1>
 
-This is a Rust library for ___PIP<sub>FRI</sub>___ and ___DePIP<sub>FRI</sub>___.
+This is the Rust library for ___PIP<sub>FRI</sub>___ and ___DePIP<sub>FRI</sub>___.
 PIP<sub>FRI</sub> is an efficient FRI-based multilinear polynomial commitment scheme and DePIP<sub>FRI</sub> is its distributed version.
+They are preferable for efficient running times (proving and verification) and poly-log proof size.
+They are also plausibly post-quantum secure in the random oracle model.
 
 ## Overview
 
 This repository is built on the implementations of [PolyFRIM](https://github.com/guo-yanpei/PolyFRIM) (USENIX Security 2024) and [Deepfold](https://github.com/guo-yanpei/deepfold-bench) (USENIX Security 2025).
 Different from their implementations, we use the `arkworks` ecosystem for finite fields and polynomial operations such as FFTs.
-
-
 
 ## Implementation details
 
@@ -26,6 +26,9 @@ To modify these parameters, adjust the `SECURITY_BITS` and `CODE_RATE` in [utils
 We do not use the grinding technique, also know as the proof-of-work technique.
 We reduce the polynomial degree stricly by half in each round until a constant.
 
+- **Others**: 
+We currently do not provide multi-core acceleration.
+
 ## Setup
 
 1. **Install Rust**: Follow the instructions on [Rust Installation](https://www.rust-lang.org/tools/install).
@@ -41,29 +44,52 @@ We reduce the polynomial degree stricly by half in each round until a constant.
    rustup default nightly
    ```
 
-## Non-Distributed PCS Benchmarks
+## Non-Distributed PIP<sub>FRI</sub> Benchmarks
   
-- **Benchmark a Specific PCS**: Choose from `fri`, `virgo`, `polyfrim`, `deepfold` or `pip_fri`.
+We provide implementations of the univariate [FRI-PCS](https://ia.cr/2019/1020) and multlinear PCSs including [Virgo](https://ia.cr/2019/1482) (S&P'20), [PolyFRIM](https://www.usenix.org/conference/usenixsecurity24/presentation/zhang-zongyang), [DeepFold](https://www.usenix.org/conference/usenixsecurity25/presentation/guo-yanpei) and PIP<sub>FRI</sub>.
+The PCSs above are all FRI-based.
+
+We use the open-source code of [WHIR](https://github.com/WizardOfMenlo/whir).
+For a fair comparison, please use unified parameters such as the code rate, the degree-reduction in each round, and the usage of grinding.
+Note that its underlying FRI is approximately 2 times faster in prover and 1.2 times faster in verifier than our implemented FRI.
+
+For group-based PCSs, please refer to the open-sourced code of [mKZG](https://github.com/EspressoSystems/hyperplonk) (PST'13) and [Hyrax](https://github.com/arkworks-rs/poly-commit)(S&P'18) for benchmarks.
+
+To benchmark a specific PCS: Choose from `fri`, `virgo`, `polyfrim`, `deepfold` or `pip_fri`, and run
   ```bash
-  cargo bench -p <protocol>
+  cargo bench -p <a_specific_pcs>
   ```
 
-### Virgo GKR
+There is an exception for Virgo.
+Virgo involves two parts, a GKR sub-protocol and an IPA.
+Our code above only covers the latter.
+For the former GKR part, we adopt the python script from [Virgo's implementation](https://github.com/sunblaze-ucb/Virgo). 
 
-For the multilinear polynomial commitment scheme in Virgo, there's an included GKR.
+For Virgo, we have an exception with details below, which performance 
 
 **Benchmarking GKR**:
 1. Execute `bench_gkr.py` within the `virgo/` directory.
 2. This script calls the executable `virgo/fft_gkr` and produces the GKR prover time, verifier time, and proof size.
 
-> **Note**: The executable originates from [Virgo](https://github.com/sunblaze-ucb/Virgo), and we're directly utilizing it here.
+For the final evaluation result of Virgo, it is essential to sum the results from the Rust implementation and the GKR. This summation is a manual process.
 
-For the final evaluation result of Virgo, it's essential to sum the results from the Rust implementation and the GKR. This summation is a manual process.
+### Benchmarks of SNARKs
+
+The performance of SNARKs is from two composoble parts: PIOP and PCS.
+We use the open-source code of [Spartan](https://github.com/microsoft/Spartan) and [HyperPlonk](https://www.usenix.org/conference/usenixsecurity25/presentation/guo-yanpei) to obtain their PIOP and PCS performance, and then estimate the SNARKs' performance mannually.
 
 
-## Distributed PCS benchmarks
+## Distributed DePIP<sub>FRI</sub> Benchmarks
 
-For the distributed PCS, modify the `variable_num` in [de_pip_fri.rs](de_pip_fri/examples/de_pip_fri.rs) for polynomial size.
+We provide implementations of [distributed FRI](fri/src/deprover.rs) (which serves as a sub-protocol of DePIP<sub>FRI</sub>) and [DePIP<sub>FRI</sub>](de_pip_fri/src).
+The distributed network uses the [de_network](de_network/src) package.
+
+Our open-sourced implementation provides examples in a distributed environments where each core of a single machine acts as a sub-prover (Our experiments ran on an AMD CPU with multiple cores).
+This can be naturally extended to a truly distributed environment where each machine acts as a sub-prover, by changing the ip_address in the [data](de_pip_fri/data) folder.
+Here, n_local means that the sub-prover number is n.
+We only support the case such that n is power of two.
+
+To run DePIP<sub>FRI</sub>, modify the `variable_num` in [de_pip_fri.rs](de_pip_fri/examples/de_pip_fri.rs).
 Then, run
 
   ```
@@ -71,6 +97,15 @@ Then, run
   ./run_benchmark.sh <sub-prover number> <running times>
   ```
 
-  The sub-prover number should be power of two.
+### Benchmarks of Other Distributed MLPCSs
 
-  Our experiments ran on an AMD CPU with multiple cores.
+For DemZKG and Dedory, we use the open-sourced code of [HyperPianist](https://github.com/AntCPLab/HyperPianist).
+
+For DeVirgo, we estimate its performance assuming the optimal linear speedup of Virgo.
+That is to say, when fixing a sub-prover number \ell and polynomial size N, we assume its prover time is 1/\ell of Virgo's prover time when its polynomial size is N.
+Further, we assume the proof size and verifier time of DeVirgo are the same as those of Virgo with a polynomial size of N.
+
+### Benchmarks of Distributed SNARKs
+
+The performance of distributed SNARKs is from two composoble parts: distributed PIOP and distributed PCS.
+We use the open-source code of HyperPianist to obtain their DePIOP and DePCS performance, and then estimate the DeSNARKs' performance mannually.
