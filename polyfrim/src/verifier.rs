@@ -156,10 +156,10 @@ impl<T: PrimeField> One2ManyVerifier<T> {
                 // verify function_proofs
                 let v = (f_x + f_nx) + self.open_point[i] * (f_x - f_nx) * self.interpolate_cosets[i].element(*j).inverse().unwrap();
                 if i < self.total_round - 1 {
-                    assert_eq!(v, function_proof[i + 1].proof_values[j] * T::from_u64(2 as u64).unwrap());
+                    assert_eq!(v, function_proof[i + 1].proof_values[j] * T::from(2 as u64));
                 } else {
-                    assert_eq!(v, evaluation * T::from_u64(2 as u64).unwrap());
-                    assert_eq!(v, self.evaluation.unwrap() * T::from_u64(2 as u64).unwrap());
+                    assert_eq!(v, evaluation * T::from(2 as u64));
+                    assert_eq!(v, self.evaluation.unwrap() * T::from(2 as u64));
                 }
             }
         }

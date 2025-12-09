@@ -1,11 +1,14 @@
-<h1 align="center">PIP<sub>FRI</sub> and DePIP<sub>FRI</sub>: Shred-to-Shine Metamorphosis in Polynomial Commitment</h1>
+<h1 align="center">PIP<sub>FRI</sub> and DePIP<sub>FRI</sub>: Shred-to-Shine Metamorphosis in (Distributed) Polynomial Commitments </h1>
 
-This is a Rust library for ___PIP<sub>FRI</sub>___, an efficient FRI/RS-based zero-knowledge multilinear polynomial commitment scheme.
+This is a Rust library for ___PIP<sub>FRI</sub>___ and ___DePIP<sub>FRI</sub>___.
+PIP<sub>FRI</sub> is an efficient FRI-based multilinear polynomial commitment scheme and DePIP<sub>FRI</sub> is its distributed version.
 
 ## Overview
 
-This repository facilitates benchmarking tests for PIP<sub>FRI</sub> built on the implementations of [PolyFRIM](https://github.com/guo-yanpei/PolyFRIM) (USENIX Security 24) and [Deepfold](https://github.com/guo-yanpei/deepfold-bench) (USENIX Security 25).
-Different from their implementations, we use the `arkworks` ecosystem for finite fields and polynomial operations.
+This repository is built on the implementations of [PolyFRIM](https://github.com/guo-yanpei/PolyFRIM) (USENIX Security 2024) and [Deepfold](https://github.com/guo-yanpei/deepfold-bench) (USENIX Security 2025).
+Different from their implementations, we use the `arkworks` ecosystem for finite fields and polynomial operations such as FFTs.
+
+
 
 ## Implementation details
 
@@ -38,7 +41,7 @@ We reduce the polynomial degree stricly by half in each round until a constant.
    rustup default nightly
    ```
 
-## PCS Benchmarks
+## Non-Distributed PCS Benchmarks
   
 - **Benchmark a Specific PCS**: Choose from `fri`, `virgo`, `polyfrim`, `deepfold` or `pip_fri`.
   ```bash

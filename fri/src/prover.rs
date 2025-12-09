@@ -65,7 +65,7 @@ impl<T: PrimeField> Prover<T> {
             let x = folding_value[i];
             let nx = folding_value[i + len / 2];
             let new_v = (x + nx) + challenge * (x - nx) * coset.element(i).inverse().unwrap();
-            let new_v = new_v * T::from_u64(2 as u64).unwrap().inverse().unwrap();
+            let new_v = new_v * T::from(2 as u64).inverse().unwrap();
             res.push(new_v);
         }
         res

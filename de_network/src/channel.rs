@@ -39,7 +39,7 @@ pub trait DeSerNet: DeNet {
 
         Self::distribute_bytes(&serialized_segments)
             .into_iter()
-            .map(|b| (Vec::<T>::deserialize_uncompressed(&b[..]).unwrap()))
+            .map(|b| Vec::<T>::deserialize_uncompressed(&b[..]).unwrap())
             .collect()
     }
 
@@ -58,7 +58,7 @@ pub trait DeSerNet: DeNet {
 
         Self::exchange_bytes(&serialized_segments)
             .into_iter()
-            .flat_map(|b| (Vec::<T>::deserialize_uncompressed(&b[..]).unwrap()))
+            .flat_map(|b| Vec::<T>::deserialize_uncompressed(&b[..]).unwrap())
             .collect()
     }
 

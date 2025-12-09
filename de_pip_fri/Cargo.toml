@@ -22,8 +22,6 @@ lazy_static = "1.4"
 
 [dev-dependencies]
 criterion = "0.4.0"
-ark-bls12-381 = { version = "0.4.0-alpha.2", features = [ "curve"] }
-ark-bn254 = { version = "0.4.0", features = [ "curve"] }
 
 [features]
 # parallel = ["rayon", "ark-ff/asm"]

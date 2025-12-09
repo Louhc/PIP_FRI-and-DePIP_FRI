@@ -142,7 +142,7 @@ impl<T: PrimeField> One2ManyProver<T> {
                 let x = values[i];
                 let nx = values[i + len];
                 let new_v = (x + nx) + parameter * (x - nx) * coset.element(i).inverse().unwrap();
-                new_v * T::from_u64(2 as u64).unwrap().inverse().unwrap()
+                new_v * T::from(2 as u64).inverse().unwrap()
             })
             .collect();
         res
