@@ -31,6 +31,10 @@ struct Opt {
     /// Input file
     #[structopt(parse(from_os_str))]
     input: PathBuf,
+
+    /// Number of variables (mu)
+    #[structopt(default_value = "20")]
+    variable_num: usize,
 }
 
 fn init() -> (usize, usize, usize) {
@@ -43,9 +47,14 @@ fn init() -> (usize, usize, usize) {
     assert!(num_parties != 1);
 
     let sub_prover_id = Net::party_id();
-    let variable_num: usize = 20;
+    let variable_num = opt.variable_num;
 
     (variable_num, num_parties, sub_prover_id)
+}
+
+fn barrier() {
+    Net::send_to_master(&0u8);
+    Net::recv_from_master(if Net::am_master() { Some(vec![0u8; Net::n_parties()]) } else { None });
 }
 
 fn main() {
@@ -101,9 +110,6 @@ fn main() {
         )
     };
 
-    let setup_size_bytes_recv = Net::stats().bytes_recv;
-    let setup_size_bytes_sent = Net::stats().bytes_sent;
-
     // Setup
     let mut interpolate_cosets =
         vec![
@@ -149,23 +155,19 @@ fn main() {
         &tensor,
     );
 
-    // println!(
-    //     "id: {}, Net::stats().bytes_recv: {}",
-    //     sub_prover_id,
-    //     Net::stats().bytes_recv - setup_size_bytes_recv
-    // );
-    // println!(
-    //     "id: {}, Net::stats().bytes_sent: {}",
-    //     sub_prover_id,
-    //     Net::stats().bytes_sent - setup_size_bytes_sent
-    // );
-
+    barrier();
+    Net::reset_stats();
     let commit_2_time = Instant::now();
     let (com, sub_com) = de_prover.de_commit_polynomial();
+    let commit_elapsed = commit_2_time.elapsed();
     LOGGER
         .lock()
         .unwrap()
-        .record(commit_2_time.elapsed().as_secs_f64());
+        .record(commit_elapsed.as_secs_f64());
+    if Net::am_master() {
+        println!("Commit time: {:?}", commit_elapsed);
+        println!("COMMIT_TIME_MS: {:.3}", commit_elapsed.as_secs_f64() * 1000.0);
+    }
 
     let mut verifier = if Net::am_master() {
         Some(Verifier::new(
@@ -180,28 +182,26 @@ fn main() {
         None
     };
 
+    barrier();
     let open_time = Instant::now();
     let (polynomial_proof, folding_proof, function_proof) =
         de_prover.de_open(&sub_com, &sub_open_point, verifier.as_mut());
+    let open_elapsed = open_time.elapsed();
     LOGGER
         .lock()
         .unwrap()
-        .record(open_time.elapsed().as_secs_f64());
+        .record(open_elapsed.as_secs_f64());
+    if Net::am_master() {
+        println!("Open time: {:?}", open_elapsed);
+        println!("OPEN_TIME_MS: {:.3}", open_elapsed.as_secs_f64() * 1000.0);
+    }
 
     // this is indeed larger than the actual communication
 
-    // println!(
-    //     "id: {}, Net::stats().bytes_recv: {}",
-    //     sub_prover_id,
-    //     Net::stats().bytes_recv - setup_size_bytes_recv
-    // );
-    // println!(
-    //     "id: {}, Net::stats().bytes_sent: {}",
-    //     sub_prover_id,
-    //     Net::stats().bytes_sent - setup_size_bytes_sent
-    // );
-
-    let sent_bytes = Net::stats().bytes_sent - setup_size_bytes_sent;
+    // Communication stats (reset was called before commit, so no need to subtract setup)
+    let stats = Net::stats();
+    let sent_bytes = stats.bytes_sent;
+    let recv_bytes = stats.bytes_recv;
 
     // verify
     if Net::am_master() {
@@ -211,16 +211,29 @@ fn main() {
             + (2 * sub_variable_num - 3) * MERKLE_ROOT_SIZE
             + 2 * size_of::<T>();
         LOGGER.lock().unwrap().record((proof_size as f64 / 1024.0 / 1024.0) as f64);
-        println!("proof size is: {:?}", (proof_size / 1024) as f64);
+        let proof_size_kb = proof_size as f64 / 1024.0;
+        println!("proof size is: {:?} KB", proof_size_kb);
+        println!("PROOF_SIZE_KB: {:.2}", proof_size_kb);
         let time = Instant::now();
         assert!(verifier
             .unwrap()
             .verify(&polynomial_proof, &folding_proof, &function_proof, eval));
-        println!("Verify time: {:?}", time.elapsed());
-        LOGGER.lock().unwrap().record(time.elapsed().as_secs_f64());
+        let verify_elapsed = time.elapsed();
+        println!("Verify time: {:?}", verify_elapsed);
+        println!("VERIFY_TIME_MS: {:.3}", verify_elapsed.as_secs_f64() * 1000.0);
+        LOGGER.lock().unwrap().record(verify_elapsed.as_secs_f64());
     }
 
     LOGGER.lock().unwrap().record((sent_bytes as f64 / 1024.0 / 1024.0) as f64);
+
+    if Net::am_master() {
+        let total_comm_mb = (sent_bytes + recv_bytes) as f64 / 1024.0 / 1024.0;
+        println!("Communication: sent={:.2} MB, recv={:.2} MB, total={:.2} MB",
+            sent_bytes as f64 / 1024.0 / 1024.0,
+            recv_bytes as f64 / 1024.0 / 1024.0,
+            total_comm_mb);
+        println!("COMM_TOTAL_MB: {:.2}", total_comm_mb);
+    }
 
     LOGGER.lock().unwrap().flush();
 }
