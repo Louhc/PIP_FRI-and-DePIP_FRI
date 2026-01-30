@@ -1,3 +1,7 @@
+//! Distributed PIP-FRI PCS Benchmark
+//!
+//! Tests the PIP-FRI polynomial commitment scheme in a distributed setting.
+
 use ark_ff::One;
 use ark_ff::UniformRand;
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
@@ -6,12 +10,10 @@ use de_pip_fri::deprover::DeProver;
 use de_pip_fri::verifier::Verifier;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-use std::fs;
 use std::mem::size_of;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use structopt::StructOpt;
-use time_logger::LOGGER;
 use utils::fiat_shamir::RandomOracle;
 use utils::goldilocks::Goldilocks as T;
 use utils::helper::nearest_power_of_two;
@@ -19,37 +21,25 @@ use utils::helper::Helper;
 use utils::helper::MultilinearPolynomial;
 use utils::interpolate_vecs_value::*;
 use utils::merkle_tree::MERKLE_ROOT_SIZE;
-use utils::time_logger;
 use utils::{CODE_RATE, SECURITY_BITS};
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "example", about = "An example of StructOpt usage.")]
+#[structopt(name = "de_pip_fri", about = "Distributed PIP-FRI PCS benchmark")]
 struct Opt {
-    /// Id
+    /// Party ID (0 = master)
     id: usize,
 
-    /// Input file
+    /// Network config file path
     #[structopt(parse(from_os_str))]
     input: PathBuf,
 
     /// Number of variables (mu)
     #[structopt(default_value = "20")]
     variable_num: usize,
-}
 
-fn init() -> (usize, usize, usize) {
-    let opt = Opt::from_args();
-    println!("{:?}", opt);
-
-    Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
-    let num_parties = Net::n_parties();
-    assert!(num_parties.is_power_of_two());
-    assert!(num_parties != 1);
-
-    let sub_prover_id = Net::party_id();
-    let variable_num = opt.variable_num;
-
-    (variable_num, num_parties, sub_prover_id)
+    /// Number of iterations
+    #[structopt(short, long, default_value = "1")]
+    iterations: usize,
 }
 
 fn barrier() {
@@ -58,17 +48,33 @@ fn barrier() {
 }
 
 fn main() {
-    let (variable_num, _num_parties, sub_prover_id) = init();
+    // Disable rayon multi-threading for fair single-thread benchmarking
+    std::env::set_var("RAYON_NUM_THREADS", "1");
 
-    fs::create_dir_all("data").unwrap();
-    let output_file = format!("data/{}.txt", sub_prover_id);
-    LOGGER.lock().unwrap().init(output_file);
+    let opt = Opt::from_args();
+    Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
 
+    let variable_num = opt.variable_num;
+    let iterations = opt.iterations;
     let n = Net::n_parties();
+    let is_master = Net::am_master();
 
-    let (_poly, sub_polys, eval, sub_variable_num, sub_open_point, tensor) = if Net::am_master() {
-        let mut rng = StdRng::seed_from_u64(0u64);
+    assert!(n.is_power_of_two());
+    assert!(n != 1);
 
+    macro_rules! master_print {
+        ($($arg:tt)*) => { if is_master { println!($($arg)*); } };
+    }
+
+    master_print!("========================================");
+    master_print!("dPIP-FRI PCS Distributed Benchmark");
+    master_print!("  mu = {}, parties = {}, iterations = {}", variable_num, n, iterations);
+    master_print!("========================================");
+
+    // Generate polynomial and distribute (once, outside iteration loop)
+    let mut rng = StdRng::seed_from_u64(0u64);
+
+    let (sub_polys, eval, sub_variable_num, sub_open_point, tensor) = if is_master {
         let polynomial = MultilinearPolynomial::rand(variable_num);
         let point = (0..variable_num)
             .map(|_| T::rand(&mut rng))
@@ -92,7 +98,6 @@ fn main() {
         let tensor = get_tensor(&remaining_var.to_vec());
 
         (
-            Some(polynomial),
             Net::recv_from_master(Some(sub_polys_coeffs)),
             Net::recv_from_master(Some(vec![eval; n])),
             Net::recv_from_master(Some(vec![sub_variable_num; n])),
@@ -101,7 +106,6 @@ fn main() {
         )
     } else {
         (
-            None,
             Net::recv_from_master(None),
             Net::recv_from_master(None),
             Net::recv_from_master(None),
@@ -110,7 +114,7 @@ fn main() {
         )
     };
 
-    // Setup
+    // Setup (once)
     let mut interpolate_cosets =
         vec![
             GeneralEvaluationDomain::new_coset(1 << (sub_variable_num + CODE_RATE), T::one())
@@ -120,120 +124,144 @@ fn main() {
         interpolate_cosets.push(Helper::pow(&interpolate_cosets[i - 1], 2));
     }
 
-    let oracle = if Net::am_master() {
-        Some(RandomOracle::new(
-            sub_variable_num,
-            SECURITY_BITS / CODE_RATE,
-        ))
-    } else {
-        None
-    };
-
     let total_poly_num = nearest_power_of_two(variable_num * 4);
     let poly_num_per_party = total_poly_num / n;
     let chunk_size = sub_polys.len() / poly_num_per_party;
     assert_eq!(chunk_size, 1 << sub_variable_num);
 
-    if Net::am_master() {
-        println!("poly_num_per_party: {}", poly_num_per_party);
-        println!("sub_variable_num: {}", sub_variable_num);
-        println!("chunk_size: {}", chunk_size);
-    }
+    master_print!("poly_num_per_party: {}", poly_num_per_party);
+    master_print!("sub_variable_num: {}", sub_variable_num);
+    master_print!("chunk_size: {}", chunk_size);
 
-    let sub_polys: Vec<MultilinearPolynomial<T>> = (0..poly_num_per_party)
+    let sub_polys_vec: Vec<MultilinearPolynomial<T>> = (0..poly_num_per_party)
         .map(|i| {
             MultilinearPolynomial::new(sub_polys[i * chunk_size..(i + 1) * chunk_size].to_vec())
         })
         .collect();
 
-    let mut de_prover = DeProver::new(
-        sub_variable_num,
-        sub_prover_id,
-        &interpolate_cosets,
-        sub_polys,
-        oracle.as_ref(),
-        &tensor,
-    );
+    // Run iterations
+    let mut commit_times = Vec::with_capacity(iterations);
+    let mut open_times = Vec::with_capacity(iterations);
+    let mut verify_times = Vec::with_capacity(iterations);
+    let mut proof_size = 0usize;
+    let mut total_comm_bytes = 0u64;
 
-    barrier();
-    Net::reset_stats();
-    let commit_2_time = Instant::now();
-    let (com, sub_com) = de_prover.de_commit_polynomial();
-    let commit_elapsed = commit_2_time.elapsed();
-    LOGGER
-        .lock()
-        .unwrap()
-        .record(commit_elapsed.as_secs_f64());
-    if Net::am_master() {
-        println!("Commit time: {:?}", commit_elapsed);
-        println!("COMMIT_TIME_MS: {:.3}", commit_elapsed.as_secs_f64() * 1000.0);
-    }
+    for iter in 0..iterations {
+        master_print!("\n--- Iteration {} ---", iter + 1);
 
-    let mut verifier = if Net::am_master() {
-        Some(Verifier::new(
+        // Create fresh oracle and prover for each iteration
+        let oracle = if is_master {
+            Some(RandomOracle::new(
+                sub_variable_num,
+                SECURITY_BITS / CODE_RATE,
+            ))
+        } else {
+            None
+        };
+
+        // Commit (includes prover setup)
+        barrier();
+        Net::reset_stats();
+        let start = Instant::now();
+        let mut de_prover = DeProver::new(
             sub_variable_num,
-            com.unwrap(),
+            Net::party_id(),
             &interpolate_cosets,
-            &oracle.as_ref().unwrap(),
-            &sub_open_point,
+            sub_polys_vec.clone(),
+            oracle.as_ref(),
             &tensor,
-        ))
-    } else {
-        None
-    };
+        );
+        let (com, sub_com) = de_prover.de_commit_polynomial();
+        let commit_time = start.elapsed();
+        commit_times.push(commit_time);
 
-    barrier();
-    let open_time = Instant::now();
-    let (polynomial_proof, folding_proof, function_proof) =
-        de_prover.de_open(&sub_com, &sub_open_point, verifier.as_mut());
-    let open_elapsed = open_time.elapsed();
-    LOGGER
-        .lock()
-        .unwrap()
-        .record(open_elapsed.as_secs_f64());
-    if Net::am_master() {
-        println!("Open time: {:?}", open_elapsed);
-        println!("OPEN_TIME_MS: {:.3}", open_elapsed.as_secs_f64() * 1000.0);
+        // Create verifier (master only)
+        let mut verifier = if is_master {
+            Some(Verifier::new(
+                sub_variable_num,
+                com.unwrap(),
+                &interpolate_cosets,
+                &oracle.as_ref().unwrap(),
+                &sub_open_point,
+                &tensor,
+            ))
+        } else {
+            None
+        };
+
+        // Open
+        barrier();
+        let start = Instant::now();
+        let (polynomial_proof, folding_proof, function_proof) =
+            de_prover.de_open(&sub_com, &sub_open_point, verifier.as_mut());
+        let open_time = start.elapsed();
+        open_times.push(open_time);
+
+        // Get communication stats
+        let stats = Net::stats();
+
+        // Verify (master only)
+        if is_master {
+            // Calculate proof size
+            proof_size = folding_proof.iter().map(|x| x.proof_size()).sum::<usize>()
+                + polynomial_proof.proof_size()
+                + function_proof.iter().map(|x| x.proof_size()).sum::<usize>()
+                + (2 * sub_variable_num - 3) * MERKLE_ROOT_SIZE
+                + 2 * size_of::<T>();
+
+            // Verify
+            let start = Instant::now();
+            assert!(verifier
+                .unwrap()
+                .verify(&polynomial_proof, &folding_proof, &function_proof, eval));
+            let verify_time = start.elapsed();
+            verify_times.push(verify_time);
+
+            // Record communication (last iteration)
+            if iter == iterations - 1 {
+                total_comm_bytes = (stats.bytes_sent + stats.bytes_recv) as u64;
+            }
+
+            master_print!("Commit: {:?}, Open: {:?}, Verify: {:?}",
+                commit_time, open_time, verify_time);
+
+            // Machine-readable per-iteration output
+            println!("ITER_{}_COMMIT_MS: {:.3}", iter + 1, commit_time.as_secs_f64() * 1000.0);
+            println!("ITER_{}_OPEN_MS: {:.3}", iter + 1, open_time.as_secs_f64() * 1000.0);
+            println!("ITER_{}_VERIFY_MS: {:.3}", iter + 1, verify_time.as_secs_f64() * 1000.0);
+        }
     }
 
-    // this is indeed larger than the actual communication
+    // Print summary (master only)
+    if is_master {
+        let avg = |times: &[Duration]| -> Duration {
+            times.iter().sum::<Duration>() / times.len() as u32
+        };
 
-    // Communication stats (reset was called before commit, so no need to subtract setup)
-    let stats = Net::stats();
-    let sent_bytes = stats.bytes_sent;
-    let recv_bytes = stats.bytes_recv;
-
-    // verify
-    if Net::am_master() {
-        let proof_size = folding_proof.iter().map(|x| x.proof_size()).sum::<usize>()
-            + polynomial_proof.proof_size()
-            + function_proof.iter().map(|x| x.proof_size()).sum::<usize>()
-            + (2 * sub_variable_num - 3) * MERKLE_ROOT_SIZE
-            + 2 * size_of::<T>();
-        LOGGER.lock().unwrap().record((proof_size as f64 / 1024.0 / 1024.0) as f64);
+        let total_comm_mb = total_comm_bytes as f64 / (1024.0 * 1024.0);
         let proof_size_kb = proof_size as f64 / 1024.0;
-        println!("proof size is: {:?} KB", proof_size_kb);
+
+        master_print!("\n========================================");
+        master_print!("Summary ({} iterations):", iterations);
+        master_print!("  Commit (avg): {:?}", avg(&commit_times));
+        master_print!("  Open (avg):   {:?}", avg(&open_times));
+        master_print!("  Verify (avg): {:?}", avg(&verify_times));
+        master_print!("  Proof size:   {:.2} KB", proof_size_kb);
+        master_print!("  Communication: {:.2} MB", total_comm_mb);
+        master_print!("========================================");
+
+        // Machine-readable output
+        println!("COMMIT_TIME_MS: {:.3}", avg(&commit_times).as_secs_f64() * 1000.0);
+        println!("OPEN_TIME_MS: {:.3}", avg(&open_times).as_secs_f64() * 1000.0);
+        println!("VERIFY_TIME_MS: {:.3}", avg(&verify_times).as_secs_f64() * 1000.0);
         println!("PROOF_SIZE_KB: {:.2}", proof_size_kb);
-        let time = Instant::now();
-        assert!(verifier
-            .unwrap()
-            .verify(&polynomial_proof, &folding_proof, &function_proof, eval));
-        let verify_elapsed = time.elapsed();
-        println!("Verify time: {:?}", verify_elapsed);
-        println!("VERIFY_TIME_MS: {:.3}", verify_elapsed.as_secs_f64() * 1000.0);
-        LOGGER.lock().unwrap().record(verify_elapsed.as_secs_f64());
-    }
-
-    LOGGER.lock().unwrap().record((sent_bytes as f64 / 1024.0 / 1024.0) as f64);
-
-    if Net::am_master() {
-        let total_comm_mb = (sent_bytes + recv_bytes) as f64 / 1024.0 / 1024.0;
-        println!("Communication: sent={:.2} MB, recv={:.2} MB, total={:.2} MB",
-            sent_bytes as f64 / 1024.0 / 1024.0,
-            recv_bytes as f64 / 1024.0 / 1024.0,
-            total_comm_mb);
         println!("COMM_TOTAL_MB: {:.2}", total_comm_mb);
+
+        // Combined prover time
+        let prover_ms = avg(&commit_times).as_secs_f64() * 1000.0
+            + avg(&open_times).as_secs_f64() * 1000.0;
+        println!("PROVER_TIME_MS: {:.3}", prover_ms);
     }
 
-    LOGGER.lock().unwrap().flush();
+    Net::deinit();
 }
