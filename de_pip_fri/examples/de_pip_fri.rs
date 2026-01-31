@@ -144,7 +144,9 @@ fn main() {
     let mut open_times = Vec::with_capacity(iterations);
     let mut verify_times = Vec::with_capacity(iterations);
     let mut proof_size = 0usize;
-    let mut total_comm_bytes = 0u64;
+
+    // Reset stats before iterations to capture all communication
+    Net::reset_stats();
 
     for iter in 0..iterations {
         master_print!("\n--- Iteration {} ---", iter + 1);
@@ -161,7 +163,6 @@ fn main() {
 
         // Commit (includes prover setup)
         barrier();
-        Net::reset_stats();
         let start = Instant::now();
         let mut de_prover = DeProver::new(
             sub_variable_num,
@@ -197,9 +198,6 @@ fn main() {
         let open_time = start.elapsed();
         open_times.push(open_time);
 
-        // Get communication stats
-        let stats = Net::stats();
-
         // Verify (master only)
         if is_master {
             // Calculate proof size
@@ -217,11 +215,6 @@ fn main() {
             let verify_time = start.elapsed();
             verify_times.push(verify_time);
 
-            // Record communication (last iteration)
-            if iter == iterations - 1 {
-                total_comm_bytes = (stats.bytes_sent + stats.bytes_recv) as u64;
-            }
-
             master_print!("Commit: {:?}, Open: {:?}, Verify: {:?}",
                 commit_time, open_time, verify_time);
 
@@ -232,13 +225,17 @@ fn main() {
         }
     }
 
+    // Get average communication stats per iteration (master's sent + received)
+    let stats = Net::stats();
+    let total_comm_bytes = (stats.bytes_sent + stats.bytes_recv) as f64;
+
     // Print summary (master only)
     if is_master {
         let avg = |times: &[Duration]| -> Duration {
             times.iter().sum::<Duration>() / times.len() as u32
         };
 
-        let total_comm_mb = total_comm_bytes as f64 / (1024.0 * 1024.0);
+        let avg_comm_mb = total_comm_bytes / iterations as f64 / (1024.0 * 1024.0);
         let proof_size_kb = proof_size as f64 / 1024.0;
 
         master_print!("\n========================================");
@@ -247,7 +244,7 @@ fn main() {
         master_print!("  Open (avg):   {:?}", avg(&open_times));
         master_print!("  Verify (avg): {:?}", avg(&verify_times));
         master_print!("  Proof size:   {:.2} KB", proof_size_kb);
-        master_print!("  Communication: {:.2} MB", total_comm_mb);
+        master_print!("  Communication: {:.2} MB", avg_comm_mb);
         master_print!("========================================");
 
         // Machine-readable output
@@ -255,7 +252,7 @@ fn main() {
         println!("OPEN_TIME_MS: {:.3}", avg(&open_times).as_secs_f64() * 1000.0);
         println!("VERIFY_TIME_MS: {:.3}", avg(&verify_times).as_secs_f64() * 1000.0);
         println!("PROOF_SIZE_KB: {:.2}", proof_size_kb);
-        println!("COMM_TOTAL_MB: {:.2}", total_comm_mb);
+        println!("COMM_TOTAL_BYTES: {}", (total_comm_bytes / iterations as f64) as u64);
 
         // Combined prover time
         let prover_ms = avg(&commit_times).as_secs_f64() * 1000.0
